@@ -13,7 +13,7 @@
 // ==================== 設定（ここを編集） ====================
 var CONFIG = {
   SPREADSHEET_ID:    '1PIuPUxRVhFuePj8Y1Zt9U4wWqxlerwf-YfTm4P1S-Io',
-  SHEET_NAME:        '大田区 シフト',
+  SHEET_NAME:        'シート2',
   DATE_HEADER_ROW:   3,   // 日付ヘッダー行番号（"5/1(金)" が入っている行）
   STAFF_NAME_COL:    4,   // スタッフ名の列番号（D列 = 4）
   DATA_START_ROW:    4,   // スタッフデータ開始行番号
