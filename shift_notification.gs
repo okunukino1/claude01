@@ -168,41 +168,15 @@ function testSendToday() {
   var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
   if (!sheet) { Logger.log('❌ シートが見つかりません'); return; }
 
-  // 今日の日付で出勤者を確認（送信はしない）
-  var today = new Date();
-  var month = today.getMonth() + 1;
-  var day   = today.getDate();
-  var dow   = ['日','月','火','水','木','金','土'][today.getDay()];
-  var dateLabel = month + '/' + day + '(' + dow + ')';
-
+  // 行2の全セルを表示して5/6がどの形式で入っているか確認
   var lastCol = sheet.getLastColumn();
   var headers = sheet.getRange(CONFIG.DATE_HEADER_ROW, 1, 1, lastCol).getValues()[0];
-
-  var targetCol = -1;
+  Logger.log('行2の総列数: ' + lastCol);
   for (var i = 0; i < headers.length; i++) {
-    if (dateMatches(headers[i], today)) {
-      targetCol = i + 1;
-      break;
-    }
-  }
-
-  if (targetCol === -1) {
-    Logger.log('⚠️ ' + dateLabel + ' の列が見つかりません（シフトが登録されていない可能性）');
-    return;
-  }
-
-  var numRows = sheet.getLastRow() - CONFIG.DATA_START_ROW + 1;
-  var names   = sheet.getRange(CONFIG.DATA_START_ROW, CONFIG.STAFF_NAME_COL, numRows, 1).getValues();
-  var morning = sheet.getRange(CONFIG.DATA_START_ROW, targetCol,     numRows, 1).getValues();
-  var evening = sheet.getRange(CONFIG.DATA_START_ROW, targetCol + 1, numRows, 1).getValues();
-
-  Logger.log('✅ ' + dateLabel + ' の出勤者:');
-  for (var r = 0; r < names.length; r++) {
-    var name = String(names[r][0]).trim();
-    var am   = String(morning[r][0]).trim();
-    var pm   = String(evening[r][0]).trim();
-    if (name && (am || pm)) {
-      Logger.log('  ' + name + ' | AM: ' + (am || '－') + ' | PM: ' + (pm || '－'));
+    var v = headers[i];
+    if (v !== '' && v !== null) {
+      var type = (v instanceof Date) ? 'Date' : typeof v;
+      Logger.log('列' + (i+1) + ': [' + type + '] ' + v);
     }
   }
 }
