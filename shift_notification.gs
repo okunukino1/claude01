@@ -107,12 +107,15 @@ function sendShiftNotification() {
   Logger.log('送信完了:\n' + '@All\n' + body);
 }
 
-// ==================== 日付マッチ（タイムゾーン統一・Date型・テキスト型両対応） ====================
+// ==================== 日付マッチ ====================
 function dateMatches(cellValue, targetDate) {
   var tz = Session.getScriptTimeZone();
-  var targetStr = Utilities.formatDate(targetDate, tz, 'M/d'); // JST基準で "5/6" など
-  if (cellValue instanceof Date) {
-    return Utilities.formatDate(cellValue, tz, 'M/d') === targetStr;
+  var targetStr = Utilities.formatDate(targetDate, tz, 'M/d');
+  // GASではinstanceof Dateがfalseになるためobjectかどうかで判定
+  if (cellValue && typeof cellValue === 'object') {
+    try {
+      return Utilities.formatDate(cellValue, tz, 'M/d') === targetStr;
+    } catch(e) {}
   }
   return String(cellValue).indexOf(targetStr) !== -1;
 }
