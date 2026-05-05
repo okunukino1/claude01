@@ -14,9 +14,9 @@
 var CONFIG = {
   SPREADSHEET_ID:    '11qNYAo_7p0_-aIf1SGji4axzAoqsW3OxAIGTUoFHJY4',
   SHEET_NAME:        '大田区 シフト',
-  DATE_HEADER_ROW:   3,   // 日付ヘッダー行番号（"5/1(金)" が入っている行）
+  DATE_HEADER_ROW:   2,   // 日付ヘッダー行番号（Date型で格納されている行）
   STAFF_NAME_COL:    4,   // スタッフ名の列番号（D列 = 4）
-  DATA_START_ROW:    5,   // スタッフデータ開始行番号（行4は時間帯ラベル）
+  DATA_START_ROW:    4,   // スタッフデータ開始行番号（行3は時間帯ラベル）
   LINE_CHANNEL_TOKEN: '', // ← LINE Channel Access Token を貼り付け
   LINE_GROUP_ID:      '', // ← LINE グループID を貼り付け
 };
@@ -43,9 +43,14 @@ function sendShiftNotification() {
 
   var morningCol = -1;
   for (var i = 0; i < headers.length; i++) {
-    if (String(headers[i]).indexOf(month + '/' + day) !== -1) {
-      morningCol = i + 1; // 1-indexed
-      break;
+    var cell = headers[i];
+    if (cell instanceof Date) {
+      if (cell.getFullYear() === tomorrow.getFullYear() &&
+          cell.getMonth()    === tomorrow.getMonth()    &&
+          cell.getDate()     === tomorrow.getDate()) {
+        morningCol = i + 1; // 1-indexed
+        break;
+      }
     }
   }
 
@@ -154,15 +159,47 @@ function getGroupId() {
 function testSendToday() {
   var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
-  if (!sheet) {
-    Logger.log('❌ シートが見つかりません');
+  if (!sheet) { Logger.log('❌ シートが見つかりません'); return; }
+
+  // 今日の日付で出勤者を確認（送信はしない）
+  var today = new Date();
+  var month = today.getMonth() + 1;
+  var day   = today.getDate();
+  var dow   = ['日','月','火','水','木','金','土'][today.getDay()];
+  var dateLabel = month + '/' + day + '(' + dow + ')';
+
+  var lastCol = sheet.getLastColumn();
+  var headers = sheet.getRange(CONFIG.DATE_HEADER_ROW, 1, 1, lastCol).getValues()[0];
+
+  var targetCol = -1;
+  for (var i = 0; i < headers.length; i++) {
+    var cell = headers[i];
+    if (cell instanceof Date &&
+        cell.getFullYear() === today.getFullYear() &&
+        cell.getMonth()    === today.getMonth()    &&
+        cell.getDate()     === today.getDate()) {
+      targetCol = i + 1;
+      break;
+    }
+  }
+
+  if (targetCol === -1) {
+    Logger.log('⚠️ ' + dateLabel + ' の列が見つかりません（シフトが登録されていない可能性）');
     return;
   }
 
-  // 先頭10行の内容を表示して日付がどの行にあるか確認する
-  Logger.log('--- 先頭10行の内容（列A〜F）---');
-  for (var r = 1; r <= 10; r++) {
-    var row = sheet.getRange(r, 1, 1, 6).getValues()[0];
-    Logger.log('行' + r + ': ' + row.join(' | '));
+  var numRows = sheet.getLastRow() - CONFIG.DATA_START_ROW + 1;
+  var names   = sheet.getRange(CONFIG.DATA_START_ROW, CONFIG.STAFF_NAME_COL, numRows, 1).getValues();
+  var morning = sheet.getRange(CONFIG.DATA_START_ROW, targetCol,     numRows, 1).getValues();
+  var evening = sheet.getRange(CONFIG.DATA_START_ROW, targetCol + 1, numRows, 1).getValues();
+
+  Logger.log('✅ ' + dateLabel + ' の出勤者:');
+  for (var r = 0; r < names.length; r++) {
+    var name = String(names[r][0]).trim();
+    var am   = String(morning[r][0]).trim();
+    var pm   = String(evening[r][0]).trim();
+    if (name && (am || pm)) {
+      Logger.log('  ' + name + ' | AM: ' + (am || '－') + ' | PM: ' + (pm || '－'));
+    }
   }
 }
