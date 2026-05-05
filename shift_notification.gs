@@ -111,12 +111,12 @@ function sendShiftNotification() {
 function dateMatches(cellValue, targetDate) {
   var tz = Session.getScriptTimeZone();
   var targetStr = Utilities.formatDate(targetDate, tz, 'M/d');
-  // GASではinstanceof Dateがfalseになるためobjectかどうかで判定
-  if (cellValue && typeof cellValue === 'object') {
-    try {
-      return Utilities.formatDate(cellValue, tz, 'M/d') === targetStr;
-    } catch(e) {}
-  }
+  // GASのDate型はinstanceof Dateがfalseになるため getTime() で判定
+  try {
+    if (cellValue && typeof cellValue.getTime === 'function') {
+      return Utilities.formatDate(new Date(cellValue.getTime()), tz, 'M/d') === targetStr;
+    }
+  } catch(e) {}
   return String(cellValue).indexOf(targetStr) !== -1;
 }
 
@@ -173,16 +173,9 @@ function testSendToday() {
   var tz = Session.getScriptTimeZone();
   var today = new Date();
   var targetStr = Utilities.formatDate(today, tz, 'M/d');
-  Logger.log('スクリプトTZ: ' + tz);
-  Logger.log('今日(TZ基準): ' + targetStr);
 
   var lastCol = sheet.getLastColumn();
   var headers = sheet.getRange(CONFIG.DATE_HEADER_ROW, 1, 1, lastCol).getValues()[0];
-
-  // 列5(5/1)と列25(5/6)の詳細を表示
-  var c5 = headers[4], c25 = headers[24];
-  Logger.log('列5  isDate=' + (c5  instanceof Date) + ' formatted=' + (c5  instanceof Date ? Utilities.formatDate(c5,  tz, 'M/d') : c5));
-  Logger.log('列25 isDate=' + (c25 instanceof Date) + ' formatted=' + (c25 instanceof Date ? Utilities.formatDate(c25, tz, 'M/d') : c25));
 
   var targetCol = -1;
   for (var i = 0; i < headers.length; i++) {
