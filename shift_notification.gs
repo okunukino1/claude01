@@ -70,9 +70,12 @@ function sendShiftNotification() {
   for (var r = 0; r < names.length; r++) {
     var name = String(names[r][0]).trim();
     if (!name) continue;
+    if (!isStaffName(name)) continue; // エリア名・集計行を除外
 
     var am = String(morning[r][0]).trim();
     var pm = String(evening[r][0]).trim();
+    if (am === '休み') am = '';
+    if (pm === '休み') pm = '';
 
     if (am && pm) {
       allDayStaff.push(name);
@@ -105,6 +108,16 @@ function sendShiftNotification() {
 
   sendLineMessage('@All\n' + body);
   Logger.log('送信完了:\n' + '@All\n' + body);
+}
+
+// ==================== スタッフ名フィルタ ====================
+function isStaffName(name) {
+  if (!name) return false;
+  if (/W$/.test(name)) return false;          // 大森西W など（エリアコード）
+  if (name.indexOf('枠数') !== -1) return false; // 必要枠数・枠数実績
+  if (/^[①-⑩]/.test(name)) return false;     // ①②始まりの番号
+  if (/川崎[①②③]$/.test(name)) return false; // 他社ドライバー川崎①②
+  return true;
 }
 
 // ==================== 日付マッチ ====================
@@ -195,9 +208,12 @@ function testSendToday() {
   Logger.log('✅ ' + targetStr + ' の出勤者:');
   for (var r = 0; r < names.length; r++) {
     var name = String(names[r][0]).trim();
-    var am   = String(morning[r][0]).trim();
-    var pm   = String(evening[r][0]).trim();
-    if (name && (am || pm)) {
+    if (!name || !isStaffName(name)) continue;
+    var am = String(morning[r][0]).trim();
+    var pm = String(evening[r][0]).trim();
+    if (am === '休み') am = '';
+    if (pm === '休み') pm = '';
+    if (am || pm) {
       Logger.log('  ' + name + ' | AM: ' + (am || '－') + ' | PM: ' + (pm || '－'));
     }
   }
