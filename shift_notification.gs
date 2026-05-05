@@ -199,7 +199,7 @@ function testSendToday() {
   var morning = sheet.getRange(CONFIG.DATA_START_ROW, targetCol,     numRows, 1).getValues();
   var evening = sheet.getRange(CONFIG.DATA_START_ROW, targetCol + 1, numRows, 1).getValues();
 
-  Logger.log('✅ ' + dateLabel + ' の出勤者:');
+  Logger.log('✅ ' + targetStr + ' の出勤者:');
   for (var r = 0; r < names.length; r++) {
     var name = String(names[r][0]).trim();
     var am   = String(morning[r][0]).trim();
