@@ -151,11 +151,19 @@ function getGroupId() {
 }
 
 // ==================== 動作テスト用 ====================
-// 実行すると今日の日付で（テスト用に日付を上書きして）送信確認できる
 function testSendToday() {
-  // 一時的にDATA_START_ROWを確認
   var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+
+  // 全シート名を表示（シート名の確認用）
+  var allSheets = ss.getSheets().map(function(s){ return '"' + s.getName() + '"'; });
+  Logger.log('シート一覧: ' + allSheets.join(', '));
+
   var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) {
+    Logger.log('❌ シートが見つかりません。上のシート一覧からSHEET_NAMEを修正してください。');
+    return;
+  }
+
   var headers = sheet.getRange(CONFIG.DATE_HEADER_ROW, 1, 1, sheet.getLastColumn()).getValues()[0];
-  Logger.log('ヘッダー行の値: ' + headers.join(' | '));
+  Logger.log('✅ ヘッダー行の値: ' + headers.join(' | '));
 }
