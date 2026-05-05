@@ -43,14 +43,9 @@ function sendShiftNotification() {
 
   var morningCol = -1;
   for (var i = 0; i < headers.length; i++) {
-    var cell = headers[i];
-    if (cell instanceof Date) {
-      if (cell.getFullYear() === tomorrow.getFullYear() &&
-          cell.getMonth()    === tomorrow.getMonth()    &&
-          cell.getDate()     === tomorrow.getDate()) {
-        morningCol = i + 1; // 1-indexed
-        break;
-      }
+    if (dateMatches(headers[i], tomorrow)) {
+      morningCol = i + 1;
+      break;
     }
   }
 
@@ -109,6 +104,18 @@ function sendShiftNotification() {
 
   sendLineMessage('@All\n' + body);
   Logger.log('送信完了:\n' + '@All\n' + body);
+}
+
+// ==================== 日付マッチ（Date型・テキスト型両対応） ====================
+function dateMatches(cellValue, targetDate) {
+  var m = targetDate.getMonth() + 1;
+  var d = targetDate.getDate();
+  if (cellValue instanceof Date) {
+    var tz  = Session.getScriptTimeZone();
+    var str = Utilities.formatDate(cellValue, tz, 'M/d');
+    return str === (m + '/' + d);
+  }
+  return String(cellValue).indexOf(m + '/' + d) !== -1;
 }
 
 // ==================== LINE送信 ====================
@@ -173,11 +180,7 @@ function testSendToday() {
 
   var targetCol = -1;
   for (var i = 0; i < headers.length; i++) {
-    var cell = headers[i];
-    if (cell instanceof Date &&
-        cell.getFullYear() === today.getFullYear() &&
-        cell.getMonth()    === today.getMonth()    &&
-        cell.getDate()     === today.getDate()) {
+    if (dateMatches(headers[i], today)) {
       targetCol = i + 1;
       break;
     }
