@@ -29,12 +29,13 @@ function sendShiftNotification() {
     throw new Error('シートが見つかりません: ' + CONFIG.SHEET_NAME);
   }
 
-  // 明日の日付
-  var tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  var month = tomorrow.getMonth() + 1;
-  var day   = tomorrow.getDate();
-  var dow   = ['日', '月', '火', '水', '木', '金', '土'][tomorrow.getDay()];
+  // 明日の日付（JST基準）
+  var tz = Session.getScriptTimeZone();
+  var tomorrow = new Date(new Date().getTime() + 24 * 60 * 60 * 1000);
+  var month = Number(Utilities.formatDate(tomorrow, tz, 'M'));
+  var day   = Number(Utilities.formatDate(tomorrow, tz, 'd'));
+  var dowIdx = Number(Utilities.formatDate(tomorrow, tz, 'u')); // 1=月 〜 7=日
+  var dow   = ['月','火','水','木','金','土','日'][dowIdx - 1];
   var dateLabel = month + '/' + day + '(' + dow + ')';
 
   // ヘッダー行から翌日の列を検索
@@ -106,16 +107,14 @@ function sendShiftNotification() {
   Logger.log('送信完了:\n' + '@All\n' + body);
 }
 
-// ==================== 日付マッチ（Date型・テキスト型両対応） ====================
+// ==================== 日付マッチ（タイムゾーン統一・Date型・テキスト型両対応） ====================
 function dateMatches(cellValue, targetDate) {
-  var m = targetDate.getMonth() + 1;
-  var d = targetDate.getDate();
+  var tz = Session.getScriptTimeZone();
+  var targetStr = Utilities.formatDate(targetDate, tz, 'M/d'); // JST基準で "5/6" など
   if (cellValue instanceof Date) {
-    var tz  = Session.getScriptTimeZone();
-    var str = Utilities.formatDate(cellValue, tz, 'M/d');
-    return str === (m + '/' + d);
+    return Utilities.formatDate(cellValue, tz, 'M/d') === targetStr;
   }
-  return String(cellValue).indexOf(m + '/' + d) !== -1;
+  return String(cellValue).indexOf(targetStr) !== -1;
 }
 
 // ==================== LINE送信 ====================
@@ -168,15 +167,36 @@ function testSendToday() {
   var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
   if (!sheet) { Logger.log('❌ シートが見つかりません'); return; }
 
-  // 行2の全セルを表示して5/6がどの形式で入っているか確認
+  // 今日の出勤者を確認（送信はしない）
+  var tz = Session.getScriptTimeZone();
+  var today = new Date();
+  var dateLabel = Utilities.formatDate(today, tz, 'M/d');
+
   var lastCol = sheet.getLastColumn();
   var headers = sheet.getRange(CONFIG.DATE_HEADER_ROW, 1, 1, lastCol).getValues()[0];
-  Logger.log('行2の総列数: ' + lastCol);
+
+  var targetCol = -1;
   for (var i = 0; i < headers.length; i++) {
-    var v = headers[i];
-    if (v !== '' && v !== null) {
-      var type = (v instanceof Date) ? 'Date' : typeof v;
-      Logger.log('列' + (i+1) + ': [' + type + '] ' + v);
+    if (dateMatches(headers[i], today)) { targetCol = i + 1; break; }
+  }
+
+  if (targetCol === -1) {
+    Logger.log('⚠️ ' + dateLabel + ' の列が見つかりません');
+    return;
+  }
+
+  var numRows = sheet.getLastRow() - CONFIG.DATA_START_ROW + 1;
+  var names   = sheet.getRange(CONFIG.DATA_START_ROW, CONFIG.STAFF_NAME_COL, numRows, 1).getValues();
+  var morning = sheet.getRange(CONFIG.DATA_START_ROW, targetCol,     numRows, 1).getValues();
+  var evening = sheet.getRange(CONFIG.DATA_START_ROW, targetCol + 1, numRows, 1).getValues();
+
+  Logger.log('✅ ' + dateLabel + ' の出勤者:');
+  for (var r = 0; r < names.length; r++) {
+    var name = String(names[r][0]).trim();
+    var am   = String(morning[r][0]).trim();
+    var pm   = String(evening[r][0]).trim();
+    if (name && (am || pm)) {
+      Logger.log('  ' + name + ' | AM: ' + (am || '－') + ' | PM: ' + (pm || '－'));
     }
   }
 }
