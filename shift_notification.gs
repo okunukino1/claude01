@@ -153,17 +153,16 @@ function getGroupId() {
 // ==================== 動作テスト用 ====================
 function testSendToday() {
   var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-
-  // 全シート名を表示（シート名の確認用）
-  var allSheets = ss.getSheets().map(function(s){ return '"' + s.getName() + '"'; });
-  Logger.log('シート一覧: ' + allSheets.join(', '));
-
   var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
   if (!sheet) {
-    Logger.log('❌ シートが見つかりません。上のシート一覧からSHEET_NAMEを修正してください。');
+    Logger.log('❌ シートが見つかりません');
     return;
   }
 
-  var headers = sheet.getRange(CONFIG.DATE_HEADER_ROW, 1, 1, sheet.getLastColumn()).getValues()[0];
-  Logger.log('✅ ヘッダー行の値: ' + headers.join(' | '));
+  // 先頭10行の内容を表示して日付がどの行にあるか確認する
+  Logger.log('--- 先頭10行の内容（列A〜F）---');
+  for (var r = 1; r <= 10; r++) {
+    var row = sheet.getRange(r, 1, 1, 6).getValues()[0];
+    Logger.log('行' + r + ': ' + row.join(' | '));
+  }
 }
