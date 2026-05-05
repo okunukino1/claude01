@@ -167,13 +167,19 @@ function testSendToday() {
   var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
   if (!sheet) { Logger.log('❌ シートが見つかりません'); return; }
 
-  // 今日の出勤者を確認（送信はしない）
   var tz = Session.getScriptTimeZone();
   var today = new Date();
-  var dateLabel = Utilities.formatDate(today, tz, 'M/d');
+  var targetStr = Utilities.formatDate(today, tz, 'M/d');
+  Logger.log('スクリプトTZ: ' + tz);
+  Logger.log('今日(TZ基準): ' + targetStr);
 
   var lastCol = sheet.getLastColumn();
   var headers = sheet.getRange(CONFIG.DATE_HEADER_ROW, 1, 1, lastCol).getValues()[0];
+
+  // 列5(5/1)と列25(5/6)の詳細を表示
+  var c5 = headers[4], c25 = headers[24];
+  Logger.log('列5  isDate=' + (c5  instanceof Date) + ' formatted=' + (c5  instanceof Date ? Utilities.formatDate(c5,  tz, 'M/d') : c5));
+  Logger.log('列25 isDate=' + (c25 instanceof Date) + ' formatted=' + (c25 instanceof Date ? Utilities.formatDate(c25, tz, 'M/d') : c25));
 
   var targetCol = -1;
   for (var i = 0; i < headers.length; i++) {
@@ -181,7 +187,7 @@ function testSendToday() {
   }
 
   if (targetCol === -1) {
-    Logger.log('⚠️ ' + dateLabel + ' の列が見つかりません');
+    Logger.log('⚠️ ' + targetStr + ' の列が見つかりません');
     return;
   }
 
