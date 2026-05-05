@@ -106,8 +106,8 @@ function sendShiftNotification() {
 
   body += '\n各自確認次第 👍 でリアクションお願いします。';
 
-  sendLineMessage('@All\n' + body);
-  Logger.log('送信完了:\n' + '@All\n' + body);
+  sendLineMessage(body);
+  Logger.log('送信完了:\n' + body);
 }
 
 // ==================== スタッフ名フィルタ ====================
@@ -134,17 +134,19 @@ function dateMatches(cellValue, targetDate) {
 }
 
 // ==================== LINE送信 ====================
-function sendLineMessage(text) {
+function sendLineMessage(body) {
+  // $all が @All メンションに置き換わる（substitution方式）
   var payload = {
     to: CONFIG.LINE_GROUP_ID,
     messages: [{
       type: 'textV2',
-      text: text,
-      mentionees: [{
-        index: 0,  // テキスト先頭の "@All"
-        length: 4, // "@All" は4文字
-        type: 'all'
-      }]
+      text: '$all\n' + body,
+      substitution: {
+        all: {
+          type: 'mention',
+          mentionee: { type: 'all' }
+        }
+      }
     }]
   };
 
