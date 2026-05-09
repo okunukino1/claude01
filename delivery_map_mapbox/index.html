@@ -837,7 +837,7 @@ function initMap() {
 // https://geoshape.ex.nii.ac.jp/ka/resource/ka_2020_dc/tilejson.json
 // ============================================================
 const GEOSHAPE_TILES = 'https://geoshape.ex.nii.ac.jp/ka/resource/ka_2020_dc/{z}/{x}/{y}.pbf';
-const GEOSHAPE_SOURCE_LAYER = 'ka2020';
+const GEOSHAPE_SOURCE_LAYER = 'ka_2020_dc';
 
 function addGeoshapeNeighborhoodLayers() {
   if (map.getSource('neighborhoods')) return;
@@ -1293,7 +1293,7 @@ function normalizeAddress(addr) {
 function cleanAddressForGeocoding(addr) {
   let a = normalizeAddress(addr);
   a = a.replace(/〒?\s*\d{3}[-]?\d{4}\s*/g, '');
-  a = a.replace(/[\u4e00-\u9fff々ー]{1,15}\s*様\s*/g, '');
+  a = a.replace(/[一-鿿々ー]{1,15}\s*様\s*/g, '');
   const m = a.match(/^(.*?\d{1,4}[-－ー]?\d{1,4}([-－ー]\d{1,4})?)/);
   if (m) {
     const base = m[1].trim();
