@@ -1,0 +1,29 @@
+name: Deploy delivery_map_mapbox to お名前.com
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'delivery_map_mapbox/**'
+  workflow_dispatch:  # 手動実行ボタンも有効化
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: FTP Deploy to お名前.com
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./delivery_map_mapbox/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}
+          exclude: |
+            **/config.php
+            **/.git*
+            **/node_modules/**
+          log-level: standard
