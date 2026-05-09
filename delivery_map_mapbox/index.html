@@ -813,7 +813,7 @@ function initMap() {
 
 // 国土地理院ベクトルタイル（CORS対応・ブラウザから直接アクセス可能）
 const GEOSHAPE_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
-const GEOSHAPE_SOURCE_LAYER = 'AdmArea';
+const GEOSHAPE_SOURCE_LAYER = 'boundary';
 function addGeoshapeNeighborhoodLayers() {
   if (map.getSource('neighborhoods')) return;
 
@@ -825,63 +825,17 @@ function addGeoshapeNeighborhoodLayers() {
     attribution: '行政区域: <a href="https://maps.gsi.go.jp/development/vt.html" target="_blank">国土地理院ベクトルタイル</a>'
   });
 
-  // デバッグ: idle後に複数のsource-layer名を試して確認
-  let _gsiDebugDone = false;
-  map.on('idle', () => {
-    if (_gsiDebugDone || map.getZoom() < 10) return;
-    _gsiDebugDone = true;
-    ['AdmArea', 'AdmBdry', 'boundary', 'admin', 'landforma'].forEach(ln => {
-      const f = map.querySourceFeatures('neighborhoods', { sourceLayer: ln });
-      console.log(`[GSI] "${ln}": ${f.length}件` + (f.length > 0 ? ' props=' + JSON.stringify(f[0].properties) : ''));
-    });
-    const rend = map.queryRenderedFeatures({ layers: ['neighborhoods-fill'] });
-    console.log('[GSI] fill描画数:', rend.length);
-  });
-
-  map.addLayer({
-    id: 'neighborhoods-fill',
-    type: 'fill',
-    source: 'neighborhoods',
-    'source-layer': GEOSHAPE_SOURCE_LAYER,
-    minzoom: 10,
-    paint: {
-      'fill-color': '#ff5722',
-      'fill-opacity': neighborhoodVisible ? 0.12 : 0
-    }
-  });
-
   map.addLayer({
     id: 'neighborhoods-line',
     type: 'line',
     source: 'neighborhoods',
     'source-layer': GEOSHAPE_SOURCE_LAYER,
     minzoom: 10,
+    filter: ['==', ['get', 'ftCode'], 1212],
     paint: {
       'line-color': '#a04020',
-      'line-width': 2,
-      'line-opacity': neighborhoodVisible ? 1.0 : 0
-    }
-  });
-
-  map.addLayer({
-    id: 'neighborhoods-label',
-    type: 'symbol',
-    source: 'neighborhoods',
-    'source-layer': GEOSHAPE_SOURCE_LAYER,
-    minzoom: 13,
-    layout: {
-      'text-field': ['coalesce', ['get', 'dctName'], ['get', 'name'], ['get', 'n_code']],
-      'text-size': 11,
-      'text-font': ['DIN Pro Regular', 'Arial Unicode MS Regular'],
-      'text-anchor': 'center',
-      'text-allow-overlap': false,
-      'text-padding': 4,
-      'visibility': neighborhoodVisible ? 'visible' : 'none'
-    },
-    paint: {
-      'text-color': '#5a3a1f',
-      'text-halo-color': 'rgba(255,250,235,0.9)',
-      'text-halo-width': 1.5
+      'line-width': 1.5,
+      'line-opacity': neighborhoodVisible ? 0.8 : 0
     }
   });
 }
@@ -889,10 +843,8 @@ function addGeoshapeNeighborhoodLayers() {
 function toggleNeighborhoods() {
   neighborhoodVisible = !neighborhoodVisible;
   localStorage.setItem(NEIGHBORHOOD_KEY, neighborhoodVisible ? '1' : '0');
-  if (map.getLayer('neighborhoods-fill')) {
-    map.setPaintProperty('neighborhoods-fill', 'fill-opacity', neighborhoodVisible ? 0.06 : 0);
-    map.setPaintProperty('neighborhoods-line', 'line-opacity', neighborhoodVisible ? 0.7 : 0);
-    map.setLayoutProperty('neighborhoods-label', 'visibility', neighborhoodVisible ? 'visible' : 'none');
+  if (map.getLayer('neighborhoods-line')) {
+    map.setPaintProperty('neighborhoods-line', 'line-opacity', neighborhoodVisible ? 0.8 : 0);
   }
   updateNeighborhoodButton();
   showToast(neighborhoodVisible ? '町丁目境界をON' : '町丁目境界をOFF');
