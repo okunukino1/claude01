@@ -811,11 +811,9 @@ function initMap() {
   });
 }
 
-// 国土地理院ベクタータイル（CORS対応・ブラウザから直接アクセス可能）
+// 国土地理院ベクトルタイル（CORS対応・ブラウザから直接アクセス可能）
 const GEOSHAPE_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
 const GEOSHAPE_SOURCE_LAYER = 'AdmArea';
-const GEOSHAPE_FILTER = ['==', 'rnkStr', '4']; // 大字・丁目レベル
-
 function addGeoshapeNeighborhoodLayers() {
   if (map.getSource('neighborhoods')) return;
 
@@ -824,7 +822,18 @@ function addGeoshapeNeighborhoodLayers() {
     tiles: [GEOSHAPE_TILES],
     minzoom: 4,
     maxzoom: 17,
-    attribution: '行政区域: <a href="https://maps.gsi.go.jp/development/vt.html" target="_blank">国土地理院ベクタータイル</a>'
+    attribution: '行政区域: <a href="https://maps.gsi.go.jp/development/vt.html" target="_blank">国土地理院ベクトルタイル</a>'
+  });
+
+  // デバッグ: タイルロード時に実際のフィーチャーを確認
+  map.on('sourcedata', (e) => {
+    if (e.sourceId !== 'neighborhoods' || !e.isSourceLoaded) return;
+    const features = map.querySourceFeatures('neighborhoods', { sourceLayer: GEOSHAPE_SOURCE_LAYER });
+    if (features.length > 0) {
+      console.log('[GSI] AdmArea サンプル:', features.slice(0, 3).map(f => f.properties));
+    } else {
+      console.warn('[GSI] AdmArea フィーチャーなし (source-layer名を確認)');
+    }
   });
 
   map.addLayer({
@@ -833,10 +842,9 @@ function addGeoshapeNeighborhoodLayers() {
     source: 'neighborhoods',
     'source-layer': GEOSHAPE_SOURCE_LAYER,
     minzoom: 10,
-    filter: GEOSHAPE_FILTER,
     paint: {
       'fill-color': '#ff5722',
-      'fill-opacity': neighborhoodVisible ? 0.06 : 0
+      'fill-opacity': neighborhoodVisible ? 0.12 : 0
     }
   });
 
@@ -846,12 +854,10 @@ function addGeoshapeNeighborhoodLayers() {
     source: 'neighborhoods',
     'source-layer': GEOSHAPE_SOURCE_LAYER,
     minzoom: 10,
-    filter: GEOSHAPE_FILTER,
     paint: {
       'line-color': '#a04020',
-      'line-width': 1.5,
-      'line-dasharray': [4, 2],
-      'line-opacity': neighborhoodVisible ? 0.7 : 0
+      'line-width': 2,
+      'line-opacity': neighborhoodVisible ? 1.0 : 0
     }
   });
 
@@ -861,9 +867,8 @@ function addGeoshapeNeighborhoodLayers() {
     source: 'neighborhoods',
     'source-layer': GEOSHAPE_SOURCE_LAYER,
     minzoom: 13,
-    filter: GEOSHAPE_FILTER,
     layout: {
-      'text-field': ['get', 'dctName'],
+      'text-field': ['coalesce', ['get', 'dctName'], ['get', 'name'], ['get', 'n_code']],
       'text-size': 11,
       'text-font': ['DIN Pro Regular', 'Arial Unicode MS Regular'],
       'text-anchor': 'center',
