@@ -142,17 +142,6 @@
   .delivery-marker.done .delivery-label .lbl-num { color: var(--done); }
   .delivery-label .lbl-bldg { font-weight: 600; }
 
-  .neighborhood-label {
-    background: rgba(255,250,235,0.85);
-    border: 1px solid #c8a868;
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 10px; font-weight: 600;
-    color: #5a3a1f;
-    white-space: nowrap;
-    pointer-events: none;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
-  }
 
   /* ===== GPS / North controls ===== */
   .map-control {
@@ -686,7 +675,6 @@ let map = null;
 let mapboxConfig = null;
 let deliveries = [];
 let markers = new Map();
-let neighborhoodLabelMarkers = [];
 let userMarker = null;
 let userMarkerEl = null;
 let placingItemId = null;
@@ -700,7 +688,6 @@ let gpsAutoFollow = false;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
 let recognition = null;
 let mapStyleLoaded = false;
-let pendingNeighborhoodGeoJson = null;
 
 // 番地表示用 state
 let addrVisible = false;
@@ -832,10 +819,7 @@ function initMap() {
       mapStyleLoaded = true;
       // Apply Japanese language for Mapbox Standard style
       try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
-      if (pendingNeighborhoodGeoJson) {
-        addNeighborhoodLayers(pendingNeighborhoodGeoJson);
-        pendingNeighborhoodGeoJson = null;
-      }
+      addGeoshapeNeighborhoodLayers();
       if (pendingAddrData) {
         addAddressLayer(pendingAddrData);
         pendingAddrData = null;
@@ -846,28 +830,32 @@ function initMap() {
 }
 
 // ============================================================
-// Neighborhood boundaries (GeoJSON overlay)
+// Neighborhood boundaries (NII Geoshape ベクタータイル — 全国対応)
+// 出典: 国立情報学研究所 Geoshapeリポジトリ 2020国勢調査 町丁・字等別境界
+// https://geoshape.ex.nii.ac.jp/ka/
+// source-layer名はTileJSONで確認可能:
+// https://geoshape.ex.nii.ac.jp/ka/resource/ka_2020_dc/tilejson.json
 // ============================================================
-async function loadNeighborhoodBoundaries() {
-  try {
-    const res = await fetch('data/chuo_nihonbashi_boundaries.geojson');
-    const geo = await res.json();
-    if (mapStyleLoaded) addNeighborhoodLayers(geo);
-    else pendingNeighborhoodGeoJson = geo;
-  } catch (e) {
-    console.warn('町丁目境界データの読み込みに失敗', e);
-  }
-}
+const GEOSHAPE_TILES = 'https://geoshape.ex.nii.ac.jp/ka/resource/ka_2020_dc/{z}/{x}/{y}.pbf';
+const GEOSHAPE_SOURCE_LAYER = 'ka2020';
 
-function addNeighborhoodLayers(geo) {
+function addGeoshapeNeighborhoodLayers() {
   if (map.getSource('neighborhoods')) return;
 
-  map.addSource('neighborhoods', { type: 'geojson', data: geo });
+  map.addSource('neighborhoods', {
+    type: 'vector',
+    tiles: [GEOSHAPE_TILES],
+    minzoom: 5,
+    maxzoom: 15,
+    attribution: '町丁目境界: <a href="https://geoshape.ex.nii.ac.jp/ka/" target="_blank">NII Geoshape</a> (2020国勢調査)'
+  });
 
   map.addLayer({
     id: 'neighborhoods-fill',
     type: 'fill',
     source: 'neighborhoods',
+    'source-layer': GEOSHAPE_SOURCE_LAYER,
+    minzoom: 10,
     paint: {
       'fill-color': '#ff5722',
       'fill-opacity': neighborhoodVisible ? 0.06 : 0
@@ -878,6 +866,8 @@ function addNeighborhoodLayers(geo) {
     id: 'neighborhoods-line',
     type: 'line',
     source: 'neighborhoods',
+    'source-layer': GEOSHAPE_SOURCE_LAYER,
+    minzoom: 10,
     paint: {
       'line-color': '#a04020',
       'line-width': 1.5,
@@ -886,17 +876,26 @@ function addNeighborhoodLayers(geo) {
     }
   });
 
-  geo.features.forEach((f) => {
-    const p = f.properties || {};
-    if (p.centerLng == null || p.centerLat == null) return;
-    const el = document.createElement('div');
-    el.className = 'neighborhood-label';
-    el.textContent = p.shortName || p.name || '';
-    if (!neighborhoodVisible) el.style.display = 'none';
-    const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-      .setLngLat([p.centerLng, p.centerLat])
-      .addTo(map);
-    neighborhoodLabelMarkers.push(marker);
+  map.addLayer({
+    id: 'neighborhoods-label',
+    type: 'symbol',
+    source: 'neighborhoods',
+    'source-layer': GEOSHAPE_SOURCE_LAYER,
+    minzoom: 13,
+    layout: {
+      'text-field': ['get', 's_name'],
+      'text-size': 11,
+      'text-font': ['DIN Pro Regular', 'Arial Unicode MS Regular'],
+      'text-anchor': 'center',
+      'text-allow-overlap': false,
+      'text-padding': 4,
+      'visibility': neighborhoodVisible ? 'visible' : 'none'
+    },
+    paint: {
+      'text-color': '#5a3a1f',
+      'text-halo-color': 'rgba(255,250,235,0.9)',
+      'text-halo-width': 1.5
+    }
   });
 }
 
@@ -906,10 +905,8 @@ function toggleNeighborhoods() {
   if (map.getLayer('neighborhoods-fill')) {
     map.setPaintProperty('neighborhoods-fill', 'fill-opacity', neighborhoodVisible ? 0.06 : 0);
     map.setPaintProperty('neighborhoods-line', 'line-opacity', neighborhoodVisible ? 0.7 : 0);
+    map.setLayoutProperty('neighborhoods-label', 'visibility', neighborhoodVisible ? 'visible' : 'none');
   }
-  neighborhoodLabelMarkers.forEach(m => {
-    m.getElement().style.display = neighborhoodVisible ? 'block' : 'none';
-  });
   updateNeighborhoodButton();
   showToast(neighborhoodVisible ? '町丁目境界をON' : '町丁目境界をOFF');
 }
@@ -2052,7 +2049,6 @@ document.querySelector('.placement-banner').addEventListener('click', cancelPlac
     showLoading('地図を読み込み中...');
     mapboxConfig = await loadMapboxConfig();
     await initMap();
-    await loadNeighborhoodBoundaries();
     loadDeliveries();
     renderMarkers();
     renderList();
