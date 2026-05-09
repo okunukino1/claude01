@@ -821,19 +821,21 @@ function addGeoshapeNeighborhoodLayers() {
     type: 'vector',
     tiles: [GEOSHAPE_TILES],
     minzoom: 4,
-    maxzoom: 17,
+    maxzoom: 14,
     attribution: '行政区域: <a href="https://maps.gsi.go.jp/development/vt.html" target="_blank">国土地理院ベクトルタイル</a>'
   });
 
-  // デバッグ: タイルロード時に実際のフィーチャーを確認
-  map.on('sourcedata', (e) => {
-    if (e.sourceId !== 'neighborhoods' || !e.isSourceLoaded) return;
-    const features = map.querySourceFeatures('neighborhoods', { sourceLayer: GEOSHAPE_SOURCE_LAYER });
-    if (features.length > 0) {
-      console.log('[GSI] AdmArea サンプル:', features.slice(0, 3).map(f => f.properties));
-    } else {
-      console.warn('[GSI] AdmArea フィーチャーなし (source-layer名を確認)');
-    }
+  // デバッグ: idle後に複数のsource-layer名を試して確認
+  let _gsiDebugDone = false;
+  map.on('idle', () => {
+    if (_gsiDebugDone || map.getZoom() < 10) return;
+    _gsiDebugDone = true;
+    ['AdmArea', 'AdmBdry', 'boundary', 'admin', 'landforma'].forEach(ln => {
+      const f = map.querySourceFeatures('neighborhoods', { sourceLayer: ln });
+      console.log(`[GSI] "${ln}": ${f.length}件` + (f.length > 0 ? ' props=' + JSON.stringify(f[0].properties) : ''));
+    });
+    const rend = map.queryRenderedFeatures({ layers: ['neighborhoods-fill'] });
+    console.log('[GSI] fill描画数:', rend.length);
   });
 
   map.addLayer({
@@ -1783,7 +1785,7 @@ function updateUserLocation(pos, moveMap = false) {
 }
 
 function ensureGpsWatching() {
-  if (!navigator.geolocation) { showToast('位置情報が利用できません', true); return false; }
+  if (!navigator.geolocation) { showToast('住置情報が利用できません', true); return false; }
   if (gpsActive && gpsWatchId !== null) return true;
 
   gpsActive = true;
