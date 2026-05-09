@@ -1,0 +1,2079 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ff5722">
+<title>RYS配送マップ (Mapbox版テスト)</title>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0d1117;
+    --ink-soft: #2a2f3a;
+    --paper: #f6f4ee;
+    --paper-soft: #ecead9;
+    --accent: #ff5722;
+    --accent-soft: #ffe0d6;
+    --done: #6b7280;
+    --danger: #d32f2f;
+    --list-height: 50dvh;
+    --list-collapsed-height: 46px;
+  }
+  body.list-collapsed { --list-height: var(--list-collapsed-height); }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%; height: 100dvh;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Meiryo", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* ===== Top bar ===== */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 8px calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left));
+    padding-top: calc(8px + env(safe-area-inset-top));
+    display: flex; align-items: center; gap: 8px;
+    z-index: 50;
+    border-bottom: 2px solid var(--accent);
+  }
+  .topbar h1 {
+    margin: 0; font-size: 14px; font-weight: 700;
+    flex: 1;
+    text-overflow: ellipsis; overflow: hidden; white-space: nowrap;
+  }
+  .topbar h1 .badge-test {
+    font-size: 10px; padding: 2px 6px;
+    background: var(--accent); color: white;
+    border-radius: 3px; margin-left: 6px; vertical-align: middle;
+  }
+  .topbar button {
+    background: transparent; color: var(--paper);
+    border: 1px solid var(--paper); border-radius: 6px;
+    padding: 6px 10px; font-size: 13px; cursor: pointer;
+    min-width: 38px; min-height: 36px;
+  }
+
+  /* ===== Map ===== */
+  #map {
+    position: fixed;
+    top: calc(48px + env(safe-area-inset-top));
+    bottom: var(--list-height);
+    left: 0; right: 0;
+    background: var(--paper-soft);
+    transition: bottom 0.25s ease;
+  }
+  .mapboxgl-ctrl-attrib { font-size: 10px !important; }
+
+  /* ===== Delivery marker (pin + label combined) ===== */
+  .delivery-marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: auto;
+  }
+
+  .delivery-pin {
+    width: 36px; height: 44px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .delivery-pin .pin-shape {
+    width: 30px; height: 30px;
+    background: var(--accent);
+    border: 2.5px solid var(--ink);
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    position: absolute;
+    left: 3px; top: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+  }
+  .delivery-marker.done .delivery-pin .pin-shape {
+    background: var(--done);
+    opacity: 0.6;
+  }
+  .delivery-marker.approx .delivery-pin .pin-shape {
+    background: #fbbf24;
+  }
+  .delivery-pin .pin-num {
+    position: absolute;
+    left: 0; top: 8px;
+    width: 36px; text-align: center;
+    color: white; font-weight: 800; font-size: 13px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    z-index: 2;
+  }
+  .delivery-marker.approx .delivery-pin .pin-num { color: var(--ink); }
+
+  /* ===== Label sits above pin in same wrapper ===== */
+  .delivery-label {
+    background: rgba(255,255,255,0.95);
+    border: 1.5px solid var(--ink);
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 11px; font-weight: 700;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    pointer-events: none;
+    color: var(--ink);
+    line-height: 1.3;
+    margin-bottom: 4px;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .delivery-marker.done .delivery-label { opacity: 0.55; }
+  .delivery-label .lbl-num {
+    color: var(--accent);
+    font-weight: 800;
+    margin-right: 3px;
+  }
+  .delivery-marker.done .delivery-label .lbl-num { color: var(--done); }
+  .delivery-label .lbl-bldg { font-weight: 600; }
+
+  .neighborhood-label {
+    background: rgba(255,250,235,0.85);
+    border: 1px solid #c8a868;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 10px; font-weight: 600;
+    color: #5a3a1f;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+
+  /* ===== GPS / North controls ===== */
+  .map-control {
+    position: fixed;
+    right: calc(8px + env(safe-area-inset-right));
+    top: calc(58px + env(safe-area-inset-top));
+    z-index: 30;
+    display: flex; flex-direction: column; gap: 6px;
+    align-items: flex-end;
+  }
+  .map-control button {
+    background: white;
+    color: var(--ink);
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    min-height: 38px;
+  }
+  .map-control button.tracking {
+    background: #2563eb;
+    color: white;
+    border-color: var(--ink);
+  }
+  .map-control #btn-north {
+    background: var(--accent);
+    color: white;
+  }
+  .map-control .gps-status {
+    background: rgba(13,17,23,0.85);
+    color: white;
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: none;
+    line-height: 1.3;
+  }
+  .map-control .gps-status.show { display: block; }
+
+  /* ===== Left-side map controls (display mode, neighborhood toggle) ===== */
+  .map-control-left {
+    position: fixed;
+    left: calc(8px + env(safe-area-inset-left));
+    top: calc(58px + env(safe-area-inset-top));
+    z-index: 30;
+    display: flex; flex-direction: column; gap: 6px;
+    align-items: flex-start;
+  }
+  .map-control-left button {
+    background: white;
+    color: var(--ink);
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px; font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    min-height: 36px;
+    white-space: nowrap;
+  }
+  .map-control-left button.on {
+    background: var(--accent);
+    color: white;
+  }
+
+  /* ===== Placement mode ===== */
+  body.placing-mode #map {
+    cursor: crosshair;
+    box-shadow: inset 0 0 0 4px var(--accent);
+  }
+  .placement-banner {
+    position: fixed;
+    top: calc(58px + env(safe-area-inset-top));
+    left: 50%; transform: translateX(-50%);
+    background: var(--accent);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 24px;
+    font-weight: 700; font-size: 13px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    z-index: 40;
+    display: none;
+    cursor: pointer;
+  }
+  body.placing-mode .placement-banner { display: block; }
+
+  /* ===== List section ===== */
+  .list-section {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: var(--list-height);
+    background: var(--paper);
+    border-top: 3px solid var(--ink);
+    display: flex; flex-direction: column;
+    z-index: 20;
+    padding-bottom: env(safe-area-inset-bottom);
+    transition: height 0.25s ease;
+  }
+  .list-header {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px;
+    background: var(--paper-soft);
+    border-bottom: 1px solid #d4cfb8;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    flex-shrink: 0;
+  }
+  .list-header h2 {
+    margin: 0; font-size: 13px; font-weight: 700; flex: 1;
+  }
+  .list-header .stat {
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+  .list-header .toggle-icon {
+    background: white;
+    border: 1.5px solid var(--ink);
+    border-radius: 6px;
+    width: 36px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800;
+    color: var(--ink);
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+  }
+  body.list-collapsed .list-header .toggle-icon {
+    transform: rotate(180deg);
+  }
+  body.list-collapsed .list-body {
+    display: none;
+  }
+  .list-body {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .delivery-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #e0dac4;
+    background: white;
+  }
+  .delivery-item.done {
+    opacity: 0.55;
+    background: var(--paper-soft);
+  }
+  .num-badge {
+    width: 32px; height: 32px;
+    background: var(--accent); color: white;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 14px;
+    flex-shrink: 0;
+  }
+  .delivery-item.done .num-badge { background: var(--done); }
+  .delivery-item.approx .num-badge {
+    background: #fbbf24;
+    color: var(--ink);
+  }
+  .item-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .item-info .addr {
+    font-size: 13px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .item-info .note {
+    font-size: 11px;
+    color: var(--ink-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+  .item-actions {
+    display: flex;
+    gap: 2px;
+  }
+  .item-actions button {
+    background: transparent;
+    border: 1px solid #c0bca8;
+    border-radius: 5px;
+    padding: 6px 8px;
+    font-size: 14px;
+    cursor: pointer;
+    min-width: 32px;
+    min-height: 32px;
+    line-height: 1;
+  }
+  .item-actions button.go-btn {
+    background: var(--accent);
+    color: white;
+    border-color: var(--ink);
+  }
+  .item-actions button.done-btn.completed {
+    background: var(--done);
+    color: white;
+  }
+
+  /* ===== Bottom add buttons ===== */
+  .add-bar {
+    position: fixed;
+    bottom: calc(var(--list-height) + env(safe-area-inset-bottom));
+    left: 0; right: 0;
+    z-index: 25;
+    display: flex; gap: 6px;
+    padding: 6px 8px;
+    background: var(--ink);
+    transition: bottom 0.25s ease;
+  }
+  .add-bar button {
+    flex: 1;
+    background: var(--accent);
+    color: white;
+    border: 2px solid var(--paper);
+    border-radius: 8px;
+    padding: 9px 6px;
+    font-size: 12px; font-weight: 700;
+    cursor: pointer;
+    min-height: 42px;
+  }
+  .add-bar button.secondary {
+    background: white;
+    color: var(--ink);
+    border-color: var(--paper);
+  }
+
+  /* ===== Modals ===== */
+  .modal-bg {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 100;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: white;
+    border-radius: 12px;
+    padding: 18px;
+    width: 100%;
+    max-width: 420px;
+    max-height: 90dvh;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+  .modal h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+  }
+  .modal label {
+    display: block;
+    font-size: 12px;
+    margin-bottom: 4px;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .modal input[type=text],
+  .modal input[type=tel],
+  .modal textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1.5px solid #c0bca8;
+    border-radius: 6px;
+    font-size: 15px;
+    font-family: inherit;
+    margin-bottom: 12px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+  .modal-actions {
+    display: flex; gap: 8px;
+    margin-top: 8px;
+  }
+  .modal-actions button {
+    flex: 1;
+    padding: 10px;
+    border-radius: 6px;
+    border: 2px solid var(--ink);
+    font-size: 14px; font-weight: 700;
+    cursor: pointer;
+    min-height: 42px;
+  }
+  .modal-actions button.primary {
+    background: var(--accent);
+    color: white;
+  }
+  .modal-actions button.cancel {
+    background: white;
+    color: var(--ink);
+  }
+  .modal-actions button.danger {
+    background: var(--danger);
+    color: white;
+  }
+  .menu-list button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: white;
+    border: 1px solid #d4cfb8;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    min-height: 44px;
+  }
+
+  /* ===== Toast ===== */
+  .toast {
+    position: fixed;
+    bottom: calc(var(--list-height) + 60px);
+    left: 50%; transform: translateX(-50%);
+    background: var(--ink);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 24px;
+    font-size: 13px; font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    z-index: 200;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    max-width: 90vw;
+    text-align: center;
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { background: var(--danger); }
+
+  .confirm-msg {
+    font-size: 14px;
+    line-height: 1.55;
+    margin-bottom: 16px;
+    white-space: pre-wrap;
+  }
+
+  /* ===== Loading overlay ===== */
+  .loading-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 150;
+    display: none;
+    align-items: center; justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+    color: white;
+  }
+  .loading-overlay.show { display: flex; }
+  .loading-spinner {
+    width: 48px; height: 48px;
+    border: 4px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-overlay .msg { font-size: 14px; font-weight: 600; }
+
+  .hidden-input { display: none; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span></h1>
+  <button id="btn-menu" type="button">⋮ メニュー</button>
+</div>
+
+<div id="map"></div>
+
+<div class="map-control">
+  <button id="btn-gps" type="button">◎ 現在地</button>
+  <button id="btn-north" type="button" style="display:none">🧭 北に戻す</button>
+  <div class="gps-status" id="gps-status"></div>
+</div>
+
+<div class="map-control-left">
+  <button id="btn-label-mode" type="button">表示: 番地+建物</button>
+  <button id="btn-neighborhoods" type="button" class="on">区域: ON</button>
+  <button id="btn-addr" type="button">番地表示: OFF</button>
+</div>
+
+<div class="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
+
+<div class="add-bar">
+  <button id="btn-add-photo" type="button">📷 伝票撮影</button>
+  <button id="btn-add-voice" type="button" class="secondary">🎤 音声</button>
+  <button id="btn-add-manual" type="button" class="secondary">✏️ 手入力</button>
+</div>
+
+<div class="list-section">
+  <div class="list-header" id="list-header">
+    <h2>配送リスト</h2>
+    <div class="stat" id="list-stat"></div>
+    <div class="toggle-icon" aria-label="リストを折りたたむ">▼</div>
+  </div>
+  <div class="list-body" id="list-body"></div>
+</div>
+
+<input type="file" id="file-photo" class="hidden-input" accept="image/*" capture="environment">
+
+<div class="modal-bg" id="modal-menu">
+  <div class="modal">
+    <h3>メニュー</h3>
+    <div class="menu-list">
+      <button id="menu-center-user" type="button">📍 現在地に移動</button>
+      <button id="menu-import" type="button">📥 他のアプリのリストを取り込む</button>
+      <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
+      <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
+      <button id="menu-clear-done" type="button">✓ 完了分を削除</button>
+      <button id="menu-clear-all" type="button">🗑 全件クリア</button>
+      <button id="menu-usage" type="button">📊 API使用状況</button>
+      <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
+      <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-add">
+  <div class="modal">
+    <h3>配送先を追加</h3>
+    <label>住所 (必須)</label>
+    <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
+    <label>備考 (建物名・部屋番号など)</label>
+    <textarea id="add-note" placeholder="○○ビル 5F"></textarea>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-add">キャンセル</button>
+      <button class="primary" id="btn-add-confirm" type="button">追加</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-edit">
+  <div class="modal">
+    <h3>配送先を編集</h3>
+    <label>住所</label>
+    <input type="text" id="edit-address">
+    <label>備考</label>
+    <textarea id="edit-note"></textarea>
+    <div class="modal-actions">
+      <button class="danger" id="btn-edit-delete" type="button">削除</button>
+      <button class="cancel" type="button" data-close="modal-edit">キャンセル</button>
+      <button class="primary" id="btn-edit-save" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-confirm">
+  <div class="modal">
+    <h3 id="confirm-title">確認</h3>
+    <div class="confirm-msg" id="confirm-msg"></div>
+    <div class="modal-actions">
+      <button class="cancel" id="confirm-cancel" type="button">キャンセル</button>
+      <button class="primary" id="confirm-ok" type="button">OK</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-usage">
+  <div class="modal">
+    <h3>API使用状況</h3>
+    <div id="usage-content" style="font-size: 13px; line-height: 1.7;"></div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-usage">閉じる</button>
+      <button class="danger" id="btn-reset-usage" type="button">リセット</button>
+    </div>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loading">
+  <div class="loading-spinner"></div>
+  <div class="msg" id="loading-msg">処理中...</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
+<script>
+'use strict';
+
+// ============================================================
+// State & Configuration
+// ============================================================
+const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
+const USAGE_KEY = 'rys-mapbox-usage-v1';
+const NEIGHBORHOOD_KEY = 'rys-mapbox-neighborhoods-visible';
+const LIST_COLLAPSED_KEY = 'rys-mapbox-list-collapsed';
+const LABEL_MODE_KEY = 'rys-mapbox-label-mode';
+const ADDR_VISIBLE_KEY = 'rys-mapbox-addr-visible';
+const ADDR_DATA_KEY = 'rys-mapbox-addr-data-v1';
+
+// Geoloniaの住所データ取得設定 (中央区固定。他区に拡張する場合はここを変更)
+const ADDR_PREF = '東京都';
+const ADDR_CITY = '中央区';
+const ADDR_API_BASE = 'https://japanese-addresses-v2.geoloniamaps.com/api/ja';
+
+// ラベル表示モード (Google版互換の4パターン)
+const LABEL_MODES = [
+  { key: 'num',  label: '番号のみ' },
+  { key: 'both', label: '番地+建物' },
+  { key: 'addr', label: '番地' },
+  { key: 'bldg', label: '建物' }
+];
+let labelModeIndex = 1; // デフォルト: 番地+建物
+
+const DEFAULT_CENTER_LNG = 139.7745;
+const DEFAULT_CENTER_LAT = 35.6845;
+const DEFAULT_ZOOM = 16;
+
+let map = null;
+let mapboxConfig = null;
+let deliveries = [];
+let markers = new Map();
+let neighborhoodLabelMarkers = [];
+let userMarker = null;
+let userMarkerEl = null;
+let placingItemId = null;
+let pendingPlacementCoord = null;
+let editingItemId = null;
+let confirmCallback = null;
+
+let gpsWatchId = null;
+let gpsActive = false;
+let gpsAutoFollow = false;
+let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
+let recognition = null;
+let mapStyleLoaded = false;
+let pendingNeighborhoodGeoJson = null;
+
+// 番地表示用 state
+let addrVisible = false;
+let addrData = null;     // セッション内メモリキャッシュ
+let addrLoading = false;
+let pendingAddrData = null;
+
+const OCR_COST_PER_CALL = 0.00015;
+const GEOCODE_COST_PER_CALL = 0.005;
+
+let usage = JSON.parse(localStorage.getItem(USAGE_KEY) || '{"ocr":0,"geocode":0}');
+
+// ============================================================
+// Utility helpers
+// ============================================================
+function $(id) { return document.getElementById(id); }
+
+function showToast(msg, isError = false) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => { t.className = 'toast' + (isError ? ' error' : ''); }, 3000);
+}
+
+function showLoading(msg) {
+  $('loading-msg').textContent = msg || '処理中...';
+  $('loading').classList.add('show');
+}
+function hideLoading() { $('loading').classList.remove('show'); }
+
+function openModal(id) { $(id).classList.add('show'); }
+function closeModal(id) { $(id).classList.remove('show'); }
+
+function showConfirm(title, msg, callback) {
+  $('confirm-title').textContent = title;
+  $('confirm-msg').textContent = msg;
+  confirmCallback = callback;
+  openModal('modal-confirm');
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function saveDeliveries() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(deliveries));
+}
+function loadDeliveries() {
+  try { deliveries = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+  catch { deliveries = []; }
+}
+
+function bumpUsage(kind) {
+  usage[kind] = (usage[kind] || 0) + 1;
+  localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// ============================================================
+// Mapbox config loader
+// ============================================================
+async function loadMapboxConfig() {
+  const res = await fetch('api/maps_config.php');
+  if (!res.ok) throw new Error('地図設定の取得に失敗しました');
+  const cfg = await res.json();
+  if (!cfg.mapboxAccessToken) {
+    throw new Error('Mapboxアクセストークンが設定されていません。api/config.php を確認してください。');
+  }
+  return cfg;
+}
+
+// ============================================================
+// Map initialization
+// ============================================================
+function initMap() {
+  mapboxgl.accessToken = mapboxConfig.mapboxAccessToken;
+
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: mapboxConfig.mapboxStyle || 'mapbox://styles/mapbox/standard',
+    center: [DEFAULT_CENTER_LNG, DEFAULT_CENTER_LAT],
+    zoom: DEFAULT_ZOOM,
+    pitch: 0,
+    bearing: 0,
+    dragRotate: true,
+    pitchWithRotate: true,
+    touchPitch: true,
+    touchZoomRotate: true,
+    config: {
+      basemap: { language: 'ja', lightPreset: 'day' }
+    },
+    attributionControl: {
+      compact: true,
+      customAttribution: '番地データ: <a href="https://github.com/geolonia/japanese-addresses-v2" target="_blank">Geolonia</a> / アドレス・ベース・レジストリ'
+    }
+  });
+
+  // Show "north reset" button whenever bearing/pitch is non-zero
+  map.on('rotate', () => {
+    const bearing = map.getBearing();
+    const pitch = map.getPitch();
+    $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
+  });
+  map.on('pitch', () => {
+    const bearing = map.getBearing();
+    const pitch = map.getPitch();
+    $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
+  });
+
+  // Map click: placement mode
+  map.on('click', (e) => {
+    if (!placingItemId) return;
+    pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+    const d = deliveries.find(x => x.id === placingItemId);
+    showConfirm(
+      '位置を変更',
+      `「${d ? d.address : '配送先'}」をこの場所に移動してよいですか？`,
+      () => commitPlacement()
+    );
+  });
+
+  return new Promise((resolve) => {
+    map.on('load', () => {
+      mapStyleLoaded = true;
+      // Apply Japanese language for Mapbox Standard style
+      try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
+      if (pendingNeighborhoodGeoJson) {
+        addNeighborhoodLayers(pendingNeighborhoodGeoJson);
+        pendingNeighborhoodGeoJson = null;
+      }
+      if (pendingAddrData) {
+        addAddressLayer(pendingAddrData);
+        pendingAddrData = null;
+      }
+      resolve();
+    });
+  });
+}
+
+// ============================================================
+// Neighborhood boundaries (GeoJSON overlay)
+// ============================================================
+async function loadNeighborhoodBoundaries() {
+  try {
+    const res = await fetch('data/chuo_nihonbashi_boundaries.geojson');
+    const geo = await res.json();
+    if (mapStyleLoaded) addNeighborhoodLayers(geo);
+    else pendingNeighborhoodGeoJson = geo;
+  } catch (e) {
+    console.warn('町丁目境界データの読み込みに失敗', e);
+  }
+}
+
+function addNeighborhoodLayers(geo) {
+  if (map.getSource('neighborhoods')) return;
+
+  map.addSource('neighborhoods', { type: 'geojson', data: geo });
+
+  map.addLayer({
+    id: 'neighborhoods-fill',
+    type: 'fill',
+    source: 'neighborhoods',
+    paint: {
+      'fill-color': '#ff5722',
+      'fill-opacity': neighborhoodVisible ? 0.06 : 0
+    }
+  });
+
+  map.addLayer({
+    id: 'neighborhoods-line',
+    type: 'line',
+    source: 'neighborhoods',
+    paint: {
+      'line-color': '#a04020',
+      'line-width': 1.5,
+      'line-dasharray': [4, 2],
+      'line-opacity': neighborhoodVisible ? 0.7 : 0
+    }
+  });
+
+  geo.features.forEach((f) => {
+    const p = f.properties || {};
+    if (p.centerLng == null || p.centerLat == null) return;
+    const el = document.createElement('div');
+    el.className = 'neighborhood-label';
+    el.textContent = p.shortName || p.name || '';
+    if (!neighborhoodVisible) el.style.display = 'none';
+    const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+      .setLngLat([p.centerLng, p.centerLat])
+      .addTo(map);
+    neighborhoodLabelMarkers.push(marker);
+  });
+}
+
+function toggleNeighborhoods() {
+  neighborhoodVisible = !neighborhoodVisible;
+  localStorage.setItem(NEIGHBORHOOD_KEY, neighborhoodVisible ? '1' : '0');
+  if (map.getLayer('neighborhoods-fill')) {
+    map.setPaintProperty('neighborhoods-fill', 'fill-opacity', neighborhoodVisible ? 0.06 : 0);
+    map.setPaintProperty('neighborhoods-line', 'line-opacity', neighborhoodVisible ? 0.7 : 0);
+  }
+  neighborhoodLabelMarkers.forEach(m => {
+    m.getElement().style.display = neighborhoodVisible ? 'block' : 'none';
+  });
+  updateNeighborhoodButton();
+  showToast(neighborhoodVisible ? '町丁目境界をON' : '町丁目境界をOFF');
+}
+
+function updateNeighborhoodButton() {
+  const btn = $('btn-neighborhoods');
+  if (!btn) return;
+  btn.textContent = neighborhoodVisible ? '区域: ON' : '区域: OFF';
+  btn.classList.toggle('on', neighborhoodVisible);
+}
+
+// ============================================================
+// 番地表示 (Geolonia japanese-addresses-v2 から動的取得)
+// CC BY 4.0 / 出典: アドレス・ベース・レジストリ (デジタル庁)
+// ============================================================
+async function fetchAddressData(onProgress) {
+  const prefEnc = encodeURIComponent(ADDR_PREF);
+  const cityEnc = encodeURIComponent(ADDR_CITY);
+  const baseUrl = `${ADDR_API_BASE}/${prefEnc}/${cityEnc}`;
+
+  // Step 1: 市区町村JSONを取得 (町字一覧と byte range 情報)
+  const cityRes = await fetch(`${baseUrl}.json`);
+  if (!cityRes.ok) {
+    throw new Error(`市区町村データ取得失敗 (HTTP ${cityRes.status})`);
+  }
+  const cityJson = await cityRes.json();
+
+  // Step 2: 住居表示エリアの byte range を抽出
+  const ranges = (cityJson.data || [])
+    .filter(m => m.rsdt && m.csv_ranges && m.csv_ranges['住居表示'])
+    .map(m => ({
+      machiazaName: (m.oaza_cho || '') + (m.chome || ''),
+      start: m.csv_ranges['住居表示'].start,
+      length: m.csv_ranges['住居表示'].length
+    }));
+
+  if (ranges.length === 0) {
+    return { type: 'FeatureCollection', features: [] };
+  }
+
+  // Step 3: 各町字の byte range を並列フェッチ
+  const txtUrl = `${baseUrl}-住居表示.txt`;
+  const features = [];
+  let completed = 0;
+  const total = ranges.length;
+  const CONCURRENCY = 6;
+  let nextIdx = 0;
+
+  async function worker() {
+    while (nextIdx < ranges.length) {
+      const r = ranges[nextIdx++];
+      try {
+        const res = await fetch(txtUrl, {
+          headers: { 'Range': `bytes=${r.start}-${r.start + r.length - 1}` }
+        });
+        if (res.ok || res.status === 206) {
+          const text = await res.text();
+          parseAddrSection(text, r.machiazaName, features);
+        }
+      } catch (e) {
+        console.warn(`fetch failed for ${r.machiazaName}:`, e);
+      }
+      completed++;
+      if (onProgress) onProgress(completed, total);
+    }
+  }
+
+  const workerCount = Math.min(CONCURRENCY, ranges.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  return { type: 'FeatureCollection', features };
+}
+
+function parseAddrSection(text, machiazaName, features) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 3) return;
+
+  // Line 0: セクションヘッダー (例 "住居表示,室町四丁目") — 破棄
+  // Line 1: カラム名 (住居表示の場合 "blk_num,rsdt_num,rsdt_num2,lng,lat")
+  // Line 2+: データ行
+  const cols = lines[1].split(',').map(s => s.trim());
+  const idx = (n) => cols.indexOf(n);
+  // 住居表示(RSDT)用カラム名 — 中央区はこちら
+  const iBlk   = idx('blk_num');
+  const iRsdt  = idx('rsdt_num');
+  const iRsdt2 = idx('rsdt_num2');
+  // 地番(CHIBAN)用カラム名 — フォールバック
+  const iPrc1  = idx('prc_num1');
+  const iPrc2  = idx('prc_num2');
+  const iPrc3  = idx('prc_num3');
+  const iLng   = idx('lng');
+  const iLat   = idx('lat');
+  if (iLng < 0 || iLat < 0) return;
+  const isRsdt = iBlk >= 0;
+  const isChiban = iPrc1 >= 0;
+  if (!isRsdt && !isChiban) return;
+
+  for (let i = 2; i < lines.length; i++) {
+    const v = lines[i].split(',');
+    let n1, n2, n3;
+    if (isRsdt) {
+      n1 = (v[iBlk] || '').trim();
+      n2 = (v[iRsdt] || '').trim();
+      n3 = (v[iRsdt2] || '').trim();
+    } else {
+      n1 = (v[iPrc1] || '').trim();
+      n2 = (v[iPrc2] || '').trim();
+      n3 = (v[iPrc3] || '').trim();
+    }
+    const lng = parseFloat(v[iLng]);
+    const lat = parseFloat(v[iLat]);
+    if (!isFinite(lng) || !isFinite(lat) || !n1) continue;
+
+    let label = n1;
+    if (n2) label += '-' + n2;
+    if (n3) label += '-' + n3;
+
+    features.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [lng, lat] },
+      properties: { label, n1, n2, n3, machiaza: machiazaName }
+    });
+  }
+}
+
+async function ensureAddressData() {
+  if (addrData) return addrData;
+  if (addrLoading) return null;
+
+  addrLoading = true;
+  try {
+    // Step 1: localStorage キャッシュを試す (即座に表示できる)
+    try {
+      const cached = localStorage.getItem(ADDR_DATA_KEY);
+      if (cached) {
+        const data = JSON.parse(cached);
+        if (data && data.type === 'FeatureCollection' && Array.isArray(data.features)) {
+          addrData = data;
+          return data;
+        }
+      }
+    } catch (e) { /* キャッシュ破損、新規取得 */ }
+
+    // Step 2: ネットワークから取得
+    showLoading('番地データを取得中...');
+    const data = await fetchAddressData((c, t) => {
+      $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;
+    });
+    addrData = data;
+    // Step 3: キャッシュに保存 (容量超過時はスキップ)
+    try {
+      localStorage.setItem(ADDR_DATA_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.warn('番地データのキャッシュ保存失敗 (容量超過の可能性)', e);
+    }
+    return data;
+  } catch (e) {
+    showToast('番地データ取得失敗: ' + e.message, true);
+    return null;
+  } finally {
+    addrLoading = false;
+    hideLoading();
+  }
+}
+
+function addAddressLayer(data) {
+  if (!map || map.getSource('addr-points')) return;
+  map.addSource('addr-points', { type: 'geojson', data });
+  map.addLayer({
+    id: 'addr-points-label',
+    type: 'symbol',
+    source: 'addr-points',
+    minzoom: 17,
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-size': [
+        'interpolate', ['linear'], ['zoom'],
+        17, 9,
+        18, 11,
+        20, 13
+      ],
+      'text-allow-overlap': false,
+      'text-padding': 2,
+      'text-anchor': 'center',
+      // 短いラベル(街区符号のみ)を優先表示
+      'symbol-sort-key': ['length', ['get', 'label']]
+    },
+    paint: {
+      'text-color': '#1f3a5f',
+      'text-halo-color': 'rgba(255,255,255,0.95)',
+      'text-halo-width': 1.5
+    }
+  });
+}
+
+function removeAddressLayer() {
+  if (!map) return;
+  if (map.getLayer('addr-points-label')) map.removeLayer('addr-points-label');
+  if (map.getSource('addr-points')) map.removeSource('addr-points');
+}
+
+function updateAddrButton() {
+  const btn = $('btn-addr');
+  if (!btn) return;
+  btn.textContent = addrVisible ? '番地表示: ON' : '番地表示: OFF';
+  btn.classList.toggle('on', addrVisible);
+}
+
+async function toggleAddressBlocks() {
+  if (addrVisible) {
+    // OFFにする
+    addrVisible = false;
+    removeAddressLayer();
+    localStorage.setItem(ADDR_VISIBLE_KEY, '0');
+    updateAddrButton();
+    showToast('番地表示OFF');
+    return;
+  }
+  // ONにする
+  if (!addrData) {
+    const data = await ensureAddressData();
+    if (!data) return;
+  }
+  addrVisible = true;
+  if (mapStyleLoaded) {
+    addAddressLayer(addrData);
+  } else {
+    pendingAddrData = addrData;
+  }
+  localStorage.setItem(ADDR_VISIBLE_KEY, '1');
+  updateAddrButton();
+  showToast(`番地表示ON (${addrData.features.length.toLocaleString()}件) — ズーム17以上で表示`);
+}
+
+// メニューから「番地データを再取得」した時の処理
+async function refreshAddressData() {
+  closeModal('modal-menu');
+  showConfirm(
+    '番地データ再取得',
+    'キャッシュを破棄して最新データを取り直しますか？\n通信が発生します(数百KB〜)。',
+    async () => {
+      // メモリキャッシュ・localStorageキャッシュを破棄、レイヤー破棄
+      addrData = null;
+      localStorage.removeItem(ADDR_DATA_KEY);
+      removeAddressLayer();
+      const data = await ensureAddressData();
+      if (!data) return;
+      if (addrVisible) {
+        addAddressLayer(data);
+        showToast(`番地データ再取得完了 (${data.features.length.toLocaleString()}件)`);
+      } else {
+        showToast(`番地データ再取得完了 (${data.features.length.toLocaleString()}件) — 「番地表示: ON」で表示`);
+      }
+    }
+  );
+}
+
+// ============================================================
+// Delivery markers (pin + label combined)
+// ============================================================
+function clearAllMarkers() {
+  markers.forEach(m => m.remove());
+  markers.clear();
+}
+
+// 住所文字列から番地部分(例: "4-2-10")を抽出
+function extractBanchi(address) {
+  if (!address) return '';
+  // 郵便番号を除去
+  const cleaned = address.replace(/〒\s*\d{3}[-]?\d{4}\s*/g, '');
+  // X-Y-Z や X-Y のパターンを全部見つけて、最後のもの(最も具体的な番地)を採用
+  const matches = cleaned.match(/\d+(?:-\d+)+/g);
+  if (matches && matches.length > 0) return matches[matches.length - 1];
+  // 番地が無い場合は丁目を返す
+  const chomeMatch = cleaned.match(/\d+丁目/);
+  if (chomeMatch) return chomeMatch[0];
+  return '';
+}
+
+// 備考(note)から建物名らしき部分を抽出
+function extractBuilding(note) {
+  if (!note) return '';
+  // 改行で複数行ある場合は1行目だけ
+  return note.split(/[\n\r]/)[0].trim().slice(0, 24);
+}
+
+// モードに応じてラベルテキストを組み立て
+function buildLabelText(d, num, modeKey) {
+  const numPart = `#${num}`;
+  if (modeKey === 'num') return { num: numPart, body: '' };
+  const banchi = extractBanchi(d.address);
+  const bldg   = extractBuilding(d.note);
+  let body = '';
+  if (modeKey === 'both') body = [banchi, bldg].filter(Boolean).join(' ');
+  else if (modeKey === 'addr') body = banchi;
+  else if (modeKey === 'bldg') body = bldg;
+  return { num: numPart, body };
+}
+
+function renderMarkers() {
+  if (!map) return;
+  clearAllMarkers();
+  const modeKey = LABEL_MODES[labelModeIndex].key;
+
+  deliveries.forEach((d, idx) => {
+    if (d.lat == null || d.lng == null) return;
+    const num = idx + 1;
+
+    // ラッパー: pin + label を1つのDOM要素に統合
+    const wrapper = document.createElement('div');
+    wrapper.className = 'delivery-marker'
+      + (d.completed ? ' done' : '')
+      + (d.approx ? ' approx' : '');
+
+    // ラベル(モード "num" でも#番号は表示する)
+    const { num: numText, body } = buildLabelText(d, num, modeKey);
+    const lbl = document.createElement('div');
+    lbl.className = 'delivery-label';
+    lbl.innerHTML = body
+      ? `<span class="lbl-num">${numText}</span><span class="lbl-bldg">${escapeHtml(body)}</span>`
+      : `<span class="lbl-num">${numText}</span>`;
+    wrapper.appendChild(lbl);
+
+    // ピン
+    const pin = document.createElement('div');
+    pin.className = 'delivery-pin';
+    pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${num}${d.approx ? '?' : ''}</div>`;
+    wrapper.appendChild(pin);
+
+    // ラッパー全体のタップで編集を開く
+    wrapper.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEdit(d.id);
+    });
+
+    const marker = new mapboxgl.Marker({
+      element: wrapper,
+      anchor: 'bottom',
+      // ピンとラベルが画面に対して常に正立し、サイズも一定に保たれる
+      rotationAlignment: 'viewport',
+      pitchAlignment: 'viewport'
+    }).setLngLat([d.lng, d.lat]).addTo(map);
+    markers.set(d.id, marker);
+  });
+}
+
+// 表示モード切替
+function cycleLabelMode() {
+  labelModeIndex = (labelModeIndex + 1) % LABEL_MODES.length;
+  localStorage.setItem(LABEL_MODE_KEY, String(labelModeIndex));
+  updateLabelModeButton();
+  renderMarkers();
+  showToast(`表示: ${LABEL_MODES[labelModeIndex].label}`);
+}
+
+function updateLabelModeButton() {
+  const btn = $('btn-label-mode');
+  if (btn) btn.textContent = `表示: ${LABEL_MODES[labelModeIndex].label}`;
+}
+
+function loadLabelMode() {
+  const saved = localStorage.getItem(LABEL_MODE_KEY);
+  if (saved !== null) {
+    const idx = parseInt(saved, 10);
+    if (!Number.isNaN(idx) && idx >= 0 && idx < LABEL_MODES.length) {
+      labelModeIndex = idx;
+    }
+  }
+}
+
+// ============================================================
+// Geocoding (server-side Google Geocoding via PHP)
+// ============================================================
+function normalizeAddress(addr) {
+  if (!addr) return '';
+  return addr
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[‐－―ー−]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanAddressForGeocoding(addr) {
+  let a = normalizeAddress(addr);
+  a = a.replace(/〒?\s*\d{3}[-]?\d{4}\s*/g, '');
+  a = a.replace(/[\u4e00-\u9fff々ー]{1,15}\s*様\s*/g, '');
+  const m = a.match(/^(.*?\d{1,4}[-－ー]?\d{1,4}([-－ー]\d{1,4})?)/);
+  if (m) {
+    const base = m[1].trim();
+    if (base.length >= 6) return base;
+  }
+  return a;
+}
+
+async function geocodeAddress(rawAddress) {
+  const candidates = [
+    cleanAddressForGeocoding(rawAddress),
+    normalizeAddress(rawAddress)
+  ].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+  for (const q of candidates) {
+    try {
+      bumpUsage('geocode');
+      const res = await fetch('api/geocode_address.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: q })
+      });
+      const data = await res.json();
+      if (data && data.lat && data.lng) {
+        return {
+          lat: data.lat,
+          lng: data.lng,
+          approx: !!data.approx,
+          formatted: data.formatted || q
+        };
+      }
+    } catch (e) {
+      console.warn('geocode failed for', q, e);
+    }
+  }
+  return null;
+}
+
+// ============================================================
+// Add a delivery
+// ============================================================
+async function addDelivery({ address, note }) {
+  if (!address) { showToast('住所が空です', true); return; }
+  showLoading('住所を検索中...');
+  const result = await geocodeAddress(address);
+  hideLoading();
+  if (!result) { showToast('住所が見つかりませんでした', true); return; }
+
+  const d = {
+    id: uid(),
+    address,
+    note: note || '',
+    lat: result.lat,
+    lng: result.lng,
+    approx: result.approx,
+    formatted: result.formatted,
+    completed: false,
+    completedAt: null,
+    createdAt: Date.now()
+  };
+  deliveries.push(d);
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
+  showToast(result.approx ? '⚠ 概算位置で追加しました' : '配送先を追加しました');
+}
+
+// ============================================================
+// Render list
+// ============================================================
+function renderList() {
+  const body = $('list-body');
+  const stat = $('list-stat');
+  if (deliveries.length === 0) {
+    body.innerHTML = '<div class="empty">配送先がありません<br>下のボタンから追加してください</div>';
+    stat.textContent = '';
+    return;
+  }
+  const done = deliveries.filter(d => d.completed).length;
+  stat.textContent = `${done}/${deliveries.length}件 完了`;
+
+  body.innerHTML = deliveries.map((d, idx) => {
+    const num = idx + 1;
+    const cls = 'delivery-item' + (d.completed ? ' done' : '') + (d.approx ? ' approx' : '');
+    return `
+      <div class="${cls}" data-id="${d.id}">
+        <div class="num-badge">${num}${d.approx ? '?' : ''}</div>
+        <div class="item-info">
+          <div class="addr">${escapeHtml(d.address)}</div>
+          ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}
+        </div>
+        <div class="item-actions">
+          <button class="done-btn ${d.completed ? 'completed' : ''}" data-action="done" data-id="${d.id}" title="完了">${d.completed ? '↩' : '✓'}</button>
+          <button class="go-btn" data-action="navi" data-id="${d.id}" title="ナビ">▶</button>
+          <button data-action="place" data-id="${d.id}" title="位置修正">📍</button>
+          <button data-action="edit" data-id="${d.id}" title="編集">✎</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  body.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const action = btn.dataset.action;
+      if (action === 'done') toggleDone(id);
+      else if (action === 'navi') openNavigation(id);
+      else if (action === 'place') startPlacement(id);
+      else if (action === 'edit') openEdit(id);
+    });
+  });
+
+  body.querySelectorAll('.delivery-item').forEach(row => {
+    row.addEventListener('click', () => {
+      const d = deliveries.find(x => x.id === row.dataset.id);
+      if (d && d.lat) {
+        map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
+      }
+    });
+  });
+}
+
+// ============================================================
+// Item actions
+// ============================================================
+function toggleDone(id) {
+  const d = deliveries.find(x => x.id === id);
+  if (!d) return;
+  d.completed = !d.completed;
+  d.completedAt = d.completed ? Date.now() : null;
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+}
+
+function openNavigation(id) {
+  const d = deliveries.find(x => x.id === id);
+  if (!d || d.lat == null) return;
+  // Use Google Maps for actual navigation
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}&travelmode=driving`;
+  window.open(url, '_blank');
+}
+
+function startPlacement(id) {
+  placingItemId = id;
+  document.body.classList.add('placing-mode');
+  showToast('地図上で位置をタップしてください');
+}
+
+function commitPlacement() {
+  if (!placingItemId || !pendingPlacementCoord) return;
+  const d = deliveries.find(x => x.id === placingItemId);
+  if (!d) return;
+  d.lat = pendingPlacementCoord.lat;
+  d.lng = pendingPlacementCoord.lng;
+  d.approx = false;
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  placingItemId = null;
+  pendingPlacementCoord = null;
+  document.body.classList.remove('placing-mode');
+  showToast('位置を更新しました');
+}
+
+function cancelPlacement() {
+  placingItemId = null;
+  pendingPlacementCoord = null;
+  document.body.classList.remove('placing-mode');
+  showToast('位置修正をキャンセル');
+}
+
+function openEdit(id) {
+  editingItemId = id;
+  const d = deliveries.find(x => x.id === id);
+  if (!d) return;
+  $('edit-address').value = d.address;
+  $('edit-note').value = d.note || '';
+  openModal('modal-edit');
+}
+
+async function saveEditedItem() {
+  if (!editingItemId) return;
+  const d = deliveries.find(x => x.id === editingItemId);
+  if (!d) return;
+  const newAddr = $('edit-address').value.trim();
+  const newNote = $('edit-note').value.trim();
+  if (!newAddr) { showToast('住所を入力してください', true); return; }
+
+  const addressChanged = (newAddr !== d.address);
+  d.note = newNote;
+
+  if (addressChanged) {
+    showLoading('住所を再検索中...');
+    const result = await geocodeAddress(newAddr);
+    hideLoading();
+    if (result) {
+      d.address = newAddr;
+      d.lat = result.lat;
+      d.lng = result.lng;
+      d.approx = result.approx;
+      d.formatted = result.formatted;
+    } else {
+      showToast('住所が見つかりませんでした(備考のみ更新)', true);
+    }
+  } else {
+    d.address = newAddr;
+  }
+
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  closeModal('modal-edit');
+  editingItemId = null;
+  showToast('更新しました');
+}
+
+function deleteEditedItem() {
+  if (!editingItemId) return;
+  const d = deliveries.find(x => x.id === editingItemId);
+  if (!d) return;
+  showConfirm(
+    '削除の確認',
+    `「${d.address}」を削除しますか？`,
+    () => {
+      deliveries = deliveries.filter(x => x.id !== editingItemId);
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      closeModal('modal-edit');
+      editingItemId = null;
+      showToast('削除しました');
+    }
+  );
+}
+
+// ============================================================
+// Voice input
+// ============================================================
+
+// 音声テキストを「住所」「備考(建物名等)」に自動分割
+// 例: "日本橋室町4-2-10坂田ビル" → { address: "日本橋室町4-2-10", note: "坂田ビル" }
+//     "日本橋室町4の2の10坂田ビル7階" → { address: "日本橋室町4-2-10", note: "坂田ビル7階" }
+//     "日本橋本町3丁目4番6号ABCビル" → { address: "日本橋本町3丁目4番6号", note: "ABCビル" }
+function splitAddressAndBuilding(text) {
+  if (!text) return { address: '', note: '' };
+
+  // Step 1: 正規化
+  // - 全角数字 → 半角数字
+  // - 数字間の「の」「ノ」「長音記号」「全角ハイフン」→ ハイフン
+  //   ※ lookahead を使うことで「4の2の10」のような連続パターンも一発変換
+  let s = text
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/(\d)\s*の\s*(?=\d)/g, '$1-')
+    .replace(/(\d)\s*ノ\s*(?=\d)/g, '$1-')
+    .replace(/(\d)\s*[ー－―−]\s*(?=\d)/g, '$1-');
+
+  // Step 2: 番地パターンを検出 (複数パターンを試す)
+  // 末尾位置が一番うしろのものを採用 = もっとも具体的な番地
+  const patterns = [
+    /\d+丁目\s*\d+番(?:地)?\s*\d+号?/g,   // 4丁目2番10号 / 4丁目2番地10号
+    /\d+番(?:地)?\s*\d+号?/g,             // 2番10号 / 2番地10
+    /\d+(?:-\d+){1,3}/g,                  // 4-2-10 / 4-2-10-3
+  ];
+
+  let bestEnd = -1;
+  for (const pattern of patterns) {
+    const matches = [...s.matchAll(pattern)];
+    for (const m of matches) {
+      // 文頭の郵便番号 (XXX-XXXX) は除外
+      if (m.index < 10 && /^\d{3}-\d{4}$/.test(m[0])) continue;
+      const end = m.index + m[0].length;
+      if (end > bestEnd) bestEnd = end;
+    }
+  }
+
+  if (bestEnd < 0) {
+    // 番地パターンが見つからない場合は全部住所欄に
+    return { address: s, note: '' };
+  }
+
+  let address = s.slice(0, bestEnd).trim();
+  let note = s.slice(bestEnd).trim();
+  // 備考の先頭の記号やスペースを除去
+  note = note.replace(/^[\s,、。「」『』　ー\-]+/, '');
+
+  return { address, note };
+}
+
+function startVoiceInput() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { showToast('音声入力に対応していません', true); return; }
+  if (recognition) { recognition.stop(); recognition = null; }
+  recognition = new SR();
+  recognition.lang = 'ja-JP';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  showLoading('🎤 話してください...');
+  recognition.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    hideLoading();
+    const split = splitAddressAndBuilding(transcript);
+    $('add-address').value = split.address;
+    $('add-note').value = split.note;
+    openModal('modal-add');
+  };
+  recognition.onerror = (e) => {
+    hideLoading();
+    showToast('音声認識エラー: ' + e.error, true);
+  };
+  recognition.onend = () => { hideLoading(); };
+  recognition.start();
+}
+
+// ============================================================
+// Photo OCR
+// ============================================================
+async function handlePhotoUpload(file) {
+  if (!file) return;
+  showLoading('画像を圧縮中...');
+  try {
+    const compressed = await compressImage(file, 1280, 0.85);
+    showLoading('画像を変換中...');
+    const base64 = await blobToBase64(compressed);
+    showLoading('AI で住所を読み取り中...');
+    const res = await fetch('api/extract_address.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' })
+    });
+    const data = await res.json();
+    bumpUsage('ocr');
+    hideLoading();
+    if (!res.ok || !data.address) {
+      showToast(data.error || '住所が読み取れませんでした', true);
+      return;
+    }
+    $('add-address').value = data.address || '';
+    $('add-note').value = data.note || data.building || '';
+    openModal('modal-add');
+  } catch (e) {
+    hideLoading();
+    showToast('画像処理に失敗しました: ' + e.message, true);
+  }
+}
+
+// Blob → base64文字列 (data: prefix抜き)
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result;
+      // "data:image/jpeg;base64,XXXXX" の "XXXXX" 部分だけ取り出す
+      const idx = dataUrl.indexOf(',');
+      resolve(idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl);
+    };
+    reader.onerror = () => reject(new Error('Base64変換に失敗しました'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function compressImage(file, maxSize, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { width, height } = img;
+      if (width > maxSize || height > maxSize) {
+        const r = Math.min(maxSize / width, maxSize / height);
+        width = Math.round(width * r);
+        height = Math.round(height * r);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('Canvas blob failed')), 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Image load failed')); };
+    img.src = objectUrl;
+  });
+}
+
+// ============================================================
+// List operations / Usage / Settings
+// ============================================================
+function copyListToClipboard() {
+  if (deliveries.length === 0) { showToast('配送先がありません', true); return; }
+  const text = deliveries.map((d, i) => {
+    const mark = d.completed ? '✓' : '○';
+    return `${mark} ${i + 1}. ${d.address}${d.note ? ' / ' + d.note : ''}`;
+  }).join('\n');
+  navigator.clipboard.writeText(text).then(
+    () => showToast('リストをコピーしました'),
+    () => showToast('コピーに失敗しました', true)
+  );
+  closeModal('modal-menu');
+}
+
+function clearCompleted() {
+  const n = deliveries.filter(d => d.completed).length;
+  if (n === 0) { showToast('完了済みの配送先がありません'); return; }
+  closeModal('modal-menu');
+  showConfirm('完了分削除', `完了済み ${n} 件を削除しますか？`, () => {
+    deliveries = deliveries.filter(d => !d.completed);
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    showToast(`${n}件 削除しました`);
+  });
+}
+
+function clearAll() {
+  if (deliveries.length === 0) { showToast('配送先がありません'); return; }
+  closeModal('modal-menu');
+  showConfirm('全件クリア', `全 ${deliveries.length} 件を削除しますか？\nこの操作は取り消せません。`, () => {
+    deliveries = [];
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    showToast('全件削除しました');
+  });
+}
+
+function showUsage() {
+  closeModal('modal-menu');
+  const ocrCost = (usage.ocr * OCR_COST_PER_CALL).toFixed(4);
+  const geoCost = (usage.geocode * GEOCODE_COST_PER_CALL).toFixed(3);
+  const total = (parseFloat(ocrCost) + parseFloat(geoCost)).toFixed(3);
+  $('usage-content').innerHTML = `
+    <p><b>伝票OCR (Gemini)</b><br>
+    呼び出し回数: ${usage.ocr} 回<br>
+    推定費用: $${ocrCost}</p>
+    <p><b>住所→緯度経度 (Google Geocoding)</b><br>
+    呼び出し回数: ${usage.geocode} 回<br>
+    推定費用: $${geoCost}</p>
+    <p><b>合計推定費用: $${total}</b></p>
+    <p style="font-size:11px;color:#666;margin-top:12px">
+    ※ 地図表示自体 (Mapbox) はこのカウントに含まれません。<br>
+    Mapboxは月50,000マップロードまで無料、超過後は約$5/1000ロード。<br>
+    Mapboxダッシュボードで実際の使用量を確認してください。
+    </p>
+  `;
+  openModal('modal-usage');
+}
+
+function resetUsage() {
+  showConfirm('使用状況リセット', 'カウンターをリセットしますか？', () => {
+    usage = { ocr: 0, geocode: 0 };
+    localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
+    showUsage();
+    showToast('リセットしました');
+  });
+}
+
+// ============================================================
+// Import / Export (cross-app data sharing)
+// ============================================================
+// localStorage を全件スキャンして、配送リストっぽいものを探す。
+// 同じドメイン (rys-services.com) 配下なら、Google版・Mapbox版の
+// localStorage は共有されているため、ここから読み取れる。
+function findOtherDeliveryLists() {
+  const candidates = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || key === STORAGE_KEY) continue;
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      if (Array.isArray(data) && data.length > 0) {
+        const sample = data[0];
+        if (sample && typeof sample === 'object' &&
+            'address' in sample &&
+            ('lat' in sample || 'lng' in sample)) {
+          candidates.push({ key, count: data.length, data });
+        }
+      }
+    } catch (e) { /* このキーはJSONじゃない、スキップ */ }
+  }
+  return candidates;
+}
+
+function labelForKey(key) {
+  if (key.includes('mapbox')) return 'Mapbox版 (別キー)';
+  if (key.includes('rys') || key.includes('delivery')) return 'Google Maps版';
+  return key;
+}
+
+function importDeliveriesFromOtherApp() {
+  closeModal('modal-menu');
+  const candidates = findOtherDeliveryLists();
+  if (candidates.length === 0) {
+    showToast('他のアプリの配送リストが見つかりませんでした', true);
+    return;
+  }
+  // 最も件数が多いものを採用 (現在運用中のものとみなす)
+  const chosen = candidates.reduce((a, b) => b.count > a.count ? b : a);
+  const label = labelForKey(chosen.key);
+
+  showConfirm(
+    'リストを取り込み',
+    `「${label}」から ${chosen.count}件 を見つけました。\n\n` +
+    `現在のMapbox版のリスト (${deliveries.length}件) は置き換えられます。\n` +
+    `取り込みますか？`,
+    () => {
+      const imported = chosen.data.map(d => ({
+        id: d.id || uid(),
+        address: d.address || '',
+        note: d.note || d.building || d.recipient || '',
+        lat: d.lat,
+        lng: d.lng,
+        approx: !!d.approx,
+        formatted: d.formatted || '',
+        completed: !!d.completed,
+        completedAt: d.completedAt || null,
+        createdAt: d.createdAt || Date.now()
+      })).filter(d => d.lat != null && d.lng != null);
+
+      deliveries = imported;
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      showToast(`${imported.length}件 取り込みました`);
+      // 最初の配送先に地図を移動
+      if (imported.length > 0) {
+        const first = imported[0];
+        map.flyTo({ center: [first.lng, first.lat], zoom: 16, speed: 1.4 });
+      }
+    }
+  );
+}
+
+function exportDeliveriesAsJSON() {
+  closeModal('modal-menu');
+  if (deliveries.length === 0) { showToast('配送先がありません', true); return; }
+  const json = JSON.stringify(deliveries, null, 2);
+  navigator.clipboard.writeText(json).then(
+    () => showToast(`${deliveries.length}件をJSONでクリップボードにコピーしました`),
+    () => showToast('コピーに失敗しました', true)
+  );
+}
+
+// ============================================================
+// GPS / Current location
+// ============================================================
+function updateGpsButton() {
+  const btn = $('btn-gps');
+  if (!btn) return;
+  btn.textContent = gpsAutoFollow ? '● 追跡中' : '◎ 現在地';
+  btn.classList.toggle('tracking', gpsAutoFollow);
+}
+
+function updateGpsStatus(pos) {
+  const el = $('gps-status');
+  if (!el || !pos) return;
+  const accuracy = Math.round(pos.coords.accuracy || 0);
+  const time = new Date(pos.timestamp || Date.now()).toLocaleTimeString('ja-JP', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  el.innerHTML = `GPS精度: 約${accuracy}m<br>更新: ${time}`;
+  el.classList.add('show');
+}
+
+function updateUserLocation(pos, moveMap = false) {
+  const { latitude, longitude } = pos.coords;
+  const lngLat = [longitude, latitude];
+
+  if (!userMarker) {
+    userMarkerEl = document.createElement('div');
+    userMarkerEl.style.cssText = `
+      width: 18px; height: 18px;
+      background: #2563eb;
+      border: 3px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px #2563eb, 0 1px 4px rgba(0,0,0,0.4);
+    `;
+    userMarker = new mapboxgl.Marker({ element: userMarkerEl, anchor: 'center' })
+      .setLngLat(lngLat).addTo(map);
+  } else {
+    userMarker.setLngLat(lngLat);
+  }
+
+  updateGpsStatus(pos);
+
+  if (moveMap) {
+    map.easeTo({ center: lngLat, zoom: Math.max(map.getZoom(), 17), duration: 600 });
+  }
+}
+
+function ensureGpsWatching() {
+  if (!navigator.geolocation) { showToast('位置情報が利用できません', true); return false; }
+  if (gpsActive && gpsWatchId !== null) return true;
+
+  gpsActive = true;
+  gpsWatchId = navigator.geolocation.watchPosition(
+    (pos) => { updateUserLocation(pos, gpsAutoFollow); },
+    (err) => {
+      let msg = '位置情報を取得できません';
+      if (err.code === 1) msg = '位置情報の許可が必要です';
+      else if (err.code === 2) msg = '現在地を取得できませんでした';
+      else if (err.code === 3) msg = 'GPS取得がタイムアウトしました';
+      showToast(msg, true);
+      if (gpsWatchId !== null) {
+        navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = null;
+      }
+      gpsActive = false;
+      gpsAutoFollow = false;
+      updateGpsButton();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
+  );
+  return true;
+}
+
+function toggleGpsTracking() {
+  if (!gpsActive) {
+    if (!ensureGpsWatching()) return;
+    gpsAutoFollow = true;
+    updateGpsButton();
+    showToast('GPSをONにしました(地図が現在地に追従します)');
+    return;
+  }
+  gpsAutoFollow = !gpsAutoFollow;
+  updateGpsButton();
+  if (gpsAutoFollow) {
+    showToast('地図追従ON');
+    if (userMarker) {
+      const ll = userMarker.getLngLat();
+      map.easeTo({ center: [ll.lng, ll.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+    }
+  } else {
+    showToast('地図追従OFF: 現在地マーカーは動き続けます');
+  }
+}
+
+function centerOnUser() {
+  closeModal('modal-menu');
+  if (!navigator.geolocation) { showToast('位置情報が利用できません', true); return; }
+  ensureGpsWatching();
+  if (userMarker) {
+    const ll = userMarker.getLngLat();
+    map.easeTo({ center: [ll.lng, ll.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+    showToast('現在地を表示しました');
+    return;
+  }
+  showToast('現在地を取得中...');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => { updateUserLocation(pos, true); showToast('現在地を表示しました'); },
+    () => showToast('位置情報を取得できません', true),
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 5000 }
+  );
+}
+
+// ============================================================
+// Event Bindings
+// ============================================================
+$('btn-menu').addEventListener('click', () => openModal('modal-menu'));
+$('btn-gps').addEventListener('click', toggleGpsTracking);
+$('btn-label-mode').addEventListener('click', cycleLabelMode);
+$('btn-neighborhoods').addEventListener('click', toggleNeighborhoods);
+$('btn-addr').addEventListener('click', toggleAddressBlocks);
+
+// List collapse toggle (whole header is tappable)
+function toggleListCollapse(forceState) {
+  const willCollapse = (typeof forceState === 'boolean')
+    ? forceState
+    : !document.body.classList.contains('list-collapsed');
+  document.body.classList.toggle('list-collapsed', willCollapse);
+  localStorage.setItem(LIST_COLLAPSED_KEY, willCollapse ? '1' : '0');
+  // Resize Mapbox canvas after CSS transition completes
+  setTimeout(() => { if (map) map.resize(); }, 280);
+}
+$('list-header').addEventListener('click', () => toggleListCollapse());
+$('btn-north').addEventListener('click', () => {
+  map.easeTo({ bearing: 0, pitch: 0, duration: 400 });
+  showToast('🧭 北向き・水平に戻しました');
+});
+
+$('btn-add-photo').addEventListener('click', () => $('file-photo').click());
+$('file-photo').addEventListener('change', (e) => {
+  if (e.target.files && e.target.files[0]) {
+    handlePhotoUpload(e.target.files[0]);
+    e.target.value = '';
+  }
+});
+$('btn-add-voice').addEventListener('click', startVoiceInput);
+$('btn-add-manual').addEventListener('click', () => {
+  $('add-address').value = '';
+  $('add-note').value = '';
+  openModal('modal-add');
+});
+
+$('btn-add-confirm').addEventListener('click', () => {
+  const address = $('add-address').value.trim();
+  const note = $('add-note').value.trim();
+  if (!address) { showToast('住所を入力してください', true); return; }
+  closeModal('modal-add');
+  addDelivery({ address, note });
+});
+
+$('btn-edit-save').addEventListener('click', saveEditedItem);
+$('btn-edit-delete').addEventListener('click', deleteEditedItem);
+
+$('menu-center-user').addEventListener('click', centerOnUser);
+$('menu-import').addEventListener('click', importDeliveriesFromOtherApp);
+$('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
+$('menu-copy').addEventListener('click', copyListToClipboard);
+$('menu-clear-done').addEventListener('click', clearCompleted);
+$('menu-clear-all').addEventListener('click', clearAll);
+$('menu-usage').addEventListener('click', showUsage);
+$('menu-toggle-neighborhoods').addEventListener('click', () => {
+  closeModal('modal-menu');
+  toggleNeighborhoods();
+});
+$('menu-refresh-banchi').addEventListener('click', refreshAddressData);
+
+$('btn-reset-usage').addEventListener('click', resetUsage);
+
+$('confirm-ok').addEventListener('click', () => {
+  closeModal('modal-confirm');
+  if (confirmCallback) {
+    const cb = confirmCallback;
+    confirmCallback = null;
+    cb();
+  }
+});
+$('confirm-cancel').addEventListener('click', () => {
+  closeModal('modal-confirm');
+  pendingPlacementCoord = null;
+  confirmCallback = null;
+});
+
+document.querySelectorAll('[data-close]').forEach(btn => {
+  btn.addEventListener('click', () => closeModal(btn.dataset.close));
+});
+
+document.querySelector('.placement-banner').addEventListener('click', cancelPlacement);
+
+// ============================================================
+// Boot
+// ============================================================
+(async function init() {
+  try {
+    // Restore list collapsed state BEFORE map init so dimensions are right
+    if (localStorage.getItem(LIST_COLLAPSED_KEY) === '1') {
+      document.body.classList.add('list-collapsed');
+    }
+    loadLabelMode();
+    updateLabelModeButton();
+    updateNeighborhoodButton();
+    showLoading('地図を読み込み中...');
+    mapboxConfig = await loadMapboxConfig();
+    await initMap();
+    await loadNeighborhoodBoundaries();
+    loadDeliveries();
+    renderMarkers();
+    renderList();
+    updateGpsButton();
+    hideLoading();
+
+    // 前回「番地表示: ON」だった場合はバックグラウンドで取得して反映
+    if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {
+      ensureAddressData().then(data => {
+        if (!data) return;
+        addrVisible = true;
+        addAddressLayer(data);
+        updateAddrButton();
+      });
+    }
+  } catch (e) {
+    hideLoading();
+    showToast('初期化エラー: ' + e.message, true);
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
