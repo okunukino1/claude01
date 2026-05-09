@@ -815,7 +815,7 @@ function initMap() {
 // 町丁目境界 — NIIジオシェイプ PBFタイルをPHPプロキシ経由で取得
 // (直接アクセスはCORSブロックされるため api/tile_proxy.php を経由)
 // ============================================================
-const GEOSHAPE_TILES = 'api/tile_proxy.php?z={z}&x={x}&y={y}';
+const GEOSHAPE_TILES = location.href.replace(/\/[^/]*(\?.*)?$/, '') + '/api/tile_proxy.php?z={z}&x={x}&y={y}';
 const GEOSHAPE_SOURCE_LAYER = 'ka_2020_dc';
 
 function addGeoshapeNeighborhoodLayers() {
