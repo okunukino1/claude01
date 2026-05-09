@@ -811,8 +811,10 @@ function initMap() {
   });
 }
 
-const GEOSHAPE_TILES = location.href.replace(/\/[^/]*(\?.*)?$/, '') + '/api/tile_proxy.php?z={z}&x={x}&y={y}';
-const GEOSHAPE_SOURCE_LAYER = 'ka_2020_dc';
+// 国土地理院ベクタータイル（CORS対応・ブラウザから直接アクセス可能）
+const GEOSHAPE_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
+const GEOSHAPE_SOURCE_LAYER = 'AdmArea';
+const GEOSHAPE_FILTER = ['==', 'rnkStr', '4']; // 大字・丁目レベル
 
 function addGeoshapeNeighborhoodLayers() {
   if (map.getSource('neighborhoods')) return;
@@ -820,9 +822,9 @@ function addGeoshapeNeighborhoodLayers() {
   map.addSource('neighborhoods', {
     type: 'vector',
     tiles: [GEOSHAPE_TILES],
-    minzoom: 5,
-    maxzoom: 15,
-    attribution: '町丁目境界: <a href="https://geoshape.ex.nii.ac.jp/ka/" target="_blank">NII Geoshape</a> (2020国勢調査)'
+    minzoom: 4,
+    maxzoom: 17,
+    attribution: '行政区域: <a href="https://maps.gsi.go.jp/development/vt.html" target="_blank">国土地理院ベクタータイル</a>'
   });
 
   map.addLayer({
@@ -831,6 +833,7 @@ function addGeoshapeNeighborhoodLayers() {
     source: 'neighborhoods',
     'source-layer': GEOSHAPE_SOURCE_LAYER,
     minzoom: 10,
+    filter: GEOSHAPE_FILTER,
     paint: {
       'fill-color': '#ff5722',
       'fill-opacity': neighborhoodVisible ? 0.06 : 0
@@ -843,6 +846,7 @@ function addGeoshapeNeighborhoodLayers() {
     source: 'neighborhoods',
     'source-layer': GEOSHAPE_SOURCE_LAYER,
     minzoom: 10,
+    filter: GEOSHAPE_FILTER,
     paint: {
       'line-color': '#a04020',
       'line-width': 1.5,
@@ -857,8 +861,9 @@ function addGeoshapeNeighborhoodLayers() {
     source: 'neighborhoods',
     'source-layer': GEOSHAPE_SOURCE_LAYER,
     minzoom: 13,
+    filter: GEOSHAPE_FILTER,
     layout: {
-      'text-field': ['get', 's_name'],
+      'text-field': ['get', 'dctName'],
       'text-size': 11,
       'text-font': ['DIN Pro Regular', 'Arial Unicode MS Regular'],
       'text-anchor': 'center',
