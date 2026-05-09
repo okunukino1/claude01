@@ -812,9 +812,6 @@ function initMap() {
 }
 
 // ============================================================
-// 町丁目境界 — NIIジオシェイプ PBFタイルをPHPプロキシ経由で取得
-// (直接アクセスはCORSブロックされるため api/tile_proxy.php を経由)
-// ============================================================
 // 国土地理院ベクトルタイル（CORS対応・ブラウザから直接アクセス可能）
 const GEOSHAPE_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
 const GEOSHAPE_SOURCE_LAYER = 'AdmArea';
