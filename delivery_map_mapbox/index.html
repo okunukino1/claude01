@@ -830,13 +830,27 @@ function addGeoshapeNeighborhoodLayers() {
     type: 'line',
     source: 'neighborhoods',
     'source-layer': GEOSHAPE_SOURCE_LAYER,
-    minzoom: 10,
-    filter: ['==', ['get', 'ftCode'], 1212],
+    minzoom: 4,
+    layout: {
+      'visibility': neighborhoodVisible ? 'visible' : 'none'
+    },
     paint: {
-      'line-color': '#a04020',
-      'line-width': 1.5,
-      'line-opacity': neighborhoodVisible ? 0.8 : 0
+      'line-color': '#ff3300',
+      'line-width': 2,
+      'line-opacity': 1.0
     }
+  });
+
+  // デバッグ: 1回だけ実行してboundaryの内容を確認
+  let _done = false;
+  map.on('idle', () => {
+    if (_done) return;
+    _done = true;
+    const f = map.querySourceFeatures('neighborhoods', { sourceLayer: 'boundary' });
+    const codes = [...new Set(f.map(x => x.properties.ftCode))].join(',');
+    console.log(`[GSI] boundary: ${f.length}件 ftCodes=[${codes}] vis=${neighborhoodVisible}`);
+    const r = map.queryRenderedFeatures({ layers: ['neighborhoods-line'] });
+    console.log(`[GSI] rendered: ${r.length}`);
   });
 }
 
@@ -844,7 +858,7 @@ function toggleNeighborhoods() {
   neighborhoodVisible = !neighborhoodVisible;
   localStorage.setItem(NEIGHBORHOOD_KEY, neighborhoodVisible ? '1' : '0');
   if (map.getLayer('neighborhoods-line')) {
-    map.setPaintProperty('neighborhoods-line', 'line-opacity', neighborhoodVisible ? 0.8 : 0);
+    map.setLayoutProperty('neighborhoods-line', 'visibility', neighborhoodVisible ? 'visible' : 'none');
   }
   updateNeighborhoodButton();
   showToast(neighborhoodVisible ? '町丁目境界をON' : '町丁目境界をOFF');
