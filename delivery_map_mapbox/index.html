@@ -811,44 +811,123 @@ function initMap() {
   });
 }
 
-// 国土地理院ベクトルタイル（CORS対応・ブラウザから直接アクセス可能）
-// boundary layer: ftCode=6101 orgGILvl=2500 が丁目界（z=15-17タイルに存在）
-const GEOSHAPE_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
+// 町丁目境界は Geoshape の全国行政境界タイルを主表示にする。
+// z=13-15 は町丁目境界、z=16 以上は z=15 のオーバーズーム。
+const GEOSHAPE_ADMIN_TILES = 'api/tile_proxy.php?z={z}&x={x}&y={y}';
+const GEOSHAPE_ADMIN_LAYER_CANDIDATES = ['ka_2020_dc', 'ka_2020', 'default'];
+
+// 国土地理院ベクトルタイルは補助線として使う。
+// ftCode=6101 は「特定地区界」。町丁目そのものではない地域もあるため、主データにはしない。
+const GSI_BOUNDARY_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
+const NEIGHBORHOOD_LAYER_IDS = [];
+
+function addNeighborhoodLayer(layer) {
+  if (map.getLayer(layer.id)) return;
+  map.addLayer(layer);
+  NEIGHBORHOOD_LAYER_IDS.push(layer.id);
+}
+
 function addGeoshapeNeighborhoodLayers() {
-  if (map.getSource('neighborhoods')) return;
+  if (!map.getSource('neighborhoods')) {
+    map.addSource('neighborhoods', {
+      type: 'vector',
+      tiles: [GEOSHAPE_ADMIN_TILES],
+      minzoom: 5,
+      maxzoom: 15,
+      attribution: '町丁目境界: <a href="https://geoshape.ex.nii.ac.jp/vector-adm/index.html.ja" target="_blank">Geoshape 行政境界データセット</a>'
+    });
 
-  map.addSource('neighborhoods', {
-    type: 'vector',
-    tiles: [GEOSHAPE_TILES],
-    minzoom: 4,
-    maxzoom: 17,
-    attribution: '行政区域: <a href="https://maps.gsi.go.jp/development/vt.html" target="_blank">国土地理院ベクトルタイル</a>'
-  });
+    GEOSHAPE_ADMIN_LAYER_CANDIDATES.forEach((sourceLayer, idx) => {
+      addNeighborhoodLayer({
+        id: `neighborhoods-fill-${idx}`,
+        type: 'fill',
+        source: 'neighborhoods',
+        'source-layer': sourceLayer,
+        minzoom: 13,
+        slot: 'top',
+        layout: {
+          'visibility': neighborhoodVisible ? 'visible' : 'none'
+        },
+        paint: {
+          'fill-color': '#f7b955',
+          'fill-opacity': [
+            'interpolate', ['linear'], ['zoom'],
+            13, 0.04,
+            16, 0.08
+          ]
+        }
+      });
 
-  map.addLayer({
-    id: 'neighborhoods-line',
-    type: 'line',
-    source: 'neighborhoods',
-    'source-layer': 'boundary',
-    minzoom: 14,
-    filter: ['==', ['to-number', ['get', 'ftCode'], 0], 6101],
-    layout: {
-      'visibility': neighborhoodVisible ? 'visible' : 'none'
-    },
-    paint: {
-      'line-color': '#a04020',
-      'line-width': 1.5,
-      'line-opacity': 0.75
-    }
-  });
+      addNeighborhoodLayer({
+        id: `neighborhoods-line-${idx}`,
+        type: 'line',
+        source: 'neighborhoods',
+        'source-layer': sourceLayer,
+        minzoom: 13,
+        slot: 'top',
+        layout: {
+          'visibility': neighborhoodVisible ? 'visible' : 'none',
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': '#d6502a',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            13, 0.9,
+            16, 2.4,
+            19, 3.2
+          ],
+          'line-opacity': 0.9
+        }
+      });
+    });
+  }
+
+  if (!map.getSource('gsi-neighborhoods')) {
+    map.addSource('gsi-neighborhoods', {
+      type: 'vector',
+      tiles: [GSI_BOUNDARY_TILES],
+      minzoom: 4,
+      maxzoom: 16,
+      attribution: '補助境界: <a href="https://maps.gsi.go.jp/development/vt.html" target="_blank">国土地理院ベクトルタイル</a>'
+    });
+
+    addNeighborhoodLayer({
+      id: 'gsi-neighborhoods-line',
+      type: 'line',
+      source: 'gsi-neighborhoods',
+      'source-layer': 'boundary',
+      minzoom: 14,
+      slot: 'top',
+      filter: ['==', ['to-number', ['get', 'ftCode'], 0], 6101],
+      layout: {
+        'visibility': neighborhoodVisible ? 'visible' : 'none',
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      paint: {
+        'line-color': '#8a5a00',
+        'line-width': [
+          'interpolate', ['linear'], ['zoom'],
+          14, 0.7,
+          17, 1.3
+        ],
+        'line-dasharray': [3, 2],
+        'line-opacity': 0.45
+      }
+    });
+  }
 }
 
 function toggleNeighborhoods() {
   neighborhoodVisible = !neighborhoodVisible;
   localStorage.setItem(NEIGHBORHOOD_KEY, neighborhoodVisible ? '1' : '0');
-  if (map.getLayer('neighborhoods-line')) {
-    map.setLayoutProperty('neighborhoods-line', 'visibility', neighborhoodVisible ? 'visible' : 'none');
-  }
+  NEIGHBORHOOD_LAYER_IDS.forEach(id => {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', neighborhoodVisible ? 'visible' : 'none');
+    }
+  });
   updateNeighborhoodButton();
   showToast(neighborhoodVisible ? '町丁目境界をON' : '町丁目境界をOFF');
 }
@@ -1285,7 +1364,7 @@ function renderList() {
         </div>
         <div class="item-actions">
           <button class="done-btn ${d.completed ? 'completed' : ''}" data-action="done" data-id="${d.id}" title="完了">${d.completed ? '↩' : '✓'}</button>
-          <button class="go-btn" data-action="navi" data-id="${d.id}" title="ナビ">▶</button>
+          <button class="go-btn" data-action="navi" data-id="${d.id}" title="Google Mapsで開く">開く</button>
           <button data-action="place" data-id="${d.id}" title="位置修正">📍</button>
           <button data-action="edit" data-id="${d.id}" title="編集">✎</button>
         </div>
@@ -1329,7 +1408,7 @@ function openNavigation(id) {
   const d = deliveries.find(x => x.id === id);
   if (!d || d.lat == null) return;
   const url = `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}&travelmode=driving`;
-  window.open(url, '_blank');
+  window.location.assign(url);
 }
 
 function startPlacement(id) {

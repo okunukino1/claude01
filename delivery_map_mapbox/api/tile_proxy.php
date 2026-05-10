@@ -1,5 +1,11 @@
 <?php
 header('Access-Control-Allow-Origin: *');
+header('X-Content-Type-Options: nosniff');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
 
 $z = isset($_GET['z']) ? (int)$_GET['z'] : -1;
 $x = isset($_GET['x']) ? (int)$_GET['x'] : -1;
@@ -9,8 +15,18 @@ $y = isset($_GET['y']) ? (int)$_GET['y'] : -1;
 $debug = !empty($_GET['debug']);
 
 $maxTile = (int)pow(2, max($z, 0)) - 1;
-if ($z < 0 || $z > 18 || $x < 0 || $y < 0 || $x > $maxTile || $y > $maxTile) {
+if ($z < 5 || $z > 15 || $x < 0 || $y < 0 || $x > $maxTile || $y > $maxTile) {
     http_response_code(400);
+    if ($debug) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'error' => 'invalid_tile',
+            'hint'  => 'Geoshape 行政境界タイルは z=5-15 を使用します。z=16 以上は Mapbox 側で z=15 をオーバーズームします。',
+            'z'     => $z,
+            'x'     => $x,
+            'y'     => $y,
+        ], JSON_UNESCAPED_UNICODE);
+    }
     exit;
 }
 
@@ -23,6 +39,7 @@ $ch = curl_init($url);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_TIMEOUT        => 10,
+    CURLOPT_CONNECTTIMEOUT => 5,
     CURLOPT_FOLLOWLOCATION => true,
     CURLOPT_MAXREDIRS      => 3,
     CURLOPT_SSL_VERIFYPEER => false,
@@ -52,9 +69,10 @@ if ($debug) {
 
 if ($body === false || $httpCode !== 200) {
     http_response_code($httpCode ?: 503);
+    header('Cache-Control: no-store');
     exit;
 }
 
 header('Content-Type: application/x-protobuf');
-header('Cache-Control: public, max-age=86400');
+header('Cache-Control: public, max-age=604800, stale-while-revalidate=86400');
 echo $body;
