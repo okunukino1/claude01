@@ -812,8 +812,8 @@ function initMap() {
 }
 
 // 国土地理院ベクトルタイル（CORS対応・ブラウザから直接アクセス可能）
+// boundary layer: ftCode=6101 orgGILvl=2500 が丁目界（z=15-17タイルに存在）
 const GEOSHAPE_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
-const GEOSHAPE_SOURCE_LAYER = 'boundary';
 function addGeoshapeNeighborhoodLayers() {
   if (map.getSource('neighborhoods')) return;
 
@@ -829,33 +829,17 @@ function addGeoshapeNeighborhoodLayers() {
     id: 'neighborhoods-line',
     type: 'line',
     source: 'neighborhoods',
-    'source-layer': GEOSHAPE_SOURCE_LAYER,
-    minzoom: 4,
+    'source-layer': 'boundary',
+    minzoom: 14,
+    filter: ['==', ['get', 'ftCode'], 6101],
     layout: {
       'visibility': neighborhoodVisible ? 'visible' : 'none'
     },
     paint: {
-      'line-color': '#ff3300',
-      'line-width': 2,
-      'line-opacity': 1.0
+      'line-color': '#a04020',
+      'line-width': 1.5,
+      'line-opacity': 0.75
     }
-  });
-
-  // デバッグ: idleごとに境界データを確認（zoom変化対応）
-  let _lastZoom = -1;
-  map.on('idle', () => {
-    const z = Math.round(map.getZoom());
-    if (z === _lastZoom) return;
-    _lastZoom = z;
-    const f = map.querySourceFeatures('neighborhoods', { sourceLayer: 'boundary' });
-    const uniq = {};
-    f.forEach(x => {
-      const key = `ftCode=${x.properties.ftCode} orgGILvl=${x.properties.orgGILvl}`;
-      uniq[key] = (uniq[key] || 0) + 1;
-    });
-    console.log(`[GSI z=${z}] boundary: ${f.length}件`, uniq);
-    const r = map.queryRenderedFeatures({ layers: ['neighborhoods-line'] });
-    console.log(`[GSI z=${z}] rendered: ${r.length}`);
   });
 }
 
