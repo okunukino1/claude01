@@ -831,7 +831,7 @@ function addGeoshapeNeighborhoodLayers() {
     source: 'neighborhoods',
     'source-layer': 'boundary',
     minzoom: 14,
-    filter: ['==', ['get', 'ftCode'], 6101],
+    filter: ['==', ['to-number', ['get', 'ftCode'], 0], 6101],
     layout: {
       'visibility': neighborhoodVisible ? 'visible' : 'none'
     },
