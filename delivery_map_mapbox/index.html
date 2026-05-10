@@ -840,6 +840,8 @@ const GEOSHAPE_ADMIN_LAYER_CANDIDATES = [
   'adm'
 ];
 
+const ESTAT_BOUNDARY_TILES = 'https://ubukawa.github.io/estat01/04_tiles/zxy-s/{z}/{x}/{y}.pbf';
+
 // 国土地理院ベクトルタイルは補助線として使う。
 // ftCode=6101 は「特定地区界」。町丁目そのものではない地域もあるため、主データにはしない。
 const GSI_BOUNDARY_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
@@ -903,7 +905,65 @@ function addLocalNeighborhoodLayers() {
   });
 }
 
+function addEstatNeighborhoodLayers() {
+  if (map.getSource('estat-neighborhoods')) return;
+
+  map.addSource('estat-neighborhoods', {
+    type: 'vector',
+    tiles: [ESTAT_BOUNDARY_TILES],
+    minzoom: 8,
+    maxzoom: 10,
+    attribution: '全国小地域境界: <a href="https://ubukawa.github.io/estat01/" target="_blank">e-Stat 2020 小地域境界加工タイル</a>'
+  });
+
+  addNeighborhoodLayer({
+    id: 'estat-neighborhoods-fill',
+    type: 'fill',
+    source: 'estat-neighborhoods',
+    'source-layer': 'bnd',
+    minzoom: 10,
+    slot: 'top',
+    layout: {
+      'visibility': neighborhoodVisible ? 'visible' : 'none'
+    },
+    paint: {
+      'fill-color': '#ffb26b',
+      'fill-opacity': [
+        'interpolate', ['linear'], ['zoom'],
+        10, 0.015,
+        15, 0.04
+      ]
+    }
+  });
+
+  addNeighborhoodLayer({
+    id: 'estat-neighborhoods-line',
+    type: 'line',
+    source: 'estat-neighborhoods',
+    'source-layer': 'bnd',
+    minzoom: 10,
+    slot: 'top',
+    layout: {
+      'visibility': neighborhoodVisible ? 'visible' : 'none',
+      'line-join': 'round',
+      'line-cap': 'round'
+    },
+    paint: {
+      'line-color': '#d83218',
+      'line-width': [
+        'interpolate', ['linear'], ['zoom'],
+        10, 0.7,
+        13, 1.2,
+        16, 2.0,
+        19, 2.8
+      ],
+      'line-opacity': 0.82
+    }
+  });
+}
+
 function addGeoshapeNeighborhoodLayers() {
+  addEstatNeighborhoodLayers();
   addLocalNeighborhoodLayers();
 
   GEOSHAPE_ADMIN_TILE_SOURCES.forEach((tileSource) => {
