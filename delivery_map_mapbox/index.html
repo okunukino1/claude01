@@ -811,31 +811,34 @@ function initMap() {
   });
 }
 
-// 国土地理院ベクトルタイル（CORS対応・ブラウザから直接アクセス可能）
-const GEOSHAPE_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
-const GEOSHAPE_SOURCE_LAYER = 'boundary';
 function addGeoshapeNeighborhoodLayers() {
   if (map.getSource('neighborhoods')) return;
 
   map.addSource('neighborhoods', {
-    type: 'vector',
-    tiles: [GEOSHAPE_TILES],
-    minzoom: 4,
-    maxzoom: 14,
-    attribution: '行政区域: <a href="https://maps.gsi.go.jp/development/vt.html" target="_blank">国土地理院ベクトルタイル</a>'
+    type: 'geojson',
+    data: 'data/chuo_nihonbashi_boundaries.geojson'
+  });
+
+  map.addLayer({
+    id: 'neighborhoods-fill',
+    type: 'fill',
+    source: 'neighborhoods',
+    minzoom: 10,
+    paint: {
+      'fill-color': '#a04020',
+      'fill-opacity': neighborhoodVisible ? 0.07 : 0
+    }
   });
 
   map.addLayer({
     id: 'neighborhoods-line',
     type: 'line',
     source: 'neighborhoods',
-    'source-layer': GEOSHAPE_SOURCE_LAYER,
     minzoom: 10,
-    filter: ['==', ['get', 'ftCode'], 1212],
     paint: {
       'line-color': '#a04020',
-      'line-width': 1.5,
-      'line-opacity': neighborhoodVisible ? 0.8 : 0
+      'line-width': 1.8,
+      'line-opacity': neighborhoodVisible ? 0.9 : 0
     }
   });
 }
@@ -844,7 +847,10 @@ function toggleNeighborhoods() {
   neighborhoodVisible = !neighborhoodVisible;
   localStorage.setItem(NEIGHBORHOOD_KEY, neighborhoodVisible ? '1' : '0');
   if (map.getLayer('neighborhoods-line')) {
-    map.setPaintProperty('neighborhoods-line', 'line-opacity', neighborhoodVisible ? 0.8 : 0);
+    map.setPaintProperty('neighborhoods-line', 'line-opacity', neighborhoodVisible ? 0.9 : 0);
+  }
+  if (map.getLayer('neighborhoods-fill')) {
+    map.setPaintProperty('neighborhoods-fill', 'fill-opacity', neighborhoodVisible ? 0.07 : 0);
   }
   updateNeighborhoodButton();
   showToast(neighborhoodVisible ? '町丁目境界をON' : '町丁目境界をOFF');
