@@ -827,7 +827,61 @@ function addNeighborhoodLayer(layer) {
   NEIGHBORHOOD_LAYER_IDS.push(layer.id);
 }
 
+function addLocalNeighborhoodLayers() {
+  if (map.getSource('local-neighborhoods')) return;
+
+  map.addSource('local-neighborhoods', {
+    type: 'geojson',
+    data: 'data/chuo_nihonbashi_boundaries.geojson',
+    attribution: '日本橋周辺町丁目境界: Geoshape / e-Stat'
+  });
+
+  addNeighborhoodLayer({
+    id: 'local-neighborhoods-fill',
+    type: 'fill',
+    source: 'local-neighborhoods',
+    minzoom: 11,
+    slot: 'top',
+    layout: {
+      'visibility': neighborhoodVisible ? 'visible' : 'none'
+    },
+    paint: {
+      'fill-color': '#ff8a3d',
+      'fill-opacity': [
+        'interpolate', ['linear'], ['zoom'],
+        11, 0.02,
+        16, 0.07
+      ]
+    }
+  });
+
+  addNeighborhoodLayer({
+    id: 'local-neighborhoods-line',
+    type: 'line',
+    source: 'local-neighborhoods',
+    minzoom: 11,
+    slot: 'top',
+    layout: {
+      'visibility': neighborhoodVisible ? 'visible' : 'none',
+      'line-join': 'round',
+      'line-cap': 'round'
+    },
+    paint: {
+      'line-color': '#ff4b1f',
+      'line-width': [
+        'interpolate', ['linear'], ['zoom'],
+        11, 1.4,
+        16, 3.2,
+        19, 4.2
+      ],
+      'line-opacity': 0.95
+    }
+  });
+}
+
 function addGeoshapeNeighborhoodLayers() {
+  addLocalNeighborhoodLayers();
+
   if (!map.getSource('neighborhoods')) {
     map.addSource('neighborhoods', {
       type: 'vector',
