@@ -813,8 +813,32 @@ function initMap() {
 
 // 町丁目境界は Geoshape の全国行政境界タイルを主表示にする。
 // z=13-15 は町丁目境界、z=16 以上は z=15 のオーバーズーム。
-const GEOSHAPE_ADMIN_TILES = 'api/tile_proxy.php?z={z}&x={x}&y={y}';
-const GEOSHAPE_ADMIN_LAYER_CANDIDATES = ['ka_2020_dc', 'ka_2020', 'default'];
+const GEOSHAPE_ADMIN_TILE_SOURCES = [
+  {
+    id: 'proxy',
+    tiles: ['api/tile_proxy.php?z={z}&x={x}&y={y}'],
+    attribution: '町丁目境界: Geoshape 行政境界データセット'
+  },
+  {
+    id: 'direct',
+    tiles: ['https://geoshape.ex.nii.ac.jp/ka/resource/ka_2020_dc/{z}/{x}/{y}.pbf'],
+    attribution: '町丁目境界: Geoshape 行政境界データセット'
+  }
+];
+const GEOSHAPE_ADMIN_LAYER_CANDIDATES = [
+  'ka_2020_dc',
+  'ka_2020',
+  'ka',
+  'default',
+  'data',
+  'area',
+  'areas',
+  'polygon',
+  'polygons',
+  'boundary',
+  'admin',
+  'adm'
+];
 
 // 国土地理院ベクトルタイルは補助線として使う。
 // ftCode=6101 は「特定地区界」。町丁目そのものではない地域もあるため、主データにはしない。
@@ -882,20 +906,23 @@ function addLocalNeighborhoodLayers() {
 function addGeoshapeNeighborhoodLayers() {
   addLocalNeighborhoodLayers();
 
-  if (!map.getSource('neighborhoods')) {
-    map.addSource('neighborhoods', {
+  GEOSHAPE_ADMIN_TILE_SOURCES.forEach((tileSource) => {
+    const sourceId = `neighborhoods-${tileSource.id}`;
+    if (map.getSource(sourceId)) return;
+
+    map.addSource(sourceId, {
       type: 'vector',
-      tiles: [GEOSHAPE_ADMIN_TILES],
+      tiles: tileSource.tiles,
       minzoom: 5,
       maxzoom: 15,
-      attribution: '町丁目境界: <a href="https://geoshape.ex.nii.ac.jp/vector-adm/index.html.ja" target="_blank">Geoshape 行政境界データセット</a>'
+      attribution: `${tileSource.attribution} <a href="https://geoshape.ex.nii.ac.jp/vector-adm/index.html.ja" target="_blank">Geoshape</a>`
     });
 
     GEOSHAPE_ADMIN_LAYER_CANDIDATES.forEach((sourceLayer, idx) => {
       addNeighborhoodLayer({
-        id: `neighborhoods-fill-${idx}`,
+        id: `neighborhoods-${tileSource.id}-fill-${idx}`,
         type: 'fill',
-        source: 'neighborhoods',
+        source: sourceId,
         'source-layer': sourceLayer,
         minzoom: 13,
         slot: 'top',
@@ -913,9 +940,9 @@ function addGeoshapeNeighborhoodLayers() {
       });
 
       addNeighborhoodLayer({
-        id: `neighborhoods-line-${idx}`,
+        id: `neighborhoods-${tileSource.id}-line-${idx}`,
         type: 'line',
-        source: 'neighborhoods',
+        source: sourceId,
         'source-layer': sourceLayer,
         minzoom: 13,
         slot: 'top',
@@ -936,7 +963,7 @@ function addGeoshapeNeighborhoodLayers() {
         }
       });
     });
-  }
+  });
 
   if (!map.getSource('gsi-neighborhoods')) {
     map.addSource('gsi-neighborhoods', {
