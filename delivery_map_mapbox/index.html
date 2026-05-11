@@ -453,6 +453,10 @@
     background: var(--danger);
     color: white;
   }
+  .modal-actions button.done {
+    background: var(--done);
+    color: white;
+  }
   .menu-list button {
     display: block;
     width: 100%;
@@ -602,6 +606,7 @@
     <label>備考</label>
     <textarea id="edit-note"></textarea>
     <div class="modal-actions">
+      <button class="done" id="btn-edit-done" type="button">完了</button>
       <button class="danger" id="btn-edit-delete" type="button">削除</button>
       <button class="cancel" type="button" data-close="modal-edit">キャンセル</button>
       <button class="primary" id="btn-edit-save" type="button">保存</button>
@@ -973,9 +978,9 @@ function addEstatNeighborhoodLayers() {
       'text-field': ['coalesce', ['get', 'S_NAME'], ['get', 'CITY_NAME']],
       'text-size': [
         'interpolate', ['linear'], ['zoom'],
-        13, 10,
-        16, 12,
-        19, 14
+        13, 11.5,
+        16, 13.5,
+        19, 15.5
       ],
       'text-max-width': 8,
       'text-padding': 4,
@@ -1260,15 +1265,14 @@ function extractBuilding(note) {
 }
 
 function buildLabelText(d, num, modeKey) {
-  const numPart = `#${num}`;
-  if (modeKey === 'num') return { num: numPart, body: '' };
+  if (modeKey === 'num') return '';
   const banchi = extractBanchi(d.address);
   const bldg   = extractBuilding(d.note);
   let body = '';
   if (modeKey === 'both') body = [banchi, bldg].filter(Boolean).join(' ');
   else if (modeKey === 'addr') body = banchi;
   else if (modeKey === 'bldg') body = bldg;
-  return { num: numPart, body };
+  return body;
 }
 
 function renderMarkers() {
@@ -1285,13 +1289,13 @@ function renderMarkers() {
       + (d.completed ? ' done' : '')
       + (d.approx ? ' approx' : '');
 
-    const { num: numText, body } = buildLabelText(d, num, modeKey);
-    const lbl = document.createElement('div');
-    lbl.className = 'delivery-label';
-    lbl.innerHTML = body
-      ? `<span class="lbl-num">${numText}</span><span class="lbl-bldg">${escapeHtml(body)}</span>`
-      : `<span class="lbl-num">${numText}</span>`;
-    wrapper.appendChild(lbl);
+    const labelText = buildLabelText(d, num, modeKey);
+    if (labelText) {
+      const lbl = document.createElement('div');
+      lbl.className = 'delivery-label';
+      lbl.innerHTML = `<span class="lbl-bldg">${escapeHtml(labelText)}</span>`;
+      wrapper.appendChild(lbl);
+    }
 
     const pin = document.createElement('div');
     pin.className = 'delivery-pin';
@@ -1520,7 +1524,22 @@ function openEdit(id) {
   if (!d) return;
   $('edit-address').value = d.address;
   $('edit-note').value = d.note || '';
+  $('btn-edit-done').textContent = d.completed ? '完了解除' : '完了';
   openModal('modal-edit');
+}
+
+function toggleEditedItemDone() {
+  if (!editingItemId) return;
+  const d = deliveries.find(x => x.id === editingItemId);
+  if (!d) return;
+  d.completed = !d.completed;
+  d.completedAt = d.completed ? Date.now() : null;
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  closeModal('modal-edit');
+  editingItemId = null;
+  showToast(d.completed ? '完了にしました' : '未完了に戻しました');
 }
 
 async function saveEditedItem() {
@@ -2000,6 +2019,7 @@ $('btn-add-confirm').addEventListener('click', () => {
 });
 
 $('btn-edit-save').addEventListener('click', saveEditedItem);
+$('btn-edit-done').addEventListener('click', toggleEditedItemDone);
 $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 
 $('menu-center-user').addEventListener('click', centerOnUser);
