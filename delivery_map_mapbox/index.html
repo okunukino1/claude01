@@ -418,6 +418,7 @@
   }
   .modal input[type=text],
   .modal input[type=tel],
+  .modal select,
   .modal textarea {
     width: 100%;
     padding: 10px;
@@ -428,6 +429,22 @@
     margin-bottom: 12px;
   }
   .modal textarea { min-height: 60px; resize: vertical; }
+  .checkbox-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 4px 0 10px;
+    color: var(--ink-soft);
+  }
+  .checkbox-line input { width: 18px; height: 18px; }
+  .modal-help {
+    font-size: 12px;
+    line-height: 1.55;
+    color: #5f5a49;
+    margin: 6px 0 10px;
+  }
   .modal-actions {
     display: flex; gap: 8px;
     margin-top: 8px;
@@ -569,6 +586,7 @@
     <h3>メニュー</h3>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
+      <button id="menu-import-pickup" type="button">📦 集荷リストを取り込む</button>
       <button id="menu-import" type="button">📥 他のアプリのリストを取り込む</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
@@ -580,6 +598,29 @@
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-pickup-import">
+  <div class="modal">
+    <h3>集荷リストを取り込む</h3>
+    <label>取り込むシート</label>
+    <select id="pickup-sheet"></select>
+    <label class="checkbox-line">
+      <input type="checkbox" id="pickup-checked-only" checked>
+      checked が TRUE の行だけ取り込む
+    </label>
+    <label class="checkbox-line">
+      <input type="checkbox" id="pickup-replace-list" checked>
+      現在の配送リストを置き換える
+    </label>
+    <div class="modal-help">
+      company をピンのラベル、address を住所、time・method・notes を備考として取り込みます。
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-pickup-import">キャンセル</button>
+      <button class="primary" id="btn-pickup-import" type="button">取り込む</button>
     </div>
   </div>
 </div>
@@ -666,6 +707,14 @@ const LABEL_MODES = [
   { key: 'bldg', label: '建物' }
 ];
 let labelModeIndex = 1;
+
+const PICKUP_SHEETS = [
+  '小舟町店',
+  '浜町店 北',
+  '浜町店 南',
+  'A店 朝便',
+  'pickup_items'
+];
 
 const DEFAULT_CENTER_LNG = 139.7745;
 const DEFAULT_CENTER_LAT = 35.6845;
@@ -1857,6 +1906,125 @@ function importDeliveriesFromOtherApp() {
   );
 }
 
+function setupPickupSheetOptions() {
+  const select = $('pickup-sheet');
+  if (!select || select.options.length > 0) return;
+  select.innerHTML = PICKUP_SHEETS.map(name =>
+    `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`
+  ).join('');
+}
+
+function openPickupImportModal() {
+  closeModal('modal-menu');
+  setupPickupSheetOptions();
+  openModal('modal-pickup-import');
+}
+
+function normalizePickupTime(value) {
+  const s = String(value || '').trim();
+  const m = s.match(/^1899-12-30T(\d{2}):(\d{2})/);
+  if (!m) return s;
+  return `${Number(m[1])}:${m[2]}`;
+}
+
+function pickupNote(item) {
+  const lines = [];
+  if (item.company) lines.push(item.company);
+  const time = normalizePickupTime(item.time);
+  if (time) lines.push(`時間: ${time}`);
+  if (item.method) lines.push(`連絡: ${item.method}`);
+  if (item.notes) lines.push(item.notes);
+  return lines.join('\n');
+}
+
+async function fetchPickupItems(sheetName, checkedOnly) {
+  const params = new URLSearchParams({
+    sheet: sheetName,
+    checked_only: checkedOnly ? '1' : '0'
+  });
+  const res = await fetch(`api/pickup_sheet.php?${params.toString()}`);
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || data.error) {
+    throw new Error((data && (data.error || data.detail)) || '集荷リストの取得に失敗しました');
+  }
+  return data;
+}
+
+async function importPickupItems(items, replaceList) {
+  if (replaceList) deliveries = [];
+  const imported = [];
+  const failed = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    showLoading(`住所を検索中... ${i + 1}/${items.length}`);
+    const result = await geocodeAddress(item.address);
+    if (!result) {
+      failed.push(item);
+      continue;
+    }
+    const d = {
+      id: uid(),
+      address: item.address,
+      note: pickupNote(item),
+      lat: result.lat,
+      lng: result.lng,
+      approx: result.approx,
+      formatted: result.formatted,
+      completed: false,
+      completedAt: null,
+      createdAt: Date.now()
+    };
+    deliveries.push(d);
+    imported.push(d);
+  }
+
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  hideLoading();
+
+  if (imported.length > 0) {
+    const first = imported[0];
+    map.flyTo({ center: [first.lng, first.lat], zoom: 16, speed: 1.4 });
+  }
+
+  const failMsg = failed.length > 0 ? ` / ${failed.length}件は住所検索できませんでした` : '';
+  showToast(`${imported.length}件 取り込みました${failMsg}`, failed.length > 0);
+}
+
+async function importPickupSheet() {
+  const sheetName = $('pickup-sheet').value;
+  const checkedOnly = $('pickup-checked-only').checked;
+  const replaceList = $('pickup-replace-list').checked;
+  closeModal('modal-pickup-import');
+
+  try {
+    showLoading('集荷リストを取得中...');
+    const data = await fetchPickupItems(sheetName, checkedOnly);
+    hideLoading();
+
+    const items = data.items || [];
+    if (items.length === 0) {
+      showToast('取り込める集荷先がありませんでした', true);
+      return;
+    }
+
+    const mode = replaceList ? '置き換え' : '追加';
+    showConfirm(
+      '集荷リスト取込',
+      `「${data.sheet}」から ${items.length}件 を取り込みます。\n` +
+      `現在の配送リストは「${mode}」になります。\n\n` +
+      `住所検索APIを ${items.length}件分 使用します。よろしいですか？`,
+      () => importPickupItems(items, replaceList)
+    );
+  } catch (e) {
+    hideLoading();
+    showToast(e.message || '集荷リストの取得に失敗しました', true);
+  }
+}
+
 function exportDeliveriesAsJSON() {
   closeModal('modal-menu');
   if (deliveries.length === 0) { showToast('配送先がありません', true); return; }
@@ -2023,6 +2191,7 @@ $('btn-edit-done').addEventListener('click', toggleEditedItemDone);
 $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 
 $('menu-center-user').addEventListener('click', centerOnUser);
+$('menu-import-pickup').addEventListener('click', openPickupImportModal);
 $('menu-import').addEventListener('click', importDeliveriesFromOtherApp);
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);
@@ -2036,6 +2205,7 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
 
 $('btn-reset-usage').addEventListener('click', resetUsage);
+$('btn-pickup-import').addEventListener('click', importPickupSheet);
 
 $('confirm-ok').addEventListener('click', () => {
   closeModal('modal-confirm');
