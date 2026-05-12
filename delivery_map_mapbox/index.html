@@ -429,6 +429,18 @@
     margin-bottom: 12px;
   }
   .modal textarea { min-height: 60px; resize: vertical; }
+  .inline-action {
+    width: 100%;
+    min-height: 38px;
+    margin: -4px 0 12px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
   .checkbox-line {
     display: flex;
     align-items: center;
@@ -644,6 +656,7 @@
     <h3>配送先を編集</h3>
     <label>住所</label>
     <input type="text" id="edit-address">
+    <button class="inline-action" id="btn-edit-geocode" type="button">住所再検索</button>
     <label>備考</label>
     <textarea id="edit-note"></textarea>
     <div class="modal-actions">
@@ -1589,6 +1602,39 @@ function toggleEditedItemDone() {
   showToast(d.completed ? '完了にしました' : '未完了に戻しました');
 }
 
+async function reGeocodeEditedItem() {
+  if (!editingItemId) return;
+  const d = deliveries.find(x => x.id === editingItemId);
+  if (!d) return;
+  const newAddr = $('edit-address').value.trim();
+  const newNote = $('edit-note').value.trim();
+  if (!newAddr) { showToast('住所を入力してください', true); return; }
+
+  showLoading('住所を再検索中...');
+  const result = await geocodeAddress(newAddr);
+  hideLoading();
+
+  if (!result) {
+    showToast('住所が見つかりませんでした', true);
+    return;
+  }
+
+  d.address = newAddr;
+  d.note = newNote;
+  d.lat = result.lat;
+  d.lng = result.lng;
+  d.approx = result.approx;
+  d.formatted = result.formatted;
+
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
+  closeModal('modal-edit');
+  editingItemId = null;
+  showToast(result.approx ? '概算位置で更新しました' : '住所検索でピン位置を更新しました');
+}
+
 async function saveEditedItem() {
   if (!editingItemId) return;
   const d = deliveries.find(x => x.id === editingItemId);
@@ -2186,6 +2232,7 @@ $('btn-add-confirm').addEventListener('click', () => {
 });
 
 $('btn-edit-save').addEventListener('click', saveEditedItem);
+$('btn-edit-geocode').addEventListener('click', reGeocodeEditedItem);
 $('btn-edit-done').addEventListener('click', toggleEditedItemDone);
 $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 
