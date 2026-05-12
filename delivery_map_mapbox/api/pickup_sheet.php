@@ -11,10 +11,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 $spreadsheetId = '1KLblt-Ccx1xBppSzx9BnYcJuEHYkAlJ2KDEXeTa0swU';
 $allowedSheets = [
   '小舟町店',
-  '浜町店 北',
   '浜町店 南',
-  'A店 朝便',
-  'pickup_items',
+  '浜町店 北',
 ];
 
 $sheet = trim((string)($_GET['sheet'] ?? '小舟町店'));
