@@ -78,6 +78,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    position: relative;
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
@@ -1555,11 +1556,14 @@ function renderList() {
       e.stopPropagation();
       const id = btn.dataset.id;
       const action = btn.dataset.action;
-      focusDelivery(id, false);
-      if (action === 'done') toggleDone(id);
-      else if (action === 'navi') openNavigation(id);
-      else if (action === 'place') startPlacement(id);
-      else if (action === 'edit') openEdit(id);
+      if (action === 'done') {
+        toggleDone(id);
+      } else {
+        focusDelivery(id, false);
+        if (action === 'navi') openNavigation(id);
+        else if (action === 'place') startPlacement(id);
+        else if (action === 'edit') openEdit(id);
+      }
     });
   });
 
@@ -1578,6 +1582,7 @@ function toggleDone(id) {
   if (!d) return;
   d.completed = !d.completed;
   d.completedAt = d.completed ? Date.now() : null;
+  if (d.completed && activeDeliveryId === id) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
   renderList();
@@ -1635,6 +1640,7 @@ function toggleEditedItemDone() {
   if (!d) return;
   d.completed = !d.completed;
   d.completedAt = d.completed ? Date.now() : null;
+  if (d.completed && activeDeliveryId === editingItemId) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
   renderList();
