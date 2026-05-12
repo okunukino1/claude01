@@ -300,6 +300,12 @@
     opacity: 0.55;
     background: var(--paper-soft);
   }
+  .delivery-item.selected {
+    background: var(--accent-soft);
+  }
+  .delivery-item.done.selected {
+    background: #dedbd1;
+  }
   .num-badge {
     width: 32px; height: 32px;
     background: var(--accent); color: white;
@@ -735,6 +741,7 @@ let map = null;
 let mapboxConfig = null;
 let deliveries = [];
 let markers = new Map();
+let activeDeliveryId = null;
 let userMarker = null;
 let userMarkerEl = null;
 let placingItemId = null;
@@ -1335,6 +1342,31 @@ function buildLabelText(d, num, modeKey) {
   return body;
 }
 
+function markerZIndex(d, idx) {
+  if (d.id === activeDeliveryId) return 100000;
+  const priority = deliveries.length - idx;
+  return (d.completed ? 1000 : 10000) + priority;
+}
+
+function updateMarkerZIndexes() {
+  deliveries.forEach((d, idx) => {
+    const marker = markers.get(d.id);
+    if (!marker) return;
+    marker.getElement().style.zIndex = String(markerZIndex(d, idx));
+  });
+}
+
+function focusDelivery(id, shouldFly = true) {
+  const d = deliveries.find(x => x.id === id);
+  if (!d) return;
+  activeDeliveryId = id;
+  updateMarkerZIndexes();
+  renderList();
+  if (shouldFly && d.lat != null && d.lng != null) {
+    map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
+  }
+}
+
 function renderMarkers() {
   if (!map) return;
   clearAllMarkers();
@@ -1348,6 +1380,7 @@ function renderMarkers() {
     wrapper.className = 'delivery-marker'
       + (d.completed ? ' done' : '')
       + (d.approx ? ' approx' : '');
+    wrapper.style.zIndex = String(markerZIndex(d, idx));
 
     const labelText = buildLabelText(d, num, modeKey);
     if (labelText) {
@@ -1364,6 +1397,9 @@ function renderMarkers() {
 
     wrapper.addEventListener('click', (e) => {
       e.stopPropagation();
+      activeDeliveryId = d.id;
+      updateMarkerZIndexes();
+      renderList();
       openEdit(d.id);
     });
 
@@ -1472,6 +1508,7 @@ async function addDelivery({ address, note }) {
     createdAt: Date.now()
   };
   deliveries.push(d);
+  activeDeliveryId = d.id;
   saveDeliveries();
   renderMarkers();
   renderList();
@@ -1492,7 +1529,10 @@ function renderList() {
 
   body.innerHTML = deliveries.map((d, idx) => {
     const num = idx + 1;
-    const cls = 'delivery-item' + (d.completed ? ' done' : '') + (d.approx ? ' approx' : '');
+    const cls = 'delivery-item'
+      + (d.completed ? ' done' : '')
+      + (d.approx ? ' approx' : '')
+      + (d.id === activeDeliveryId ? ' selected' : '');
     return `
       <div class="${cls}" data-id="${d.id}">
         <div class="num-badge">${num}${d.approx ? '?' : ''}</div>
@@ -1515,6 +1555,7 @@ function renderList() {
       e.stopPropagation();
       const id = btn.dataset.id;
       const action = btn.dataset.action;
+      focusDelivery(id, false);
       if (action === 'done') toggleDone(id);
       else if (action === 'navi') openNavigation(id);
       else if (action === 'place') startPlacement(id);
@@ -1526,7 +1567,7 @@ function renderList() {
     row.addEventListener('click', () => {
       const d = deliveries.find(x => x.id === row.dataset.id);
       if (d && d.lat) {
-        map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
+        focusDelivery(d.id, true);
       }
     });
   });
@@ -1680,6 +1721,7 @@ function deleteEditedItem() {
     `「${d.address}」を削除しますか？`,
     () => {
       deliveries = deliveries.filter(x => x.id !== editingItemId);
+      if (activeDeliveryId === editingItemId) activeDeliveryId = null;
       saveDeliveries();
       renderMarkers();
       renderList();
@@ -1832,6 +1874,7 @@ function clearCompleted() {
   closeModal('modal-menu');
   showConfirm('完了分削除', `完了済み ${n} 件を削除しますか？`, () => {
     deliveries = deliveries.filter(d => !d.completed);
+    if (activeDeliveryId && !deliveries.some(d => d.id === activeDeliveryId)) activeDeliveryId = null;
     saveDeliveries();
     renderMarkers();
     renderList();
@@ -1844,6 +1887,7 @@ function clearAll() {
   closeModal('modal-menu');
   showConfirm('全件クリア', `全 ${deliveries.length} 件を削除しますか？\nこの操作は取り消せません。`, () => {
     deliveries = [];
+    activeDeliveryId = null;
     saveDeliveries();
     renderMarkers();
     renderList();
@@ -2032,6 +2076,9 @@ async function importPickupItems(items, replaceList) {
 
   if (imported.length > 0) {
     const first = imported[0];
+    activeDeliveryId = first.id;
+    updateMarkerZIndexes();
+    renderList();
     map.flyTo({ center: [first.lng, first.lat], zoom: 16, speed: 1.4 });
   }
 
