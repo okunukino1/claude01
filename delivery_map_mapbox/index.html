@@ -1944,7 +1944,8 @@ async function fetchPickupItems(sheetName, checkedOnly) {
   let data = null;
   try { data = await res.json(); } catch (e) {}
   if (!res.ok || !data || data.error) {
-    throw new Error((data && (data.error || data.detail)) || '集荷リストの取得に失敗しました');
+    const detail = data && data.detail ? ` (${data.detail})` : '';
+    throw new Error(((data && data.error) || '集荷リストの取得に失敗しました') + detail);
   }
   return data;
 }
