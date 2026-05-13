@@ -605,6 +605,7 @@
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-import-pickup" type="button">📦 集荷リストを取り込む</button>
+      <button id="menu-operator" type="button">👤 担当者名を設定</button>
       <button id="menu-import" type="button">📥 他のアプリのリストを取り込む</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
@@ -616,6 +617,21 @@
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-operator">
+  <div class="modal">
+    <h3>担当者名を設定</h3>
+    <label>担当者名</label>
+    <input type="text" id="operator-name" placeholder="例: 田中" autocomplete="name">
+    <div class="modal-help">
+      集荷済みにした時、スプレッドシートの collected_by に記録されます。
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" id="btn-operator-cancel" type="button">キャンセル</button>
+      <button class="primary" id="btn-operator-save" type="button">保存</button>
     </div>
   </div>
 </div>
@@ -714,6 +730,7 @@ const LIST_COLLAPSED_KEY = 'rys-mapbox-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-addr-visible';
 const ADDR_DATA_KEY = 'rys-mapbox-addr-data-v1';
+const OPERATOR_NAME_KEY = 'rys-mapbox-operator-name';
 
 const ADDR_PREF = '東京都';
 const ADDR_CITY = '中央区';
@@ -748,6 +765,8 @@ let placingItemId = null;
 let pendingPlacementCoord = null;
 let editingItemId = null;
 let confirmCallback = null;
+let operatorSaveCallback = null;
+let operatorCancelCallback = null;
 
 let gpsWatchId = null;
 let gpsActive = false;
@@ -806,6 +825,55 @@ function loadDeliveries() {
 function bumpUsage(kind) {
   usage[kind] = (usage[kind] || 0) + 1;
   localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
+}
+
+function getOperatorName() {
+  return (localStorage.getItem(OPERATOR_NAME_KEY) || '').trim();
+}
+
+function saveOperatorName(name) {
+  localStorage.setItem(OPERATOR_NAME_KEY, String(name || '').trim());
+}
+
+function openOperatorModal(callback, cancelCallback) {
+  closeModal('modal-menu');
+  $('operator-name').value = getOperatorName();
+  operatorSaveCallback = callback || null;
+  operatorCancelCallback = cancelCallback || null;
+  openModal('modal-operator');
+  setTimeout(() => $('operator-name').focus(), 0);
+}
+
+function saveOperatorFromModal() {
+  const name = $('operator-name').value.trim();
+  if (!name) { showToast('担当者名を入力してください', true); return; }
+  saveOperatorName(name);
+  closeModal('modal-operator');
+  showToast('担当者名を保存しました');
+  if (operatorSaveCallback) {
+    const cb = operatorSaveCallback;
+    operatorSaveCallback = null;
+    operatorCancelCallback = null;
+    cb(name);
+  }
+}
+
+function cancelOperatorModal() {
+  closeModal('modal-operator');
+  operatorSaveCallback = null;
+  if (operatorCancelCallback) {
+    const cb = operatorCancelCallback;
+    operatorCancelCallback = null;
+    cb();
+  }
+}
+
+function ensureOperatorName() {
+  const current = getOperatorName();
+  if (current) return Promise.resolve(current);
+  return new Promise(resolve => {
+    openOperatorModal(name => resolve(name), () => resolve(''));
+  });
 }
 
 function escapeHtml(s) {
@@ -1367,6 +1435,10 @@ function focusDelivery(id, shouldFly = true) {
   }
 }
 
+function isPickupBackedDelivery(d) {
+  return !!(d && d.pickupSheet && d.pickupRow);
+}
+
 function renderMarkers() {
   if (!map) return;
   clearAllMarkers();
@@ -1576,15 +1648,23 @@ function renderList() {
   });
 }
 
-function toggleDone(id) {
+async function toggleDone(id) {
   const d = deliveries.find(x => x.id === id);
   if (!d) return;
-  d.completed = !d.completed;
+  const nextCompleted = !d.completed;
+  const operatorName = nextCompleted && isPickupBackedDelivery(d) ? await ensureOperatorName() : '';
+  if (nextCompleted && isPickupBackedDelivery(d) && !operatorName) {
+    showToast('担当者名が未設定のため完了にできませんでした', true);
+    return;
+  }
+
+  d.completed = nextCompleted;
   d.completedAt = d.completed ? Date.now() : null;
   if (d.completed && activeDeliveryId === id) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
   renderList();
+  syncPickupProgress(d, operatorName);
 }
 
 function openNavigation(id) {
@@ -1633,11 +1713,18 @@ function openEdit(id) {
   openModal('modal-edit');
 }
 
-function toggleEditedItemDone() {
+async function toggleEditedItemDone() {
   if (!editingItemId) return;
   const d = deliveries.find(x => x.id === editingItemId);
   if (!d) return;
-  d.completed = !d.completed;
+  const nextCompleted = !d.completed;
+  const operatorName = nextCompleted && isPickupBackedDelivery(d) ? await ensureOperatorName() : '';
+  if (nextCompleted && isPickupBackedDelivery(d) && !operatorName) {
+    showToast('担当者名が未設定のため完了にできませんでした', true);
+    return;
+  }
+
+  d.completed = nextCompleted;
   d.completedAt = d.completed ? Date.now() : null;
   if (d.completed && activeDeliveryId === editingItemId) activeDeliveryId = null;
   saveDeliveries();
@@ -1646,6 +1733,7 @@ function toggleEditedItemDone() {
   closeModal('modal-edit');
   editingItemId = null;
   showToast(d.completed ? '完了にしました' : '未完了に戻しました');
+  syncPickupProgress(d, operatorName);
 }
 
 async function reGeocodeEditedItem() {
@@ -1983,7 +2071,10 @@ function importDeliveriesFromOtherApp() {
         formatted: d.formatted || '',
         completed: !!d.completed,
         completedAt: d.completedAt || null,
-        createdAt: d.createdAt || Date.now()
+        createdAt: d.createdAt || Date.now(),
+        pickupSheet: d.pickupSheet || '',
+        pickupRow: d.pickupRow || null,
+        pickupId: d.pickupId || ''
       })).filter(d => d.lat != null && d.lng != null);
 
       deliveries = imported;
@@ -2030,6 +2121,34 @@ function pickupNote(item) {
   return lines.join('\n');
 }
 
+async function syncPickupProgress(d, operatorName) {
+  if (!isPickupBackedDelivery(d)) return true;
+  try {
+    const res = await fetch('api/pickup_progress.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sheet: d.pickupSheet,
+        row: d.pickupRow,
+        id: d.pickupId || '',
+        collected: !!d.completed,
+        collected_by: d.completed ? operatorName : ''
+      })
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok || !data || data.error) {
+      const detail = data && data.detail ? ` (${data.detail})` : '';
+      throw new Error(((data && data.error) || 'スプレッドシート更新に失敗しました') + detail);
+    }
+    return true;
+  } catch (e) {
+    console.warn('pickup progress sync failed', e);
+    showToast('スプレッドシート更新に失敗しました', true);
+    return false;
+  }
+}
+
 async function fetchPickupItems(sheetName, checkedOnly) {
   const params = new URLSearchParams({
     sheet: sheetName,
@@ -2046,7 +2165,10 @@ async function fetchPickupItems(sheetName, checkedOnly) {
 }
 
 async function importPickupItems(items, replaceList) {
-  if (replaceList) deliveries = [];
+  if (replaceList) {
+    deliveries = [];
+    activeDeliveryId = null;
+  }
   const imported = [];
   const failed = [];
 
@@ -2068,7 +2190,10 @@ async function importPickupItems(items, replaceList) {
       formatted: result.formatted,
       completed: false,
       completedAt: null,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      pickupSheet: item.sheet || '',
+      pickupRow: item.row || null,
+      pickupId: item.id || ''
     };
     deliveries.push(d);
     imported.push(d);
@@ -2290,6 +2415,7 @@ $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 
 $('menu-center-user').addEventListener('click', centerOnUser);
 $('menu-import-pickup').addEventListener('click', openPickupImportModal);
+$('menu-operator').addEventListener('click', () => openOperatorModal());
 $('menu-import').addEventListener('click', importDeliveriesFromOtherApp);
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);
@@ -2304,6 +2430,8 @@ $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
 
 $('btn-reset-usage').addEventListener('click', resetUsage);
 $('btn-pickup-import').addEventListener('click', importPickupSheet);
+$('btn-operator-save').addEventListener('click', saveOperatorFromModal);
+$('btn-operator-cancel').addEventListener('click', cancelOperatorModal);
 
 $('confirm-ok').addEventListener('click', () => {
   closeModal('modal-confirm');

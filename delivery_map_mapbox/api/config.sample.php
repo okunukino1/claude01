@@ -32,3 +32,12 @@ define('MAPBOX_STYLE', 'mapbox://styles/mapbox/standard');
 // 役割を分けることで、住所解決精度はGoogle版と同じに保ちます。
 // Google Cloudで Geocoding API を有効化してください。
 define('GOOGLE_MAPS_SERVER_KEY', 'AIza...Google Geocoding API用キー...');
+
+// === 集荷進捗 → Googleスプレッドシート書き戻し ===
+// apps_script/pickup_progress.gs をGoogle Apps Scriptへ貼り付けてWebアプリとしてデプロイし、
+// 発行された /exec URL を入れてください。
+define('PICKUP_PROGRESS_WEBAPP_URL', 'https://script.google.com/macros/s/.../exec');
+
+// Apps Script側の PICKUP_PROGRESS_SECRET と同じ値にしてください。
+// 推測されにくい長い文字列にします。
+define('PICKUP_PROGRESS_SECRET', 'change-this-secret');

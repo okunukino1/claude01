@@ -158,6 +158,7 @@ for ($i = 1; $i < count($rows); $i++) {
 
   $items[] = [
     'row' => $i + 1,
+    'sheet' => $sheet,
     'id' => value_at($row, $indexMap, 'id'),
     'company' => value_at($row, $indexMap, 'company'),
     'address' => $address,
