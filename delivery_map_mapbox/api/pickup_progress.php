@@ -66,6 +66,7 @@ if (mb_strlen($collectedBy, 'UTF-8') > 50) {
 
 $now = new DateTime('now', new DateTimeZone('Asia/Tokyo'));
 $payload = [
+  'action' => 'pickupProgress',
   'secret' => $secret,
   'sheet' => $sheet,
   'row' => $row,
