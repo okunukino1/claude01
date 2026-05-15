@@ -577,8 +577,6 @@
 <div class="map-control-left">
   <button id="btn-app-mode" type="button">モード: 配送</button>
   <button id="btn-label-mode" type="button">表示: 番地+建物</button>
-  <button id="btn-neighborhoods" type="button" class="on">区域: ON</button>
-  <button id="btn-addr" type="button">番地表示: OFF</button>
 </div>
 
 <div class="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
@@ -608,13 +606,13 @@
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
       <button id="menu-import-pickup" type="button">📦 集荷リストを取り込む</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
-      <button id="menu-import" type="button">📥 他のアプリのリストを取り込む</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
       <button id="menu-clear-done" type="button">✓ 完了分を削除</button>
       <button id="menu-clear-all" type="button">🗑 全件クリア</button>
       <button id="menu-usage" type="button">📊 API使用状況</button>
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
+      <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
     </div>
     <div class="modal-actions">
@@ -1230,9 +1228,9 @@ function toggleNeighborhoods() {
 }
 
 function updateNeighborhoodButton() {
-  const btn = $('btn-neighborhoods');
+  const btn = $('menu-toggle-neighborhoods');
   if (!btn) return;
-  btn.textContent = neighborhoodVisible ? '区域: ON' : '区域: OFF';
+  btn.textContent = neighborhoodVisible ? '🗾 町丁目境界: ON' : '🗾 町丁目境界: OFF';
   btn.classList.toggle('on', neighborhoodVisible);
 }
 
@@ -1411,13 +1409,14 @@ function removeAddressLayer() {
 }
 
 function updateAddrButton() {
-  const btn = $('btn-addr');
+  const btn = $('menu-toggle-addr');
   if (!btn) return;
-  btn.textContent = addrVisible ? '番地表示: ON' : '番地表示: OFF';
+  btn.textContent = addrVisible ? '🏷 番地表示: ON' : '🏷 番地表示: OFF';
   btn.classList.toggle('on', addrVisible);
 }
 
 async function toggleAddressBlocks() {
+  closeModal('modal-menu');
   if (addrVisible) {
     addrVisible = false;
     removeAddressLayer();
@@ -2559,8 +2558,6 @@ $('btn-menu').addEventListener('click', () => openModal('modal-menu'));
 $('btn-gps').addEventListener('click', toggleGpsTracking);
 $('btn-app-mode').addEventListener('click', () => switchAppMode(appMode === 'pickup' ? 'delivery' : 'pickup'));
 $('btn-label-mode').addEventListener('click', cycleLabelMode);
-$('btn-neighborhoods').addEventListener('click', toggleNeighborhoods);
-$('btn-addr').addEventListener('click', toggleAddressBlocks);
 
 function toggleListCollapse(forceState) {
   const willCollapse = (typeof forceState === 'boolean')
@@ -2607,7 +2604,6 @@ $('menu-center-user').addEventListener('click', centerOnUser);
 $('menu-toggle-mode').addEventListener('click', toggleAppMode);
 $('menu-import-pickup').addEventListener('click', openPickupImportModal);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
-$('menu-import').addEventListener('click', importDeliveriesFromOtherApp);
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);
 $('menu-clear-done').addEventListener('click', clearCompleted);
@@ -2617,6 +2613,7 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
   closeModal('modal-menu');
   toggleNeighborhoods();
 });
+$('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
 
 $('btn-reset-usage').addEventListener('click', resetUsage);
@@ -2652,6 +2649,7 @@ document.querySelector('.placement-banner').addEventListener('click', cancelPlac
     loadLabelMode();
     updateLabelModeButton();
     updateNeighborhoodButton();
+    updateAddrButton();
     showLoading('地図を読み込み中...');
     mapboxConfig = await loadMapboxConfig();
     await initMap();
@@ -2661,6 +2659,8 @@ document.querySelector('.placement-banner').addEventListener('click', cancelPlac
     updateGpsButton();
     updateModeUi();
     restartPickupAutoSync();
+    ensureGpsWatching();
+    updateGpsButton();
     hideLoading();
 
     if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {
