@@ -492,6 +492,10 @@
     background: var(--done);
     color: white;
   }
+  .modal-actions button.go {
+    background: white;
+    color: var(--ink);
+  }
   .menu-list button {
     display: block;
     width: 100%;
@@ -683,6 +687,7 @@
     <textarea id="edit-note"></textarea>
     <div class="modal-actions">
       <button class="done" id="btn-edit-done" type="button">完了</button>
+      <button class="go" id="btn-edit-navi" type="button">ナビ</button>
       <button class="danger" id="btn-edit-delete" type="button">削除</button>
       <button class="cancel" type="button" data-close="modal-edit">キャンセル</button>
       <button class="primary" id="btn-edit-save" type="button">保存</button>
@@ -1700,7 +1705,7 @@ function renderList() {
         </div>
         <div class="item-actions">
           <button class="done-btn ${d.completed ? 'completed' : ''}" data-action="done" data-id="${d.id}" title="完了">${d.completed ? '↩' : '✓'}</button>
-          <button class="go-btn" data-action="navi" data-id="${d.id}" title="Google Mapsで開く">開く</button>
+          <button class="go-btn" data-action="navi" data-id="${d.id}" title="Google Mapsでナビ">ナビ</button>
           <button data-action="place" data-id="${d.id}" title="位置修正">📍</button>
           <button data-action="edit" data-id="${d.id}" title="編集">✎</button>
         </div>
@@ -1760,6 +1765,11 @@ function openNavigation(id) {
   if (!d || d.lat == null) return;
   const url = `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}&travelmode=driving`;
   window.location.assign(url);
+}
+
+function openEditedItemNavigation() {
+  if (!editingItemId) return;
+  openNavigation(editingItemId);
 }
 
 function startPlacement(id) {
@@ -2598,6 +2608,7 @@ $('btn-add-confirm').addEventListener('click', () => {
 $('btn-edit-save').addEventListener('click', saveEditedItem);
 $('btn-edit-geocode').addEventListener('click', reGeocodeEditedItem);
 $('btn-edit-done').addEventListener('click', toggleEditedItemDone);
+$('btn-edit-navi').addEventListener('click', openEditedItemNavigation);
 $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 
 $('menu-center-user').addEventListener('click', centerOnUser);
