@@ -609,6 +609,7 @@
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
       <button id="menu-import-pickup" type="button">📦 集荷リストを取り込む</button>
+      <button id="menu-optimize-route" type="button">🧭 おすすめ順に並べ替え</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
@@ -2445,6 +2446,159 @@ async function importPickupSheet() {
   }
 }
 
+function isRoutableDelivery(d) {
+  return d && !d.completed && Number.isFinite(Number(d.lat)) && Number.isFinite(Number(d.lng));
+}
+
+function routePoint(d) {
+  return { lat: Number(d.lat), lng: Number(d.lng) };
+}
+
+function distanceMeters(a, b) {
+  const lat1 = Number(a.lat);
+  const lat2 = Number(b.lat);
+  const lng1 = Number(a.lng);
+  const lng2 = Number(b.lng);
+  const toRad = deg => deg * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const rLat1 = toRad(lat1);
+  const rLat2 = toRad(lat2);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const h = sinLat * sinLat + Math.cos(rLat1) * Math.cos(rLat2) * sinLng * sinLng;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function routeDistanceMeters(start, route) {
+  if (!route.length) return 0;
+  let total = distanceMeters(start, routePoint(route[0]));
+  for (let i = 1; i < route.length; i++) {
+    total += distanceMeters(routePoint(route[i - 1]), routePoint(route[i]));
+  }
+  return total;
+}
+
+function nearestNeighborRoute(start, items) {
+  const remaining = items.slice();
+  const ordered = [];
+  let current = start;
+
+  while (remaining.length) {
+    let bestIndex = 0;
+    let bestDistance = Infinity;
+    remaining.forEach((item, idx) => {
+      const dist = distanceMeters(current, routePoint(item));
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        bestIndex = idx;
+      }
+    });
+    const next = remaining.splice(bestIndex, 1)[0];
+    ordered.push(next);
+    current = routePoint(next);
+  }
+
+  return ordered;
+}
+
+function improveRouteWithTwoOpt(start, route) {
+  const improved = route.slice();
+  if (improved.length < 4) return improved;
+
+  let changed = true;
+  let guard = 0;
+  while (changed && guard < 80) {
+    changed = false;
+    guard++;
+    for (let i = 0; i < improved.length - 1; i++) {
+      for (let k = i + 1; k < improved.length; k++) {
+        const a = i === 0 ? start : routePoint(improved[i - 1]);
+        const b = routePoint(improved[i]);
+        const c = routePoint(improved[k]);
+        const d = k + 1 < improved.length ? routePoint(improved[k + 1]) : null;
+        const before = distanceMeters(a, b) + (d ? distanceMeters(c, d) : 0);
+        const after = distanceMeters(a, c) + (d ? distanceMeters(b, d) : 0);
+        if (after + 0.5 < before) {
+          const reversed = improved.slice(i, k + 1).reverse();
+          improved.splice(i, reversed.length, ...reversed);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return improved;
+}
+
+function getRouteStartPoint() {
+  if (userMarker) {
+    const ll = userMarker.getLngLat();
+    return { lat: ll.lat, lng: ll.lng, label: '現在地' };
+  }
+  if (map) {
+    const center = map.getCenter();
+    return { lat: center.lat, lng: center.lng, label: '地図中心' };
+  }
+  return { lat: DEFAULT_CENTER_LAT, lng: DEFAULT_CENTER_LNG, label: '初期位置' };
+}
+
+function formatKm(meters) {
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1)}km`;
+  return `${Math.round(meters)}m`;
+}
+
+function shortRoutePreview(route) {
+  return route.slice(0, 5).map((d, idx) => {
+    const label = extractBuilding(d.note) || extractBanchi(d.address) || d.address;
+    return `${idx + 1}. ${label}`;
+  }).join('\n');
+}
+
+function optimizeRouteOrder() {
+  closeModal('modal-menu');
+  const routeItems = deliveries.filter(isRoutableDelivery);
+  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
+  const completedItems = deliveries.filter(d => d && d.completed);
+
+  if (routeItems.length < 2) {
+    showToast(`${modeLabel()}先が2件以上ある時に並べ替えできます`, true);
+    return;
+  }
+
+  const start = getRouteStartPoint();
+  const originalDistance = routeDistanceMeters(start, routeItems);
+  const suggested = improveRouteWithTwoOpt(start, nearestNeighborRoute(start, routeItems));
+  const suggestedDistance = routeDistanceMeters(start, suggested);
+  const diff = Math.max(0, originalDistance - suggestedDistance);
+  const tailNote = [
+    noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
+    completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
+  ].filter(Boolean).join('\n');
+
+  showConfirm(
+    'おすすめ順に並べ替え',
+    `${start.label}から近い順に${modeLabel()}順を提案します。\n` +
+    `目安距離: ${formatKm(originalDistance)} → ${formatKm(suggestedDistance)}` +
+    (diff > 0 ? ` (${formatKm(diff)}短縮)` : '') + '\n\n' +
+    shortRoutePreview(suggested) +
+    (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
+    (tailNote ? `\n\n${tailNote}` : '') +
+    '\n\nこの順番に並べ替えますか？',
+    () => {
+      deliveries = suggested.concat(noLocationItems, completedItems);
+      activeDeliveryId = suggested[0] ? suggested[0].id : null;
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      if (suggested[0] && map) {
+        map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
+      }
+      showToast(`${modeLabel()}順を並べ替えました`);
+    }
+  );
+}
+
 function exportDeliveriesAsJSON() {
   closeModal('modal-menu');
   if (deliveries.length === 0) { showToast('配送先がありません', true); return; }
@@ -2614,6 +2768,7 @@ $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 $('menu-center-user').addEventListener('click', centerOnUser);
 $('menu-toggle-mode').addEventListener('click', toggleAppMode);
 $('menu-import-pickup').addEventListener('click', openPickupImportModal);
+$('menu-optimize-route').addEventListener('click', optimizeRouteOrder);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);
