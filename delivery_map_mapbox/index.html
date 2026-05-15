@@ -575,6 +575,7 @@
 </div>
 
 <div class="map-control-left">
+  <button id="btn-app-mode" type="button">モード: 配送</button>
   <button id="btn-label-mode" type="button">表示: 番地+建物</button>
   <button id="btn-neighborhoods" type="button" class="on">区域: ON</button>
   <button id="btn-addr" type="button">番地表示: OFF</button>
@@ -604,6 +605,7 @@
     <h3>メニュー</h3>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
+      <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
       <button id="menu-import-pickup" type="button">📦 集荷リストを取り込む</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
       <button id="menu-import" type="button">📥 他のアプリのリストを取り込む</button>
@@ -724,6 +726,8 @@
 'use strict';
 
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
+const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
+const APP_MODE_KEY = 'rys-mapbox-app-mode';
 const USAGE_KEY = 'rys-mapbox-usage-v1';
 const NEIGHBORHOOD_KEY = 'rys-mapbox-neighborhoods-visible';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-list-collapsed';
@@ -749,13 +753,25 @@ const PICKUP_SHEETS = [
   '浜町店 南',
   '浜町店 北'
 ];
+const PICKUP_SYNC_INTERVAL_MS = 20000;
 
 const DEFAULT_CENTER_LNG = 139.7745;
 const DEFAULT_CENTER_LAT = 35.6845;
 const DEFAULT_ZOOM = 16;
 
+function detectInitialAppMode() {
+  const saved = localStorage.getItem(APP_MODE_KEY);
+  if (saved === 'pickup' || saved === 'delivery') return saved;
+  try {
+    const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    if (Array.isArray(existing) && existing.some(d => d && d.pickupSheet)) return 'pickup';
+  } catch (e) {}
+  return 'delivery';
+}
+
 let map = null;
 let mapboxConfig = null;
+let appMode = detectInitialAppMode();
 let deliveries = [];
 let markers = new Map();
 let activeDeliveryId = null;
@@ -767,6 +783,9 @@ let editingItemId = null;
 let confirmCallback = null;
 let operatorSaveCallback = null;
 let operatorCancelCallback = null;
+let pickupSyncTimer = null;
+let pickupSyncInFlight = false;
+let pickupLastSyncedAt = null;
 
 let gpsWatchId = null;
 let gpsActive = false;
@@ -814,12 +833,27 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+function currentStorageKey() {
+  return appMode === 'pickup' ? PICKUP_STORAGE_KEY : STORAGE_KEY;
+}
+
 function saveDeliveries() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(deliveries));
+  localStorage.setItem(currentStorageKey(), JSON.stringify(deliveries));
 }
 function loadDeliveries() {
-  try { deliveries = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+  try { deliveries = JSON.parse(localStorage.getItem(currentStorageKey()) || '[]'); }
   catch { deliveries = []; }
+  if (appMode === 'pickup' && deliveries.length === 0) {
+    try {
+      const legacy = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      if (Array.isArray(legacy) && legacy.some(d => d && d.pickupSheet)) {
+        deliveries = legacy.filter(d => d && d.pickupSheet);
+        localStorage.setItem(PICKUP_STORAGE_KEY, JSON.stringify(deliveries));
+        const remaining = legacy.filter(d => !(d && d.pickupSheet));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining));
+      }
+    } catch (e) {}
+  }
 }
 
 function bumpUsage(kind) {
@@ -833,6 +867,13 @@ function getOperatorName() {
 
 function saveOperatorName(name) {
   localStorage.setItem(OPERATOR_NAME_KEY, String(name || '').trim());
+}
+
+function formatTime(value) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 16);
+  return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 }
 
 function openOperatorModal(callback, cancelCallback) {
@@ -874,6 +915,48 @@ function ensureOperatorName() {
   return new Promise(resolve => {
     openOperatorModal(name => resolve(name), () => resolve(''));
   });
+}
+
+function modeLabel() {
+  return appMode === 'pickup' ? '集荷' : '配送';
+}
+
+function updateModeUi() {
+  const modeBtn = $('btn-app-mode');
+  if (modeBtn) {
+    modeBtn.textContent = `モード: ${modeLabel()}`;
+    modeBtn.classList.toggle('on', appMode === 'pickup');
+  }
+  const menuBtn = $('menu-toggle-mode');
+  if (menuBtn) {
+    menuBtn.textContent = appMode === 'pickup' ? '🔁 配送モードに切替' : '🔁 集荷モードに切替';
+  }
+  const title = document.querySelector('.list-header h2');
+  if (title) title.textContent = `${modeLabel()}リスト`;
+}
+
+function switchAppMode(mode, showMessage = true) {
+  if (mode !== 'pickup' && mode !== 'delivery') return;
+  if (appMode === mode) {
+    updateModeUi();
+    restartPickupAutoSync();
+    return;
+  }
+  saveDeliveries();
+  appMode = mode;
+  localStorage.setItem(APP_MODE_KEY, appMode);
+  activeDeliveryId = null;
+  loadDeliveries();
+  renderMarkers();
+  renderList();
+  updateModeUi();
+  restartPickupAutoSync();
+  if (showMessage) showToast(`${modeLabel()}モードに切り替えました`);
+}
+
+function toggleAppMode() {
+  closeModal('modal-menu');
+  switchAppMode(appMode === 'pickup' ? 'delivery' : 'pickup');
 }
 
 function escapeHtml(s) {
@@ -1597,7 +1680,10 @@ function renderList() {
     return;
   }
   const done = deliveries.filter(d => d.completed).length;
-  stat.textContent = `${done}/${deliveries.length}件 完了`;
+  const syncText = appMode === 'pickup' && pickupLastSyncedAt
+    ? ` / 同期 ${formatTime(pickupLastSyncedAt)}`
+    : '';
+  stat.textContent = `${done}/${deliveries.length}件 完了${syncText}`;
 
   body.innerHTML = deliveries.map((d, idx) => {
     const num = idx + 1;
@@ -1611,6 +1697,7 @@ function renderList() {
         <div class="item-info">
           <div class="addr">${escapeHtml(d.address)}</div>
           ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}
+          ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
         </div>
         <div class="item-actions">
           <button class="done-btn ${d.completed ? 'completed' : ''}" data-action="done" data-id="${d.id}" title="完了">${d.completed ? '↩' : '✓'}</button>
@@ -1660,6 +1747,8 @@ async function toggleDone(id) {
 
   d.completed = nextCompleted;
   d.completedAt = d.completed ? Date.now() : null;
+  d.completedBy = d.completed ? operatorName : '';
+  d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
   if (d.completed && activeDeliveryId === id) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
@@ -1726,6 +1815,8 @@ async function toggleEditedItemDone() {
 
   d.completed = nextCompleted;
   d.completedAt = d.completed ? Date.now() : null;
+  d.completedBy = d.completed ? operatorName : '';
+  d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
   if (d.completed && activeDeliveryId === editingItemId) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
@@ -2023,7 +2114,7 @@ function findOtherDeliveryLists() {
   const candidates = [];
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (!key || key === STORAGE_KEY) continue;
+    if (!key || key === currentStorageKey() || key === PICKUP_STORAGE_KEY) continue;
     try {
       const data = JSON.parse(localStorage.getItem(key));
       if (Array.isArray(data) && data.length > 0) {
@@ -2071,10 +2162,13 @@ function importDeliveriesFromOtherApp() {
         formatted: d.formatted || '',
         completed: !!d.completed,
         completedAt: d.completedAt || null,
+        completedBy: d.completedBy || '',
+        completedAtLabel: d.completedAtLabel || '',
         createdAt: d.createdAt || Date.now(),
         pickupSheet: d.pickupSheet || '',
         pickupRow: d.pickupRow || null,
-        pickupId: d.pickupId || ''
+        pickupId: d.pickupId || '',
+        progressSyncFailed: !!d.progressSyncFailed
       })).filter(d => d.lat != null && d.lng != null);
 
       deliveries = imported;
@@ -2100,6 +2194,7 @@ function setupPickupSheetOptions() {
 
 function openPickupImportModal() {
   closeModal('modal-menu');
+  if (appMode !== 'pickup') switchAppMode('pickup', false);
   setupPickupSheetOptions();
   openModal('modal-pickup-import');
 }
@@ -2109,6 +2204,11 @@ function normalizePickupTime(value) {
   const m = s.match(/^1899-12-30T(\d{2}):(\d{2})/);
   if (!m) return s;
   return `${Number(m[1])}:${m[2]}`;
+}
+
+function isTruthyValue(value) {
+  const s = String(value || '').trim().toUpperCase();
+  return value === true || ['TRUE', '1', 'YES', 'Y', 'ON', '済', '○'].includes(s);
 }
 
 function pickupNote(item) {
@@ -2141,9 +2241,13 @@ async function syncPickupProgress(d, operatorName) {
       const detail = data && data.detail ? ` (${data.detail})` : '';
       throw new Error(((data && data.error) || 'スプレッドシート更新に失敗しました') + detail);
     }
+    d.progressSyncFailed = false;
+    saveDeliveries();
     return true;
   } catch (e) {
     console.warn('pickup progress sync failed', e);
+    d.progressSyncFailed = true;
+    saveDeliveries();
     showToast('スプレッドシート更新に失敗しました', true);
     return false;
   }
@@ -2164,6 +2268,86 @@ async function fetchPickupItems(sheetName, checkedOnly) {
   return data;
 }
 
+function applyPickupProgressFromItems(items) {
+  let changed = false;
+  const byKey = new Map();
+  items.forEach(item => {
+    byKey.set(`${item.sheet || ''}:${item.row}`, item);
+  });
+
+  deliveries.forEach(d => {
+    if (!isPickupBackedDelivery(d)) return;
+    if (d.progressSyncFailed) return;
+    const item = byKey.get(`${d.pickupSheet}:${d.pickupRow}`);
+    if (!item) return;
+    if (d.pickupId && item.id && String(d.pickupId) !== String(item.id)) return;
+
+    const completed = isTruthyValue(item.collected);
+    const completedBy = completed ? (item.collected_by || '') : '';
+    const completedAtLabel = completed ? formatTime(item.collected_at || '') : '';
+    const completedAt = completed
+      ? (item.collected_at ? Date.parse(item.collected_at) || d.completedAt || Date.now() : d.completedAt || Date.now())
+      : null;
+
+    if (d.completed !== completed ||
+        (d.completedBy || '') !== completedBy ||
+        (d.completedAtLabel || '') !== completedAtLabel) {
+      d.completed = completed;
+      d.completedAt = completedAt;
+      d.completedBy = completedBy;
+      d.completedAtLabel = completedAtLabel;
+      if (completed && activeDeliveryId === d.id) activeDeliveryId = null;
+      changed = true;
+    }
+  });
+
+  return changed;
+}
+
+async function syncPickupProgressFromSheets(silent = true) {
+  if (appMode !== 'pickup' || pickupSyncInFlight) return;
+  const sheets = [...new Set(deliveries.filter(isPickupBackedDelivery).map(d => d.pickupSheet))];
+  if (sheets.length === 0) {
+    pickupLastSyncedAt = null;
+    renderList();
+    return;
+  }
+
+  pickupSyncInFlight = true;
+  try {
+    let changed = false;
+    for (const sheet of sheets) {
+      const data = await fetchPickupItems(sheet, false);
+      changed = applyPickupProgressFromItems(data.items || []) || changed;
+    }
+    pickupLastSyncedAt = new Date();
+    if (changed) {
+      saveDeliveries();
+      renderMarkers();
+    }
+    renderList();
+  } catch (e) {
+    console.warn('pickup auto sync failed', e);
+    if (!silent) showToast('集荷進捗の同期に失敗しました', true);
+  } finally {
+    pickupSyncInFlight = false;
+  }
+}
+
+function restartPickupAutoSync() {
+  if (pickupSyncTimer) {
+    clearInterval(pickupSyncTimer);
+    pickupSyncTimer = null;
+  }
+  if (appMode !== 'pickup') {
+    pickupLastSyncedAt = null;
+    renderList();
+    return;
+  }
+  syncPickupProgressFromSheets(true);
+  pickupSyncTimer = setInterval(() => syncPickupProgressFromSheets(true), PICKUP_SYNC_INTERVAL_MS);
+}
+
 async function importPickupItems(items, replaceList) {
   if (replaceList) {
     deliveries = [];
@@ -2180,6 +2364,7 @@ async function importPickupItems(items, replaceList) {
       failed.push(item);
       continue;
     }
+    const collected = isTruthyValue(item.collected);
     const d = {
       id: uid(),
       address: item.address,
@@ -2188,12 +2373,15 @@ async function importPickupItems(items, replaceList) {
       lng: result.lng,
       approx: result.approx,
       formatted: result.formatted,
-      completed: false,
-      completedAt: null,
+      completed: collected,
+      completedAt: collected && item.collected_at ? Date.parse(item.collected_at) || Date.now() : null,
+      completedBy: collected ? (item.collected_by || '') : '',
+      completedAtLabel: collected ? formatTime(item.collected_at || Date.now()) : '',
       createdAt: Date.now(),
       pickupSheet: item.sheet || '',
       pickupRow: item.row || null,
-      pickupId: item.id || ''
+      pickupId: item.id || '',
+      progressSyncFailed: false
     };
     deliveries.push(d);
     imported.push(d);
@@ -2202,6 +2390,7 @@ async function importPickupItems(items, replaceList) {
   saveDeliveries();
   renderMarkers();
   renderList();
+  restartPickupAutoSync();
   hideLoading();
 
   if (imported.length > 0) {
@@ -2368,6 +2557,7 @@ function centerOnUser() {
 
 $('btn-menu').addEventListener('click', () => openModal('modal-menu'));
 $('btn-gps').addEventListener('click', toggleGpsTracking);
+$('btn-app-mode').addEventListener('click', () => switchAppMode(appMode === 'pickup' ? 'delivery' : 'pickup'));
 $('btn-label-mode').addEventListener('click', cycleLabelMode);
 $('btn-neighborhoods').addEventListener('click', toggleNeighborhoods);
 $('btn-addr').addEventListener('click', toggleAddressBlocks);
@@ -2414,6 +2604,7 @@ $('btn-edit-done').addEventListener('click', toggleEditedItemDone);
 $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 
 $('menu-center-user').addEventListener('click', centerOnUser);
+$('menu-toggle-mode').addEventListener('click', toggleAppMode);
 $('menu-import-pickup').addEventListener('click', openPickupImportModal);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
 $('menu-import').addEventListener('click', importDeliveriesFromOtherApp);
@@ -2468,6 +2659,8 @@ document.querySelector('.placement-banner').addEventListener('click', cancelPlac
     renderMarkers();
     renderList();
     updateGpsButton();
+    updateModeUi();
+    restartPickupAutoSync();
     hideLoading();
 
     if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {

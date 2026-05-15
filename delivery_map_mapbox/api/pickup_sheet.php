@@ -166,6 +166,9 @@ for ($i = 1; $i < count($rows); $i++) {
     'method' => value_at($row, $indexMap, 'method'),
     'notes' => value_at($row, $indexMap, 'notes'),
     'checked' => $checked,
+    'collected' => truthy_cell(value_at($row, $indexMap, 'collected')),
+    'collected_at' => value_at($row, $indexMap, 'collected_at'),
+    'collected_by' => value_at($row, $indexMap, 'collected_by'),
   ];
 }
 
