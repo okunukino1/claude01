@@ -102,6 +102,23 @@ $coordText = implode(';', array_map(function($p) {
   return rawurlencode((string)$p['lng']) . ',' . rawurlencode((string)$p['lat']);
 }, $orderedInput));
 
+function request_origin_for_mapbox() {
+  $origin = (string)($_SERVER['HTTP_ORIGIN'] ?? '');
+  if ($origin !== '' && preg_match('/^https?:\/\//i', $origin)) return $origin . '/';
+
+  $referer = (string)($_SERVER['HTTP_REFERER'] ?? '');
+  if ($referer !== '' && preg_match('/^https?:\/\//i', $referer)) return $referer;
+
+  $host = (string)($_SERVER['HTTP_HOST'] ?? '');
+  if ($host !== '') {
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+      || (string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+    return ($https ? 'https://' : 'http://') . $host . '/';
+  }
+
+  return '';
+}
+
 function call_mapbox_optimization($profile, $coordText, $token, $useCurb, $count) {
   $params = [
     'access_token' => $token,
@@ -120,11 +137,22 @@ function call_mapbox_optimization($profile, $coordText, $token, $useCurb, $count
 
   $url = 'https://api.mapbox.com/optimized-trips/v1/' . $profile . '/' . $coordText . '?' . http_build_query($params);
   $ch = curl_init($url);
+  $headers = ['Accept: application/json'];
+  $referer = request_origin_for_mapbox();
+  if ($referer !== '') {
+    $headers[] = 'Referer: ' . $referer;
+    $parts = parse_url($referer);
+    if (is_array($parts) && isset($parts['scheme'], $parts['host'])) {
+      $origin = $parts['scheme'] . '://' . $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '');
+      $headers[] = 'Origin: ' . $origin;
+    }
+  }
+
   curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_CONNECTTIMEOUT => 8,
     CURLOPT_TIMEOUT => 25,
-    CURLOPT_HTTPHEADER => ['Accept: application/json'],
+    CURLOPT_HTTPHEADER => $headers,
   ]);
   $body = curl_exec($ch);
   $curlErr = curl_error($ch);
@@ -164,7 +192,15 @@ if ($attempt['body'] === false) {
 
 if ($attempt['httpCode'] < 200 || $attempt['httpCode'] >= 300 || !is_array($data)) {
   http_response_code(502);
-  echo json_encode(['error' => 'Mapbox Optimization API応答エラー', 'detail' => substr((string)$attempt['body'], 0, 500)], JSON_UNESCAPED_UNICODE);
+  $detail = substr((string)$attempt['body'], 0, 500);
+  if ($attempt['httpCode'] === 401 || $attempt['httpCode'] === 403) {
+    echo json_encode([
+      'error' => 'Mapboxトークンがルート検索APIで拒否されました',
+      'detail' => 'MapboxのURL制限または権限設定が原因の可能性があります。api/config.php にサーバー用の MAPBOX_OPTIMIZATION_TOKEN を追加するか、Mapboxトークン設定を確認してください。応答: ' . $detail
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  echo json_encode(['error' => 'Mapbox Optimization API応答エラー', 'detail' => $detail], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
