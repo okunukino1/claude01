@@ -2880,7 +2880,7 @@ async function optimizeGoogleCarRouteOrder() {
     hideLoading();
 
     if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
-      const detail = data && data.detail ? `\n${data.detail}` : '';
+      const detail = data && (data.hint || data.detail) ? `\n${data.hint || data.detail}` : '';
       throw new Error(((data && data.error) || 'Google車用ルート検索に失敗しました') + detail);
     }
 

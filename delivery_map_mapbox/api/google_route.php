@@ -65,6 +65,57 @@ function duration_seconds($value) {
   return (float)$m[1];
 }
 
+function google_routes_error_response($response, $httpCode) {
+  $data = json_decode((string)$response, true);
+  $googleError = is_array($data) ? ($data['error'] ?? null) : null;
+  $message = is_array($googleError) ? (string)($googleError['message'] ?? '') : '';
+  $status = is_array($googleError) ? (string)($googleError['status'] ?? '') : '';
+  $reason = '';
+  $service = '';
+  $project = '';
+
+  if (is_array($googleError) && isset($googleError['details']) && is_array($googleError['details'])) {
+    foreach ($googleError['details'] as $detail) {
+      if (!is_array($detail)) continue;
+      if (($detail['@type'] ?? '') !== 'type.googleapis.com/google.rpc.ErrorInfo') continue;
+      $reason = (string)($detail['reason'] ?? '');
+      $metadata = is_array($detail['metadata'] ?? null) ? $detail['metadata'] : [];
+      $service = (string)($metadata['service'] ?? '');
+      $consumer = (string)($metadata['consumer'] ?? '');
+      if (preg_match('/projects\/([0-9]+)/', $consumer, $m)) $project = $m[1];
+      if (!$project && isset($metadata['containerInfo'])) $project = (string)$metadata['containerInfo'];
+    }
+  }
+
+  if (
+    $httpCode === 403 &&
+    ($reason === 'SERVICE_DISABLED' || $service === 'routes.googleapis.com' || stripos($message, 'disabled') !== false)
+  ) {
+    return [
+      'error' => 'Google Routes APIが無効です',
+      'hint' => ($project ? 'Google Cloudのプロジェクト ' . $project . ' で ' : 'Google Cloudで ') .
+        'Routes APIを有効化し、数分待ってから再試行してください。',
+      'status' => $status ?: 'PERMISSION_DENIED',
+      'reason' => $reason ?: 'SERVICE_DISABLED',
+      'service' => $service ?: 'routes.googleapis.com',
+    ];
+  }
+
+  if ($httpCode === 403 && stripos($message, 'API key') !== false) {
+    return [
+      'error' => 'Google Routes APIキーが拒否されました',
+      'hint' => 'api/config.php の GOOGLE_ROUTES_API_KEY と、Google Cloud側のAPIキー制限を確認してください。',
+      'status' => $status ?: 'PERMISSION_DENIED',
+    ];
+  }
+
+  return [
+    'error' => 'Google Routes API応答エラー',
+    'detail' => $message !== '' ? $message : substr((string)$response, 0, 300),
+    'status' => $status,
+  ];
+}
+
 $start = $input['start'] ?? null;
 if (!is_array($start) || !valid_coord($start['lat'] ?? null) || !valid_coord($start['lng'] ?? null)) {
   http_response_code(400);
@@ -151,10 +202,7 @@ if ($response === false) {
 $data = json_decode($response, true);
 if ($httpCode < 200 || $httpCode >= 300 || !is_array($data)) {
   http_response_code(502);
-  echo json_encode([
-    'error' => 'Google Routes API応答エラー',
-    'detail' => substr((string)$response, 0, 700),
-  ], JSON_UNESCAPED_UNICODE);
+  echo json_encode(google_routes_error_response($response, $httpCode), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
 }
 
