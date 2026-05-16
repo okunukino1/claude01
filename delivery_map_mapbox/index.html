@@ -2775,8 +2775,8 @@ async function optimizeCarRouteOrder() {
     showToast(`${modeLabel()}先が2件以上ある時に車用ルート検索できます`, true);
     return;
   }
-  if (routeItems.length > 11) {
-    showToast('車用ルート検索は一度に11件までです。完了分を削除するか分けて検索してください。', true);
+  if (routeItems.length > 24) {
+    showToast('車用ルート検索は一度に24件までです。完了分を削除するか分けて検索してください。', true);
     return;
   }
 

@@ -74,12 +74,12 @@ if (count($cleanPoints) < 2) {
   exit;
 }
 
-// Mapbox Optimization API v1 は最大12座標。始点を含めるため配送先は11件まで。
-if (count($cleanPoints) > 11) {
+// Optimization API v1 は始点込み12座標まで。12件以上は Matrix + Directions で補助最適化する。
+if (count($cleanPoints) > 24) {
   http_response_code(400);
   echo json_encode([
-    'error' => '車用ルート最適化は一度に11件まで対応しています',
-    'detail' => 'Mapbox Optimization API v1 の最大12座標制限に合わせています。'
+    'error' => '車用ルート最適化は一度に24件まで対応しています',
+    'detail' => 'Mapbox Matrix/Directions API の最大25座標制限に合わせています。'
   ], JSON_UNESCAPED_UNICODE);
   exit;
 }
@@ -169,6 +169,203 @@ function call_mapbox_optimization($profile, $coordText, $token, $useCurb, $count
 $profile = (string)($input['profile'] ?? 'mapbox/driving');
 if (!in_array($profile, ['mapbox/driving', 'mapbox/driving-traffic'], true)) {
   $profile = 'mapbox/driving';
+}
+
+if (count($cleanPoints) > 11 && $profile === 'mapbox/driving-traffic') {
+  $profile = 'mapbox/driving';
+}
+
+function response_error_from_mapbox($attempt) {
+  $detail = substr((string)$attempt['body'], 0, 500);
+  if ($attempt['body'] === false) {
+    http_response_code(502);
+    echo json_encode(['error' => 'Mapbox APIへの接続に失敗しました', 'detail' => $attempt['curlErr']], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  if ($attempt['httpCode'] === 401 || $attempt['httpCode'] === 403) {
+    http_response_code(502);
+    echo json_encode([
+      'error' => 'Mapboxトークンがルート検索APIで拒否されました',
+      'detail' => 'MapboxのURL制限または権限設定が原因の可能性があります。api/config.php にサーバー用の MAPBOX_OPTIMIZATION_TOKEN を追加するか、Mapboxトークン設定を確認してください。応答: ' . $detail
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  http_response_code(502);
+  echo json_encode(['error' => 'Mapbox API応答エラー', 'detail' => $detail], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+function matrix_cost($matrix, $from, $to, $fallbackPoints) {
+  if (isset($matrix[$from][$to]) && is_numeric($matrix[$from][$to])) {
+    return (float)$matrix[$from][$to];
+  }
+  return distance_meters($fallbackPoints[$from], $fallbackPoints[$to]) / 8.0;
+}
+
+function route_matrix_cost($route, $matrix, $points) {
+  if (count($route) === 0) return 0;
+  $total = matrix_cost($matrix, 0, $route[0], $points);
+  for ($i = 1; $i < count($route); $i++) {
+    $total += matrix_cost($matrix, $route[$i - 1], $route[$i], $points);
+  }
+  return $total;
+}
+
+function nearest_neighbor_matrix_route($matrix, $points) {
+  $remaining = range(1, count($points) - 1);
+  $route = [];
+  $current = 0;
+  while (count($remaining) > 0) {
+    $bestPos = 0;
+    $bestCost = INF;
+    foreach ($remaining as $pos => $idx) {
+      $cost = matrix_cost($matrix, $current, $idx, $points);
+      if ($cost < $bestCost) {
+        $bestCost = $cost;
+        $bestPos = $pos;
+      }
+    }
+    $next = $remaining[$bestPos];
+    array_splice($remaining, $bestPos, 1);
+    $route[] = $next;
+    $current = $next;
+  }
+  return $route;
+}
+
+function improve_matrix_route($route, $matrix, $points) {
+  if (count($route) < 4) return $route;
+  $changed = true;
+  $guard = 0;
+  while ($changed && $guard < 80) {
+    $changed = false;
+    $guard++;
+    for ($i = 0; $i < count($route) - 1; $i++) {
+      for ($k = $i + 1; $k < count($route); $k++) {
+        $a = $i === 0 ? 0 : $route[$i - 1];
+        $b = $route[$i];
+        $c = $route[$k];
+        $d = ($k + 1 < count($route)) ? $route[$k + 1] : null;
+        $before = matrix_cost($matrix, $a, $b, $points) + ($d === null ? 0 : matrix_cost($matrix, $c, $d, $points));
+        $after = matrix_cost($matrix, $a, $c, $points) + ($d === null ? 0 : matrix_cost($matrix, $b, $d, $points));
+        if ($after + 1 < $before) {
+          $slice = array_reverse(array_slice($route, $i, $k - $i + 1));
+          array_splice($route, $i, count($slice), $slice);
+          $changed = true;
+        }
+      }
+    }
+  }
+  return $route;
+}
+
+function call_mapbox_matrix($profile, $points, $token) {
+  $coordText = implode(';', array_map(function($p) {
+    return rawurlencode((string)$p['lng']) . ',' . rawurlencode((string)$p['lat']);
+  }, $points));
+  $params = [
+    'access_token' => $token,
+    'annotations' => 'duration,distance'
+  ];
+  $url = 'https://api.mapbox.com/directions-matrix/v1/' . $profile . '/' . $coordText . '?' . http_build_query($params);
+  $ch = curl_init($url);
+  $headers = ['Accept: application/json'];
+  $referer = request_origin_for_mapbox();
+  if ($referer !== '') {
+    $headers[] = 'Referer: ' . $referer;
+    $parts = parse_url($referer);
+    if (is_array($parts) && isset($parts['scheme'], $parts['host'])) {
+      $origin = $parts['scheme'] . '://' . $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '');
+      $headers[] = 'Origin: ' . $origin;
+    }
+  }
+  curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CONNECTTIMEOUT => 8,
+    CURLOPT_TIMEOUT => 25,
+    CURLOPT_HTTPHEADER => $headers,
+  ]);
+  $body = curl_exec($ch);
+  $curlErr = curl_error($ch);
+  $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  curl_close($ch);
+  return ['body' => $body, 'curlErr' => $curlErr, 'httpCode' => (int)$httpCode];
+}
+
+function call_mapbox_directions($profile, $points, $token) {
+  $coordText = implode(';', array_map(function($p) {
+    return rawurlencode((string)$p['lng']) . ',' . rawurlencode((string)$p['lat']);
+  }, $points));
+  $params = [
+    'access_token' => $token,
+    'geometries' => 'geojson',
+    'overview' => 'full',
+    'steps' => 'true',
+    'language' => 'ja'
+  ];
+  $url = 'https://api.mapbox.com/directions/v5/' . $profile . '/' . $coordText . '?' . http_build_query($params);
+  $ch = curl_init($url);
+  $headers = ['Accept: application/json'];
+  $referer = request_origin_for_mapbox();
+  if ($referer !== '') {
+    $headers[] = 'Referer: ' . $referer;
+    $parts = parse_url($referer);
+    if (is_array($parts) && isset($parts['scheme'], $parts['host'])) {
+      $origin = $parts['scheme'] . '://' . $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '');
+      $headers[] = 'Origin: ' . $origin;
+    }
+  }
+  curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CONNECTTIMEOUT => 8,
+    CURLOPT_TIMEOUT => 25,
+    CURLOPT_HTTPHEADER => $headers,
+  ]);
+  $body = curl_exec($ch);
+  $curlErr = curl_error($ch);
+  $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  curl_close($ch);
+  return ['body' => $body, 'curlErr' => $curlErr, 'httpCode' => (int)$httpCode];
+}
+
+if (count($cleanPoints) > 11) {
+  $matrixPoints = array_merge([$start], $cleanPoints);
+  $matrixAttempt = call_mapbox_matrix($profile, $matrixPoints, $token);
+  $matrixData = is_string($matrixAttempt['body']) ? json_decode($matrixAttempt['body'], true) : null;
+  if ($matrixAttempt['body'] === false || $matrixAttempt['httpCode'] < 200 || $matrixAttempt['httpCode'] >= 300 || !is_array($matrixData) || (($matrixData['code'] ?? '') !== 'Ok')) {
+    response_error_from_mapbox($matrixAttempt);
+  }
+
+  $durations = $matrixData['durations'] ?? [];
+  if (!is_array($durations) || count($durations) !== count($matrixPoints)) {
+    http_response_code(502);
+    echo json_encode(['error' => 'Mapbox Matrix APIの応答形式が不正です'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  $routeIndexes = improve_matrix_route(nearest_neighbor_matrix_route($durations, $matrixPoints), $durations, $matrixPoints);
+  $orderedPoints = array_map(function($idx) use ($matrixPoints) { return $matrixPoints[$idx]; }, $routeIndexes);
+  $directionsPoints = array_merge([$start], $orderedPoints);
+  $directionsAttempt = call_mapbox_directions($profile, $directionsPoints, $token);
+  $directionsData = is_string($directionsAttempt['body']) ? json_decode($directionsAttempt['body'], true) : null;
+  if ($directionsAttempt['body'] === false || $directionsAttempt['httpCode'] < 200 || $directionsAttempt['httpCode'] >= 300 || !is_array($directionsData) || (($directionsData['code'] ?? '') !== 'Ok')) {
+    response_error_from_mapbox($directionsAttempt);
+  }
+
+  $route = $directionsData['routes'][0] ?? [];
+  echo json_encode([
+    'ok' => true,
+    'profile' => $profile,
+    'method' => 'matrix-directions',
+    'orderedIds' => array_values(array_map(function($p) { return $p['id']; }, $orderedPoints)),
+    'waypoints' => array_values(array_map(function($p, $idx) {
+      return ['id' => $p['id'], 'waypoint_index' => $idx + 1, 'name' => '', 'location' => [$p['lng'], $p['lat']]];
+    }, $orderedPoints, array_keys($orderedPoints))),
+    'distance' => isset($route['distance']) ? (float)$route['distance'] : null,
+    'duration' => isset($route['duration']) ? (float)$route['duration'] : route_matrix_cost($routeIndexes, $durations, $matrixPoints),
+    'geometry' => $route['geometry'] ?? null,
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
 }
 
 $attempt = call_mapbox_optimization($profile, $coordText, $token, true, count($orderedInput));
