@@ -39,6 +39,11 @@ define('MAPBOX_STYLE', 'mapbox://styles/mapbox/standard');
 // Google Cloudで Geocoding API を有効化してください。
 define('GOOGLE_MAPS_SERVER_KEY', 'AIza...Google Geocoding API用キー...');
 
+// === Google Routes API 車用ルート最適化 ===
+// 未設定の場合は GOOGLE_MAPS_SERVER_KEY を使います。
+// Google Cloudで Routes API を有効化してください。
+define('GOOGLE_ROUTES_API_KEY', '');
+
 // === 集荷進捗 → Googleスプレッドシート書き戻し ===
 // apps_script/pickup_progress.gs をGoogle Apps Scriptへ貼り付けてWebアプリとしてデプロイし、
 // 発行された /exec URL を入れてください。

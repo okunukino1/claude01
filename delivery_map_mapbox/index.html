@@ -612,6 +612,7 @@
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
+      <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
@@ -815,6 +816,7 @@ let usage = JSON.parse(localStorage.getItem(USAGE_KEY) || '{"ocr":0,"geocode":0}
 usage.ocr = usage.ocr || 0;
 usage.geocode = usage.geocode || 0;
 usage.routeOptimize = usage.routeOptimize || 0;
+usage.googleRouteOptimize = usage.googleRouteOptimize || 0;
 
 function $(id) { return document.getElementById(id); }
 
@@ -2171,7 +2173,10 @@ function showUsage() {
     <p><b>車用ルート最適化 (Mapbox)</b><br>
     呼び出し回数: ${usage.routeOptimize} 回<br>
     無料枠超過時の目安: $${routeCost}</p>
-    <p><b>合計推定費用: $${total}</b></p>
+    <p><b>車用ルート最適化 (Google Routes)</b><br>
+    呼び出し回数: ${usage.googleRouteOptimize} 回<br>
+    費用はGoogle Maps Platformの管理画面で確認してください。</p>
+    <p><b>Google車用ルートを除く合計推定費用: $${total}</b></p>
     <p style="font-size:11px;color:#666;margin-top:12px">
     ※ 地図表示自体 (Mapbox) はこのカウントに含まれません。<br>
     Mapboxは月50,000マップロードまで無料、超過後は約$5/1000ロード。<br>
@@ -2183,7 +2188,7 @@ function showUsage() {
 
 function resetUsage() {
   showConfirm('使用状況リセット', 'カウンターをリセットしますか？', () => {
-    usage = { ocr: 0, geocode: 0, routeOptimize: 0 };
+    usage = { ocr: 0, geocode: 0, routeOptimize: 0, googleRouteOptimize: 0 };
     localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
     showUsage();
     showToast('リセットしました');
@@ -2843,6 +2848,83 @@ async function optimizeCarRouteOrder() {
   }
 }
 
+async function optimizeGoogleCarRouteOrder() {
+  closeModal('modal-menu');
+  const routeItems = deliveries.filter(isRoutableDelivery);
+  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
+  const completedItems = deliveries.filter(d => d && d.completed);
+
+  if (routeItems.length < 2) {
+    showToast(`${modeLabel()}先が2件以上ある時にGoogle車用ルート検索できます`, true);
+    return;
+  }
+  if (routeItems.length > 24) {
+    showToast('Google車用ルート検索は一度に24件までです。完了分を削除するか分けて検索してください。', true);
+    return;
+  }
+
+  const start = getRouteStartPoint();
+  showLoading('Google車用ルートを検索中...');
+  try {
+    bumpUsage('googleRouteOptimize');
+    const res = await fetch('api/google_route.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        start: { lat: start.lat, lng: start.lng },
+        points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
+      })
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    hideLoading();
+
+    if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
+      const detail = data && data.detail ? `\n${data.detail}` : '';
+      throw new Error(((data && data.error) || 'Google車用ルート検索に失敗しました') + detail);
+    }
+
+    const byId = new Map(deliveries.map(d => [d.id, d]));
+    const suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
+    if (suggested.length !== routeItems.length) {
+      throw new Error('Google車用ルート検索結果の件数が一致しませんでした');
+    }
+
+    const distanceText = data.distance ? formatKm(data.distance) : '不明';
+    const durationText = data.duration ? formatDuration(data.duration) : '';
+    const tailNote = [
+      noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
+      completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
+    ].filter(Boolean).join('\n');
+
+    showConfirm(
+      'Google車向け 道路優先ルート',
+      `Google Routes APIの道路ルートで${modeLabel()}順を提案します。\n` +
+      `始点: ${start.label}\n` +
+      `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n\n` +
+      shortRoutePreview(suggested) +
+      (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
+      (tailNote ? `\n\n${tailNote}` : '') +
+      '\n\nこの順番に並べ替えますか？',
+      () => {
+        deliveries = suggested.concat(noLocationItems, completedItems);
+        activeDeliveryId = suggested[0] ? suggested[0].id : null;
+        saveDeliveries();
+        renderMarkers();
+        renderList();
+        if (data.geometry) setOptimizedRouteGeometry(data.geometry);
+        if (suggested[0] && map) {
+          map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
+        }
+        showToast(`${modeLabel()}順をGoogle車用ルートで並べ替えました`);
+      }
+    );
+  } catch (e) {
+    hideLoading();
+    showToast(e.message || 'Google車用ルート検索に失敗しました', true);
+  }
+}
+
 function exportDeliveriesAsJSON() {
   closeModal('modal-menu');
   if (deliveries.length === 0) { showToast('配送先がありません', true); return; }
@@ -3015,6 +3097,7 @@ $('menu-import-pickup').addEventListener('click', openPickupImportModal);
 $('menu-reset-pickup').addEventListener('click', resetPickupCompletionsManually);
 $('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
 $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
+$('menu-optimize-google').addEventListener('click', optimizeGoogleCarRouteOrder);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);
