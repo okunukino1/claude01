@@ -609,6 +609,7 @@
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
       <button id="menu-import-pickup" type="button">📦 集荷リストを取り込む</button>
+      <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
@@ -740,6 +741,7 @@ const LABEL_MODE_KEY = 'rys-mapbox-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-addr-visible';
 const ADDR_DATA_KEY = 'rys-mapbox-addr-data-v1';
 const OPERATOR_NAME_KEY = 'rys-mapbox-operator-name';
+const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-pickup-last-reset-date';
 
 const ADDR_PREF = '東京都';
 const ADDR_CITY = '中央区';
@@ -885,6 +887,15 @@ function formatTime(value) {
   return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 }
 
+function localDateKey(value = Date.now()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function openOperatorModal(callback, cancelCallback) {
   closeModal('modal-menu');
   $('operator-name').value = getOperatorName();
@@ -940,14 +951,19 @@ function updateModeUi() {
   if (menuBtn) {
     menuBtn.textContent = appMode === 'pickup' ? '🔁 配送モードに切替' : '🔁 集荷モードに切替';
   }
+  const resetPickupBtn = $('menu-reset-pickup');
+  if (resetPickupBtn) {
+    resetPickupBtn.style.display = appMode === 'pickup' ? 'block' : 'none';
+  }
   const title = document.querySelector('.list-header h2');
   if (title) title.textContent = `${modeLabel()}リスト`;
 }
 
-function switchAppMode(mode, showMessage = true) {
+async function switchAppMode(mode, showMessage = true) {
   if (mode !== 'pickup' && mode !== 'delivery') return;
   if (appMode === mode) {
     updateModeUi();
+    await resetStalePickupCompletions();
     restartPickupAutoSync();
     return;
   }
@@ -957,6 +973,7 @@ function switchAppMode(mode, showMessage = true) {
   activeDeliveryId = null;
   clearOptimizedRouteGeometry();
   loadDeliveries();
+  await resetStalePickupCompletions();
   renderMarkers();
   renderList();
   updateModeUi();
@@ -2254,9 +2271,9 @@ function setupPickupSheetOptions() {
   ).join('');
 }
 
-function openPickupImportModal() {
+async function openPickupImportModal() {
   closeModal('modal-menu');
-  if (appMode !== 'pickup') switchAppMode('pickup', false);
+  if (appMode !== 'pickup') await switchAppMode('pickup', false);
   setupPickupSheetOptions();
   openModal('modal-pickup-import');
 }
@@ -2283,7 +2300,7 @@ function pickupNote(item) {
   return lines.join('\n');
 }
 
-async function syncPickupProgress(d, operatorName) {
+async function syncPickupProgress(d, operatorName, options = {}) {
   if (!isPickupBackedDelivery(d)) return true;
   try {
     const res = await fetch('api/pickup_progress.php', {
@@ -2310,9 +2327,94 @@ async function syncPickupProgress(d, operatorName) {
     console.warn('pickup progress sync failed', e);
     d.progressSyncFailed = true;
     saveDeliveries();
-    showToast('スプレッドシート更新に失敗しました', true);
+    if (!options.silent) showToast('スプレッドシート更新に失敗しました', true);
     return false;
   }
+}
+
+async function resetPickupTargets(targets, options = {}) {
+  const items = targets.filter(isPickupBackedDelivery);
+  if (items.length === 0) return { reset: 0, failed: 0 };
+
+  const previousInFlight = pickupSyncInFlight;
+  pickupSyncInFlight = true;
+
+  let failed = 0;
+  try {
+    if (!options.silent) showLoading('集荷完了をリセット中...');
+    items.forEach(d => {
+      d.completed = false;
+      d.completedAt = null;
+      d.completedBy = '';
+      d.completedAtLabel = '';
+      d.progressSyncFailed = false;
+    });
+    activeDeliveryId = null;
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+
+    for (let i = 0; i < items.length; i++) {
+      if (!options.silent) $('loading-msg').textContent = `集荷完了をリセット中... ${i + 1}/${items.length}`;
+      const ok = await syncPickupProgress(items[i], '', { silent: true });
+      if (!ok) failed++;
+    }
+
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    return { reset: items.length, failed };
+  } finally {
+    pickupSyncInFlight = previousInFlight;
+    if (!options.silent) hideLoading();
+  }
+}
+
+function shouldResetStalePickupCompletion(d, todayKey) {
+  if (!isPickupBackedDelivery(d) || !d.completed) return false;
+  const completedDate = d.completedAt ? localDateKey(d.completedAt) : '';
+  return !completedDate || completedDate < todayKey;
+}
+
+async function resetStalePickupCompletions() {
+  if (appMode !== 'pickup') return;
+  const today = localDateKey();
+  const lastReset = localStorage.getItem(PICKUP_LAST_RESET_DATE_KEY) || '';
+  const stale = deliveries.filter(d => shouldResetStalePickupCompletion(d, today));
+
+  if (stale.length === 0) {
+    if (lastReset !== today) localStorage.setItem(PICKUP_LAST_RESET_DATE_KEY, today);
+    return;
+  }
+
+  const result = await resetPickupTargets(stale, { silent: false });
+  localStorage.setItem(PICKUP_LAST_RESET_DATE_KEY, today);
+  const failText = result.failed ? ` / ${result.failed}件はシート更新に失敗` : '';
+  showToast(`前日分の集荷完了を${result.reset}件リセットしました${failText}`, result.failed > 0);
+}
+
+function resetPickupCompletionsManually() {
+  closeModal('modal-menu');
+  if (appMode !== 'pickup') {
+    showToast('集荷モードで使える機能です', true);
+    return;
+  }
+  const targets = deliveries.filter(d => isPickupBackedDelivery(d) && d.completed);
+  if (targets.length === 0) {
+    showToast('完了済みの集荷先がありません');
+    return;
+  }
+
+  showConfirm(
+    '集荷完了をリセット',
+    `完了済みの集荷先 ${targets.length}件 を未完了に戻します。\nスプレッドシートの collected も空にします。よろしいですか？`,
+    async () => {
+      const result = await resetPickupTargets(targets, { silent: false });
+      localStorage.setItem(PICKUP_LAST_RESET_DATE_KEY, localDateKey());
+      const failText = result.failed ? ` / ${result.failed}件はシート更新に失敗` : '';
+      showToast(`集荷完了を${result.reset}件リセットしました${failText}`, result.failed > 0);
+    }
+  );
 }
 
 async function fetchPickupItems(sheetName, checkedOnly) {
@@ -2450,6 +2552,7 @@ async function importPickupItems(items, replaceList) {
   }
 
   saveDeliveries();
+  await resetStalePickupCompletions();
   renderMarkers();
   renderList();
   restartPickupAutoSync();
@@ -2908,6 +3011,7 @@ $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 $('menu-center-user').addEventListener('click', centerOnUser);
 $('menu-toggle-mode').addEventListener('click', toggleAppMode);
 $('menu-import-pickup').addEventListener('click', openPickupImportModal);
+$('menu-reset-pickup').addEventListener('click', resetPickupCompletionsManually);
 $('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
 $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
@@ -2961,6 +3065,7 @@ document.querySelector('.placement-banner').addEventListener('click', cancelPlac
     mapboxConfig = await loadMapboxConfig();
     await initMap();
     loadDeliveries();
+    await resetStalePickupCompletions();
     renderMarkers();
     renderList();
     updateGpsButton();
