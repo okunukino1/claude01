@@ -621,6 +621,7 @@
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
+      <button id="menu-manual" type="button">📖 使い方マニュアル</button>
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
@@ -3026,6 +3027,10 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
 });
 $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
+$('menu-manual').addEventListener('click', () => {
+  closeModal('modal-menu');
+  window.open('manual.html', '_blank', 'noopener');
+});
 
 $('btn-reset-usage').addEventListener('click', resetUsage);
 $('btn-pickup-import').addEventListener('click', importPickupSheet);

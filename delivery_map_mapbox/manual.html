@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RYS配送マップ 使い方マニュアル</title>
+<style>
+  :root {
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --line: #d8d3c3;
+    --paper: #fffdf6;
+    --bg: #f5f0df;
+    --accent: #2563eb;
+    --good: #15803d;
+    --warn: #b45309;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.75;
+  }
+  header {
+    background: #2b2418;
+    color: #fffaf0;
+    padding: 18px 16px;
+    border-bottom: 4px solid #d6a94a;
+  }
+  header h1 {
+    margin: 0 0 4px;
+    font-size: clamp(22px, 5vw, 34px);
+    letter-spacing: 0;
+  }
+  header p {
+    margin: 0;
+    color: #eadfca;
+    font-size: 14px;
+  }
+  main {
+    width: min(960px, 100%);
+    margin: 0 auto;
+    padding: 18px 14px 42px;
+  }
+  section {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 14px 0;
+  }
+  h2 {
+    margin: 0 0 10px;
+    font-size: 20px;
+    border-bottom: 2px solid #ead9a7;
+    padding-bottom: 6px;
+  }
+  h3 {
+    margin: 18px 0 6px;
+    font-size: 16px;
+  }
+  ul, ol { padding-left: 1.4em; }
+  li { margin: 5px 0; }
+  .toc {
+    display: grid;
+    gap: 8px;
+  }
+  .toc a {
+    display: block;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 700;
+  }
+  .note {
+    border-left: 4px solid var(--accent);
+    background: #eff6ff;
+    padding: 10px 12px;
+    margin: 12px 0;
+  }
+  .warn {
+    border-left-color: var(--warn);
+    background: #fff7ed;
+  }
+  .ok {
+    border-left-color: var(--good);
+    background: #f0fdf4;
+  }
+  kbd, code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    background: #f3ead1;
+    border: 1px solid #dfd1ac;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .flow {
+    display: grid;
+    gap: 10px;
+  }
+  .step {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: #fffaf0;
+  }
+  .step b { display: block; margin-bottom: 2px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+  }
+  th, td {
+    border: 1px solid var(--line);
+    padding: 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #f3ead1; }
+  @media (max-width: 640px) {
+    section { padding: 14px; }
+    th, td { display: block; width: 100%; }
+    th { border-bottom: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>RYS配送マップ 使い方マニュアル</h1>
+  <p>配送・集荷の現場で使うための操作手順です。</p>
+</header>
+
+<main>
+  <section>
+    <h2>まず覚えること</h2>
+    <div class="toc">
+      <a href="#daily">毎日の基本の流れ</a>
+      <a href="#mode">配送モードと集荷モード</a>
+      <a href="#add">配送先の追加</a>
+      <a href="#pickup">集荷リストの取り込み</a>
+      <a href="#done">完了・未完了の操作</a>
+      <a href="#route">ルート並べ替え</a>
+      <a href="#reset">翌日の集荷リセット</a>
+      <a href="#trouble">困ったとき</a>
+    </div>
+  </section>
+
+  <section id="daily">
+    <h2>毎日の基本の流れ</h2>
+    <div class="flow">
+      <div class="step">
+        <b>1. アプリを開く</b>
+        位置情報の許可が出たら許可してください。現在地ボタンや車用ルート提案で使います。
+      </div>
+      <div class="step">
+        <b>2. モードを確認する</b>
+        左上付近の <code>モード: 配送</code> / <code>モード: 集荷</code> を確認します。メニューから切り替えできます。
+      </div>
+      <div class="step">
+        <b>3. 配送先・集荷先を準備する</b>
+        配送は手入力・音声・伝票撮影で追加します。集荷はメニューの <code>集荷リストを取り込む</code> を使います。
+      </div>
+      <div class="step">
+        <b>4. 順番を整える</b>
+        徒歩・自転車なら近い順、車なら道路優先ルートを使います。
+      </div>
+      <div class="step">
+        <b>5. 終わったら完了にする</b>
+        リストの <code>✓</code> を押すと完了です。間違えたらもう一度押すと未完了に戻ります。
+      </div>
+    </div>
+  </section>
+
+  <section id="mode">
+    <h2>配送モードと集荷モード</h2>
+    <table>
+      <tr>
+        <th>配送モード</th>
+        <td>単発の配送先を追加して回るためのモードです。配送先はこの端末のブラウザに保存されます。</td>
+      </tr>
+      <tr>
+        <th>集荷モード</th>
+        <td>Googleスプレッドシートの集荷リストを取り込んで使うモードです。完了状態はスプレッドシートにも書き戻されます。</td>
+      </tr>
+    </table>
+    <p>切り替えは、画面左上付近の <code>モード</code> ボタン、またはメニューの <code>配送モードに切替</code> / <code>集荷モードに切替</code> から行います。</p>
+  </section>
+
+  <section id="add">
+    <h2>配送先の追加</h2>
+    <h3>伝票撮影</h3>
+    <ol>
+      <li><code>📷 伝票撮影</code> を押します。</li>
+      <li>配送伝票やラベルの住所が読めるように撮影します。</li>
+      <li>読み取った住所を確認し、必要なら備考を直して追加します。</li>
+    </ol>
+    <h3>音声入力</h3>
+    <ol>
+      <li><code>🎤 音声</code> を押します。</li>
+      <li>住所をゆっくり話します。</li>
+      <li>認識された住所を確認して追加します。</li>
+    </ol>
+    <h3>手入力</h3>
+    <ol>
+      <li><code>✏️ 手入力</code> を押します。</li>
+      <li>住所と備考を入力します。</li>
+      <li><code>追加</code> を押します。</li>
+    </ol>
+    <div class="note warn">
+      住所検索でピン位置がずれることがあります。その場合はリストの <code>📍</code> を押し、地図上で正しい位置をタップしてください。
+    </div>
+  </section>
+
+  <section id="pickup">
+    <h2>集荷リストの取り込み</h2>
+    <ol>
+      <li>メニューを開きます。</li>
+      <li><code>集荷リストを取り込む</code> を押します。</li>
+      <li>取り込むシートを選びます。</li>
+      <li><code>checked が TRUE の行だけ取り込む</code> を使うと、その日の対象だけ取り込めます。</li>
+      <li><code>現在の配送リストを置き換える</code> をONにすると、今の集荷リストを入れ替えます。</li>
+      <li><code>取り込む</code> を押します。</li>
+    </ol>
+    <div class="note">
+      集荷リストの company はピンのラベル、address は住所、time・method・notes は備考として取り込まれます。
+    </div>
+  </section>
+
+  <section id="done">
+    <h2>完了・未完了の操作</h2>
+    <ul>
+      <li>リストの <code>✓</code> を押すと完了になります。</li>
+      <li>完了済みの行で <code>↩</code> を押すと未完了に戻ります。</li>
+      <li>集荷モードでは、完了時に担当者名が必要です。</li>
+      <li>担当者名はメニューの <code>担当者名を設定</code> から保存できます。</li>
+    </ul>
+    <div class="note ok">
+      集荷モードの完了状態はスプレッドシートへ自動で書き戻されます。
+    </div>
+  </section>
+
+  <section id="route">
+    <h2>ルート並べ替え</h2>
+    <table>
+      <tr>
+        <th>徒歩・自転車向け 近い順</th>
+        <td>現在地、または地図中心から近い順に並べます。一方通行や道路事情は考慮しません。</td>
+      </tr>
+      <tr>
+        <th>車向け 道路優先ルート</th>
+        <td>Mapboxの道路ルートを使い、一方通行や車で走れる道を考慮して順番を提案します。最大で現在地 + 11件までです。</td>
+      </tr>
+    </table>
+    <ol>
+      <li>メニューを開きます。</li>
+      <li>用途に合わせて <code>徒歩・自転車向け 近い順</code> または <code>車向け 道路優先ルート</code> を押します。</li>
+      <li>提案内容を確認します。</li>
+      <li>問題なければOKを押して並べ替えます。</li>
+    </ol>
+  </section>
+
+  <section id="reset">
+    <h2>翌日の集荷リセット</h2>
+    <p>集荷は毎日同じコースを回るため、前日に完了した集荷先は翌日に自動で未完了へ戻ります。</p>
+    <ul>
+      <li>集荷モードを開いた時に、前日以前の完了分を自動でリセットします。</li>
+      <li>スプレッドシートの <code>collected</code>、<code>collected_at</code>、<code>collected_by</code> も空に戻します。</li>
+      <li>当日中に完了したものは、その日のうちは勝手に戻しません。</li>
+    </ul>
+    <h3>手動で戻したい場合</h3>
+    <ol>
+      <li>集荷モードでメニューを開きます。</li>
+      <li><code>集荷完了をリセット</code> を押します。</li>
+      <li>確認画面でOKを押します。</li>
+    </ol>
+  </section>
+
+  <section id="tools">
+    <h2>便利な表示機能</h2>
+    <ul>
+      <li><code>◎ 現在地</code>: GPSをONにして現在地を表示します。</li>
+      <li><code>表示: 番地+建物</code>: ピンのラベル表示を切り替えます。</li>
+      <li><code>町丁目境界</code>: 町丁目の境界線表示を切り替えます。</li>
+      <li><code>番地表示</code>: 地図上に番地ラベルを表示します。ズーム17以上で見えます。</li>
+      <li><code>JSONでバックアップ</code>: 現在のリストをクリップボードにコピーします。</li>
+      <li><code>リストをコピー</code>: 住所リストをテキストとしてコピーします。</li>
+    </ul>
+  </section>
+
+  <section id="trouble">
+    <h2>困ったとき</h2>
+    <h3>現在地が出ない</h3>
+    <p>ブラウザの位置情報許可を確認してください。屋内ではGPS精度が落ちることがあります。</p>
+    <h3>住所の場所がずれる</h3>
+    <p>リストの <code>📍</code> から、地図上の正しい場所へピンを移動してください。</p>
+    <h3>集荷の完了がスプレッドシートに反映されない</h3>
+    <p>通信状態を確認し、少し待ってからもう一度操作してください。担当者名が未設定の場合は先に設定してください。</p>
+    <h3>車用ルートが失敗する</h3>
+    <p>配送先が12点以上ある場合は、11件以内に分けて検索してください。それ以外の場合は管理者に連絡してください。</p>
+    <h3>画面が古いままに見える</h3>
+    <p>ブラウザを再読み込みしてください。スマホではページを下に引っ張って更新、またはブラウザの更新ボタンを使います。</p>
+  </section>
+</main>
+</body>
+</html>
