@@ -609,7 +609,8 @@
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
       <button id="menu-import-pickup" type="button">📦 集荷リストを取り込む</button>
-      <button id="menu-optimize-route" type="button">🧭 おすすめ順に並べ替え</button>
+      <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
+      <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
@@ -805,8 +806,12 @@ let pendingAddrData = null;
 
 const OCR_COST_PER_CALL = 0.00015;
 const GEOCODE_COST_PER_CALL = 0.005;
+const MAPBOX_OPTIMIZE_COST_PER_CALL = 0.002;
 
 let usage = JSON.parse(localStorage.getItem(USAGE_KEY) || '{"ocr":0,"geocode":0}');
+usage.ocr = usage.ocr || 0;
+usage.geocode = usage.geocode || 0;
+usage.routeOptimize = usage.routeOptimize || 0;
 
 function $(id) { return document.getElementById(id); }
 
@@ -950,6 +955,7 @@ function switchAppMode(mode, showMessage = true) {
   appMode = mode;
   localStorage.setItem(APP_MODE_KEY, appMode);
   activeDeliveryId = null;
+  clearOptimizedRouteGeometry();
   loadDeliveries();
   renderMarkers();
   renderList();
@@ -1073,6 +1079,8 @@ const ESTAT_BOUNDARY_TILES = 'https://ubukawa.github.io/estat01/04_tiles/zxy-s/{
 // ftCode=6101 は「特定地区界」。町丁目そのものではない地域もあるため、主データにはしない。
 const GSI_BOUNDARY_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
 const NEIGHBORHOOD_LAYER_IDS = [];
+const OPTIMIZED_ROUTE_SOURCE_ID = 'optimized-route';
+const OPTIMIZED_ROUTE_LAYER_ID = 'optimized-route-line';
 
 function addNeighborhoodLayer(layer) {
   if (map.getLayer(layer.id)) return;
@@ -1406,6 +1414,44 @@ function addAddressLayer(data) {
       'text-halo-width': 1.5
     }
   });
+}
+
+function setOptimizedRouteGeometry(geometry) {
+  if (!map || !geometry || geometry.type !== 'LineString') return;
+  const data = { type: 'Feature', geometry, properties: {} };
+
+  if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) {
+    map.getSource(OPTIMIZED_ROUTE_SOURCE_ID).setData(data);
+    return;
+  }
+
+  map.addSource(OPTIMIZED_ROUTE_SOURCE_ID, { type: 'geojson', data });
+  map.addLayer({
+    id: OPTIMIZED_ROUTE_LAYER_ID,
+    type: 'line',
+    source: OPTIMIZED_ROUTE_SOURCE_ID,
+    slot: 'top',
+    layout: {
+      'line-join': 'round',
+      'line-cap': 'round'
+    },
+    paint: {
+      'line-color': '#2563eb',
+      'line-width': [
+        'interpolate', ['linear'], ['zoom'],
+        12, 3,
+        16, 5,
+        19, 7
+      ],
+      'line-opacity': 0.8
+    }
+  });
+}
+
+function clearOptimizedRouteGeometry() {
+  if (!map) return;
+  if (map.getLayer(OPTIMIZED_ROUTE_LAYER_ID)) map.removeLayer(OPTIMIZED_ROUTE_LAYER_ID);
+  if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) map.removeSource(OPTIMIZED_ROUTE_SOURCE_ID);
 }
 
 function removeAddressLayer() {
@@ -2069,6 +2115,7 @@ function clearCompleted() {
   showConfirm('完了分削除', `完了済み ${n} 件を削除しますか？`, () => {
     deliveries = deliveries.filter(d => !d.completed);
     if (activeDeliveryId && !deliveries.some(d => d.id === activeDeliveryId)) activeDeliveryId = null;
+    clearOptimizedRouteGeometry();
     saveDeliveries();
     renderMarkers();
     renderList();
@@ -2082,6 +2129,7 @@ function clearAll() {
   showConfirm('全件クリア', `全 ${deliveries.length} 件を削除しますか？\nこの操作は取り消せません。`, () => {
     deliveries = [];
     activeDeliveryId = null;
+    clearOptimizedRouteGeometry();
     saveDeliveries();
     renderMarkers();
     renderList();
@@ -2093,7 +2141,8 @@ function showUsage() {
   closeModal('modal-menu');
   const ocrCost = (usage.ocr * OCR_COST_PER_CALL).toFixed(4);
   const geoCost = (usage.geocode * GEOCODE_COST_PER_CALL).toFixed(3);
-  const total = (parseFloat(ocrCost) + parseFloat(geoCost)).toFixed(3);
+  const routeCost = (usage.routeOptimize * MAPBOX_OPTIMIZE_COST_PER_CALL).toFixed(3);
+  const total = (parseFloat(ocrCost) + parseFloat(geoCost) + parseFloat(routeCost)).toFixed(3);
   $('usage-content').innerHTML = `
     <p><b>伝票OCR (Gemini)</b><br>
     呼び出し回数: ${usage.ocr} 回<br>
@@ -2101,6 +2150,9 @@ function showUsage() {
     <p><b>住所→緯度経度 (Google Geocoding)</b><br>
     呼び出し回数: ${usage.geocode} 回<br>
     推定費用: $${geoCost}</p>
+    <p><b>車用ルート最適化 (Mapbox)</b><br>
+    呼び出し回数: ${usage.routeOptimize} 回<br>
+    無料枠超過時の目安: $${routeCost}</p>
     <p><b>合計推定費用: $${total}</b></p>
     <p style="font-size:11px;color:#666;margin-top:12px">
     ※ 地図表示自体 (Mapbox) はこのカウントに含まれません。<br>
@@ -2113,7 +2165,7 @@ function showUsage() {
 
 function resetUsage() {
   showConfirm('使用状況リセット', 'カウンターをリセットしますか？', () => {
-    usage = { ocr: 0, geocode: 0 };
+    usage = { ocr: 0, geocode: 0, routeOptimize: 0 };
     localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
     showUsage();
     showToast('リセットしました');
@@ -2548,6 +2600,15 @@ function formatKm(meters) {
   return `${Math.round(meters)}m`;
 }
 
+function formatDuration(seconds) {
+  if (!Number.isFinite(Number(seconds))) return '';
+  const minutes = Math.round(Number(seconds) / 60);
+  if (minutes < 60) return `約${minutes}分`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `約${h}時間${m}分` : `約${h}時間`;
+}
+
 function shortRoutePreview(route) {
   return route.slice(0, 5).map((d, idx) => {
     const label = extractBuilding(d.note) || extractBanchi(d.address) || d.address;
@@ -2588,6 +2649,7 @@ function optimizeRouteOrder() {
     () => {
       deliveries = suggested.concat(noLocationItems, completedItems);
       activeDeliveryId = suggested[0] ? suggested[0].id : null;
+      clearOptimizedRouteGeometry();
       saveDeliveries();
       renderMarkers();
       renderList();
@@ -2597,6 +2659,84 @@ function optimizeRouteOrder() {
       showToast(`${modeLabel()}順を並べ替えました`);
     }
   );
+}
+
+async function optimizeCarRouteOrder() {
+  closeModal('modal-menu');
+  const routeItems = deliveries.filter(isRoutableDelivery);
+  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
+  const completedItems = deliveries.filter(d => d && d.completed);
+
+  if (routeItems.length < 2) {
+    showToast(`${modeLabel()}先が2件以上ある時に車用ルート検索できます`, true);
+    return;
+  }
+  if (routeItems.length > 11) {
+    showToast('車用ルート検索は一度に11件までです。完了分を削除するか分けて検索してください。', true);
+    return;
+  }
+
+  const start = getRouteStartPoint();
+  showLoading('車用ルートを検索中...');
+  try {
+    bumpUsage('routeOptimize');
+    const res = await fetch('api/optimize_route.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        profile: 'mapbox/driving',
+        start: { lat: start.lat, lng: start.lng },
+        points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
+      })
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    hideLoading();
+
+    if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
+      const detail = data && data.detail ? `\n${data.detail}` : '';
+      throw new Error(((data && data.error) || '車用ルート検索に失敗しました') + detail);
+    }
+
+    const byId = new Map(deliveries.map(d => [d.id, d]));
+    const suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
+    if (suggested.length !== routeItems.length) {
+      throw new Error('車用ルート検索結果の件数が一致しませんでした');
+    }
+
+    const distanceText = data.distance ? formatKm(data.distance) : '不明';
+    const durationText = data.duration ? formatDuration(data.duration) : '';
+    const tailNote = [
+      noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
+      completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
+    ].filter(Boolean).join('\n');
+
+    showConfirm(
+      '車向け 道路優先ルート',
+      `Mapboxの道路ルートで${modeLabel()}順を提案します。\n` +
+      `始点: ${start.label}\n` +
+      `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n\n` +
+      shortRoutePreview(suggested) +
+      (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
+      (tailNote ? `\n\n${tailNote}` : '') +
+      '\n\nこの順番に並べ替えますか？',
+      () => {
+        deliveries = suggested.concat(noLocationItems, completedItems);
+        activeDeliveryId = suggested[0] ? suggested[0].id : null;
+        saveDeliveries();
+        renderMarkers();
+        renderList();
+        if (data.geometry) setOptimizedRouteGeometry(data.geometry);
+        if (suggested[0] && map) {
+          map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
+        }
+        showToast(`${modeLabel()}順を車用ルートで並べ替えました`);
+      }
+    );
+  } catch (e) {
+    hideLoading();
+    showToast(e.message || '車用ルート検索に失敗しました', true);
+  }
 }
 
 function exportDeliveriesAsJSON() {
@@ -2768,7 +2908,8 @@ $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 $('menu-center-user').addEventListener('click', centerOnUser);
 $('menu-toggle-mode').addEventListener('click', toggleAppMode);
 $('menu-import-pickup').addEventListener('click', openPickupImportModal);
-$('menu-optimize-route').addEventListener('click', optimizeRouteOrder);
+$('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
+$('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);

@@ -19,6 +19,12 @@ define('GEMINI_MODEL', 'gemini-2.5-flash-lite');
 //   例: https://your-domain.com/delivery_map_mapbox/*
 define('MAPBOX_ACCESS_TOKEN', 'pk.eyJ...Mapbox公開トークン...');
 
+// === Mapbox 車用ルート最適化 ===
+// 未設定の場合は MAPBOX_ACCESS_TOKEN を使います。
+// MAPBOX_ACCESS_TOKEN にURL制限をかけていてサーバー側APIが403になる場合は、
+// Mapboxでサーバー用トークンを別途発行し、ここに設定してください。
+define('MAPBOX_OPTIMIZATION_TOKEN', '');
+
 // 使用する地図スタイル。デフォルトは Mapbox Standard (最新ベクター)。
 // 他に試せる候補:
 //   'mapbox://styles/mapbox/standard'        ← 推奨。建物3D、日本語対応、ピッチ・回転対応
