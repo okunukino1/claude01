@@ -1,0 +1,17 @@
+name: Refresh ecohai spot pickups
+
+on:
+  schedule:
+    # JST 09:00, 14:00, 16:00
+    - cron: '0 0,5,7 * * *'
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh spot pickup cache
+        run: |
+          curl --fail --show-error --silent --max-time 60 "$SPOT_PICKUP_REFRESH_URL"
+        env:
+          SPOT_PICKUP_REFRESH_URL: ${{ secrets.SPOT_PICKUP_REFRESH_URL }}

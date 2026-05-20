@@ -52,3 +52,18 @@ define('PICKUP_PROGRESS_WEBAPP_URL', 'https://script.google.com/macros/s/.../exe
 // Apps Script側の PICKUP_PROGRESS_SECRET と同じ値にしてください。
 // 推測されにくい長い文字列にします。
 define('PICKUP_PROGRESS_SECRET', 'change-this-secret');
+
+// === エコ配 スポット集荷 自動取得 ===
+// エコ配のログイン情報です。ブラウザ側には出さず、サーバー上の config.php だけに保存します。
+define('ECOHAI_USER_ID', 'change-this-user-id');
+define('ECOHAI_USER_PASS', 'change-this-password');
+
+// GitHub Actions から spot_pickups_refresh.php を呼ぶ時の共有シークレットです。
+// 例: https://your-domain.com/delivery_map_mapbox/api/spot_pickups_refresh.php?secret=...
+define('SPOT_PICKUP_REFRESH_SECRET', 'change-this-refresh-secret');
+
+// 今回のテスト対象: 小舟1
+define('SPOT_PICKUP_TARGET_LABEL', '小舟1');
+define('SPOT_PICKUP_TARGET_AREA', '10');
+define('SPOT_PICKUP_TARGET_SHOP', '0220');
+define('SPOT_PICKUP_TARGET_POT', '07021644139');

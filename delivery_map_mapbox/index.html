@@ -106,6 +106,9 @@
   .delivery-marker.approx .delivery-pin .pin-shape {
     background: #fbbf24;
   }
+  .delivery-marker.spot .delivery-pin .pin-shape {
+    background: #0284c7;
+  }
   .delivery-pin .pin-num {
     position: absolute;
     left: 0; top: 8px;
@@ -318,6 +321,10 @@
   .delivery-item.approx .num-badge {
     background: #fbbf24;
     color: var(--ink);
+  }
+  .delivery-item.spot .num-badge {
+    background: #0284c7;
+    color: white;
   }
   .item-info {
     flex: 1;
@@ -609,6 +616,7 @@
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
       <button id="menu-import-pickup" type="button">📦 集荷リストを取り込む</button>
+      <button id="menu-import-spot-pickup" type="button">📍 スポット集荷を反映</button>
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
@@ -763,6 +771,7 @@ const PICKUP_SHEETS = [
   '浜町店 北'
 ];
 const PICKUP_SYNC_INTERVAL_MS = 20000;
+const SPOT_PICKUP_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 const DEFAULT_CENTER_LNG = 139.7745;
 const DEFAULT_CENTER_LAT = 35.6845;
@@ -795,6 +804,9 @@ let operatorCancelCallback = null;
 let pickupSyncTimer = null;
 let pickupSyncInFlight = false;
 let pickupLastSyncedAt = null;
+let spotPickupSyncTimer = null;
+let spotPickupSyncInFlight = false;
+let spotPickupLastSyncedAt = null;
 
 let gpsWatchId = null;
 let gpsActive = false;
@@ -957,6 +969,10 @@ function updateModeUi() {
   const resetPickupBtn = $('menu-reset-pickup');
   if (resetPickupBtn) {
     resetPickupBtn.style.display = appMode === 'pickup' ? 'block' : 'none';
+  }
+  const spotPickupBtn = $('menu-import-spot-pickup');
+  if (spotPickupBtn) {
+    spotPickupBtn.style.display = appMode === 'pickup' ? 'block' : 'none';
   }
   const title = document.querySelector('.list-header h2');
   if (title) title.textContent = `${modeLabel()}リスト`;
@@ -1593,6 +1609,10 @@ function isPickupBackedDelivery(d) {
   return !!(d && d.pickupSheet && d.pickupRow);
 }
 
+function isSpotPickupDelivery(d) {
+  return !!(d && d.pickupSource === 'ecohai-spot' && d.spotPickupId);
+}
+
 function renderMarkers() {
   if (!map) return;
   clearAllMarkers();
@@ -1605,7 +1625,8 @@ function renderMarkers() {
     const wrapper = document.createElement('div');
     wrapper.className = 'delivery-marker'
       + (d.completed ? ' done' : '')
-      + (d.approx ? ' approx' : '');
+      + (d.approx ? ' approx' : '')
+      + (isSpotPickupDelivery(d) ? ' spot' : '');
     wrapper.style.zIndex = String(markerZIndex(d, idx));
 
     const labelText = buildLabelText(d, num, modeKey);
@@ -1761,6 +1782,7 @@ function renderList() {
     const cls = 'delivery-item'
       + (d.completed ? ' done' : '')
       + (d.approx ? ' approx' : '')
+      + (isSpotPickupDelivery(d) ? ' spot' : '')
       + (d.id === activeDeliveryId ? ' selected' : '');
     return `
       <div class="${cls}" data-id="${d.id}">
@@ -2509,13 +2531,170 @@ function restartPickupAutoSync() {
     clearInterval(pickupSyncTimer);
     pickupSyncTimer = null;
   }
+  if (spotPickupSyncTimer) {
+    clearInterval(spotPickupSyncTimer);
+    spotPickupSyncTimer = null;
+  }
   if (appMode !== 'pickup') {
     pickupLastSyncedAt = null;
+    spotPickupLastSyncedAt = null;
     renderList();
     return;
   }
   syncPickupProgressFromSheets(true);
   pickupSyncTimer = setInterval(() => syncPickupProgressFromSheets(true), PICKUP_SYNC_INTERVAL_MS);
+  syncSpotPickups(true);
+  spotPickupSyncTimer = setInterval(() => syncSpotPickups(true), SPOT_PICKUP_SYNC_INTERVAL_MS);
+}
+
+function spotPickupNote(item) {
+  return [
+    item.company || '',
+    'スポット集荷',
+    item.time ? `希望時間帯: ${item.time}` : '',
+    item.phone ? `登録電話番号: ${item.phone}` : ''
+  ].filter(Boolean).join('\n');
+}
+
+function findExistingSpotPickup(item) {
+  const sid = String(item.id || '');
+  if (!sid) return null;
+  const stableId = `spot-${sid}`;
+  return deliveries.find(d => isSpotPickupDelivery(d) && String(d.spotPickupId) === sid)
+    || deliveries.find(d => d.id === stableId)
+    || null;
+}
+
+async function fetchSpotPickupItems() {
+  const res = await fetch('api/spot_pickups.php');
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || data.error) {
+    const detail = data && data.detail ? ` (${data.detail})` : '';
+    throw new Error(((data && data.error) || 'スポット集荷の取得に失敗しました') + detail);
+  }
+  return data;
+}
+
+async function mergeSpotPickupItems(items, options = {}) {
+  if (!Array.isArray(items)) items = [];
+  const incomingIds = new Set(items.map(item => String(item.id || '')).filter(Boolean));
+  const beforeLength = deliveries.length;
+  deliveries = deliveries.filter(d => !isSpotPickupDelivery(d) || incomingIds.has(String(d.spotPickupId || '')));
+
+  let added = 0;
+  let updated = beforeLength !== deliveries.length;
+  let failed = 0;
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item || !item.id || !item.address) continue;
+    const existing = findExistingSpotPickup(item);
+    const note = spotPickupNote(item);
+
+    if (existing) {
+      const addressChanged = existing.address !== item.address;
+      existing.address = item.address;
+      existing.note = note;
+      existing.pickupSource = 'ecohai-spot';
+      existing.spotPickupId = String(item.id);
+      existing.spotPickupDate = item.date || '';
+      existing.spotPickupTime = item.time || '';
+      existing.spotPickupPhone = item.phone || '';
+      existing.spotPickupCompany = item.company || '';
+      existing.pickupId = existing.pickupId || String(item.id);
+      if (addressChanged || existing.lat == null || existing.lng == null) {
+        if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${i + 1}/${items.length}`);
+        const result = await geocodeAddress(item.address);
+        if (!result) {
+          failed++;
+          continue;
+        }
+        existing.lat = result.lat;
+        existing.lng = result.lng;
+        existing.approx = result.approx;
+        existing.formatted = result.formatted;
+      }
+      updated = true;
+      continue;
+    }
+
+    if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${i + 1}/${items.length}`);
+    const result = await geocodeAddress(item.address);
+    if (!result) {
+      failed++;
+      continue;
+    }
+    deliveries.push({
+      id: `spot-${item.id}`,
+      address: item.address,
+      note,
+      lat: result.lat,
+      lng: result.lng,
+      approx: result.approx,
+      formatted: result.formatted,
+      completed: false,
+      completedAt: null,
+      completedBy: '',
+      completedAtLabel: '',
+      createdAt: Date.now(),
+      pickupSource: 'ecohai-spot',
+      pickupId: String(item.id),
+      spotPickupId: String(item.id),
+      spotPickupDate: item.date || '',
+      spotPickupTime: item.time || '',
+      spotPickupPhone: item.phone || '',
+      spotPickupCompany: item.company || '',
+      progressSyncFailed: false
+    });
+    added++;
+    updated = true;
+  }
+
+  if (updated) {
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+  }
+  if (!options.silent) hideLoading();
+  return { added, updated, failed, total: items.length };
+}
+
+async function syncSpotPickups(silent = true) {
+  if (appMode !== 'pickup' || spotPickupSyncInFlight) return;
+  spotPickupSyncInFlight = true;
+  try {
+    const data = await fetchSpotPickupItems();
+    if (data.cacheMissing) {
+      if (!silent) {
+        hideLoading();
+        showToast('スポット集荷はまだ取得されていません', true);
+      }
+      return;
+    }
+    const result = await mergeSpotPickupItems(data.items || [], { silent });
+    spotPickupLastSyncedAt = data.updated_at ? new Date(data.updated_at) : new Date();
+    renderList();
+    if (!silent) {
+      const failText = result.failed ? ` / ${result.failed}件は住所検索できませんでした` : '';
+      showToast(`スポット集荷 ${result.total}件を反映しました${failText}`, result.failed > 0);
+    }
+  } catch (e) {
+    console.warn('spot pickup sync failed', e);
+    if (!silent) {
+      hideLoading();
+      showToast(e.message || 'スポット集荷の取得に失敗しました', true);
+    }
+  } finally {
+    spotPickupSyncInFlight = false;
+  }
+}
+
+async function importSpotPickupsManually() {
+  closeModal('modal-menu');
+  if (appMode !== 'pickup') await switchAppMode('pickup', false);
+  showLoading('スポット集荷を取得中...');
+  await syncSpotPickups(false);
 }
 
 async function importPickupItems(items, replaceList) {
@@ -3094,6 +3273,7 @@ $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 $('menu-center-user').addEventListener('click', centerOnUser);
 $('menu-toggle-mode').addEventListener('click', toggleAppMode);
 $('menu-import-pickup').addEventListener('click', openPickupImportModal);
+$('menu-import-spot-pickup').addEventListener('click', importSpotPickupsManually);
 $('menu-reset-pickup').addEventListener('click', resetPickupCompletionsManually);
 $('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
 $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
