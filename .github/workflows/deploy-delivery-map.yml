@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'delivery_map_mapbox/**'
+      - '.github/workflows/deploy-delivery-map.yml'
   workflow_dispatch:  # 手動実行ボタンも有効化
 
 jobs:
@@ -27,3 +28,13 @@ jobs:
             **/.git*
             **/node_modules/**
           log-level: standard
+
+      - name: Refresh spot pickup cache
+        run: |
+          if [ -n "$SPOT_PICKUP_REFRESH_URL" ]; then
+            curl --fail --show-error --silent --max-time 60 "$SPOT_PICKUP_REFRESH_URL"
+          else
+            echo "SPOT_PICKUP_REFRESH_URL is not set; skipping spot pickup refresh."
+          fi
+        env:
+          SPOT_PICKUP_REFRESH_URL: ${{ secrets.SPOT_PICKUP_REFRESH_URL }}
