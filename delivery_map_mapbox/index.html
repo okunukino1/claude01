@@ -524,6 +524,38 @@
     background: white;
     color: var(--ink);
   }
+  .photo-preview {
+    width: 100%;
+    height: min(52dvh, 420px);
+    background: #111;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin: 8px 0 12px;
+  }
+  .photo-preview img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    transition: transform 0.15s ease;
+  }
+  .photo-rotate-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .photo-rotate-actions button {
+    min-height: 42px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    background: white;
+    color: var(--ink);
+    font-weight: 700;
+    cursor: pointer;
+  }
   .menu-list button {
     display: block;
     width: 100%;
@@ -711,6 +743,26 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-photo-preview">
+  <div class="modal">
+    <h3>伝票写真を確認</h3>
+    <div class="photo-preview">
+      <img id="photo-preview-img" alt="伝票写真プレビュー">
+    </div>
+    <div class="photo-rotate-actions">
+      <button id="btn-photo-rotate-left" type="button">左に90°</button>
+      <button id="btn-photo-rotate-right" type="button">右に90°</button>
+    </div>
+    <div class="modal-help">
+      横向きになっている場合は回転してから読み取ってください。
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" id="btn-photo-cancel" type="button">キャンセル</button>
+      <button class="primary" id="btn-photo-read" type="button">この向きで読み取り</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-edit">
   <div class="modal">
     <h3>配送先を編集</h3>
@@ -828,6 +880,9 @@ let pickupLastSyncedAt = null;
 let spotPickupSyncTimer = null;
 let spotPickupSyncInFlight = false;
 let spotPickupLastSyncedAt = null;
+let pendingPhotoFile = null;
+let pendingPhotoUrl = '';
+let pendingPhotoRotation = 0;
 
 let gpsWatchId = null;
 let gpsActive = false;
@@ -2143,11 +2198,53 @@ function startVoiceInput() {
   recognition.start();
 }
 
-async function handlePhotoUpload(file) {
+function resetPhotoPreviewState() {
+  if (pendingPhotoUrl) URL.revokeObjectURL(pendingPhotoUrl);
+  pendingPhotoFile = null;
+  pendingPhotoUrl = '';
+  pendingPhotoRotation = 0;
+  const img = $('photo-preview-img');
+  if (img) {
+    img.removeAttribute('src');
+    img.style.transform = '';
+  }
+}
+
+function updatePhotoPreviewRotation() {
+  const img = $('photo-preview-img');
+  if (img) img.style.transform = `rotate(${pendingPhotoRotation}deg)`;
+}
+
+function openPhotoPreview(file) {
   if (!file) return;
+  resetPhotoPreviewState();
+  pendingPhotoFile = file;
+  pendingPhotoUrl = URL.createObjectURL(file);
+  pendingPhotoRotation = 0;
+  $('photo-preview-img').src = pendingPhotoUrl;
+  updatePhotoPreviewRotation();
+  openModal('modal-photo-preview');
+}
+
+function rotatePendingPhoto(delta) {
+  if (!pendingPhotoFile) return;
+  pendingPhotoRotation = (pendingPhotoRotation + delta + 360) % 360;
+  updatePhotoPreviewRotation();
+}
+
+function closePhotoPreview() {
+  closeModal('modal-photo-preview');
+  resetPhotoPreviewState();
+}
+
+async function readPendingPhoto() {
+  if (!pendingPhotoFile) return;
+  const file = pendingPhotoFile;
+  const rotation = pendingPhotoRotation;
+  closeModal('modal-photo-preview');
   showLoading('画像を圧縮中...');
   try {
-    const compressed = await compressImage(file, 1280, 0.85);
+    const compressed = await compressImage(file, 1280, 0.85, rotation);
     showLoading('画像を変換中...');
     const base64 = await blobToBase64(compressed);
     showLoading('AI で住所を読み取り中...');
@@ -2169,6 +2266,8 @@ async function handlePhotoUpload(file) {
   } catch (e) {
     hideLoading();
     showToast('画像処理に失敗しました: ' + e.message, true);
+  } finally {
+    resetPhotoPreviewState();
   }
 }
 
@@ -2185,21 +2284,37 @@ function blobToBase64(blob) {
   });
 }
 
-function compressImage(file, maxSize, quality) {
+function compressImage(file, maxSize, quality, rotation = 0) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(objectUrl);
       let { width, height } = img;
+      const normalizedRotation = ((rotation % 360) + 360) % 360;
       if (width > maxSize || height > maxSize) {
         const r = Math.min(maxSize / width, maxSize / height);
         width = Math.round(width * r);
         height = Math.round(height * r);
       }
       const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      const swap = normalizedRotation === 90 || normalizedRotation === 270;
+      canvas.width = swap ? height : width;
+      canvas.height = swap ? width : height;
+      const ctx = canvas.getContext('2d');
+      ctx.save();
+      if (normalizedRotation === 90) {
+        ctx.translate(canvas.width, 0);
+        ctx.rotate(Math.PI / 2);
+      } else if (normalizedRotation === 180) {
+        ctx.translate(canvas.width, canvas.height);
+        ctx.rotate(Math.PI);
+      } else if (normalizedRotation === 270) {
+        ctx.translate(0, canvas.height);
+        ctx.rotate(Math.PI * 1.5);
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      ctx.restore();
       canvas.toBlob(b => b ? resolve(b) : reject(new Error('Canvas blob failed')), 'image/jpeg', quality);
     };
     img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Image load failed')); };
@@ -3315,10 +3430,14 @@ $('btn-north').addEventListener('click', () => {
 $('btn-add-photo').addEventListener('click', () => $('file-photo').click());
 $('file-photo').addEventListener('change', (e) => {
   if (e.target.files && e.target.files[0]) {
-    handlePhotoUpload(e.target.files[0]);
+    openPhotoPreview(e.target.files[0]);
     e.target.value = '';
   }
 });
+$('btn-photo-rotate-left').addEventListener('click', () => rotatePendingPhoto(-90));
+$('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(90));
+$('btn-photo-cancel').addEventListener('click', closePhotoPreview);
+$('btn-photo-read').addEventListener('click', readPendingPhoto);
 $('btn-add-voice').addEventListener('click', startVoiceInput);
 $('btn-add-manual').addEventListener('click', () => {
   $('add-address').value = '';
