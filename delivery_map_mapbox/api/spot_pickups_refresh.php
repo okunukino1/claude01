@@ -156,6 +156,7 @@ function parse_pickups($html, $slot, $date, $target) {
   $lines = html_to_lines($html);
   $items = [];
   $current = null;
+  $pendingField = '';
 
   foreach ($lines as $line) {
     if (preg_match('/^■\s*(.+)$/u', $line, $m)) {
@@ -166,11 +167,28 @@ function parse_pickups($html, $slot, $date, $target) {
         'address' => '',
         'phone' => '',
       ];
+      $pendingField = '';
       continue;
     }
     if (!$current) continue;
+
+    if ($pendingField === 'time') {
+      $value = trim(preg_replace('/^[├└│|｜\s]+/u', '', $line));
+      if ($value !== '' && strpos($value, '住所') === false && strpos($value, '登録電話番号') === false) {
+        $current['time'] = $value;
+        $pendingField = '';
+        continue;
+      }
+      $pendingField = '';
+    }
+
     if (strpos($line, '希望時間帯') !== false) {
-      $current['time'] = strip_label($line, '希望時間帯');
+      $time = strip_label($line, '希望時間帯');
+      if ($time !== '') {
+        $current['time'] = $time;
+      } else {
+        $pendingField = 'time';
+      }
     } elseif (strpos($line, '住所') !== false) {
       $current['address'] = normalize_address(strip_label($line, '住所'));
     } elseif (strpos($line, '登録電話番号') !== false) {
