@@ -49,10 +49,7 @@ function requested_slot() {
   if (in_array($slot, ['14', '1400', '14-16'], true)) return '14';
   if (in_array($slot, ['16', '1600', '16-18'], true)) return '16';
   if ($slot === 'all') return 'all';
-  $hour = (int)date('G');
-  if ($hour < 14) return '09';
-  if ($hour < 16) return '14';
-  return '16';
+  return 'all';
 }
 
 function slot_label($slot) {
