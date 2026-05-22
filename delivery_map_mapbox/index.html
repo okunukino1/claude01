@@ -99,7 +99,7 @@
     border-radius: 50% 50% 50% 0;
     transform: rotate(-45deg);
     position: absolute;
-    left: 3px; top: 4px;
+    left: 3px; top: 2px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.35);
   }
   .delivery-marker.done .delivery-pin .pin-shape {
@@ -114,7 +114,7 @@
   }
   .delivery-pin .pin-num {
     position: absolute;
-    left: 0; top: 8px;
+    left: 0; top: 6px;
     width: 36px; text-align: center;
     color: white; font-weight: 800; font-size: 13px;
     text-shadow: 0 1px 2px rgba(0,0,0,0.5);
@@ -1113,10 +1113,11 @@ function initMap() {
     zoom: DEFAULT_ZOOM,
     pitch: 0,
     bearing: 0,
-    dragRotate: true,
-    pitchWithRotate: true,
-    touchPitch: true,
+    dragRotate: false,
+    pitchWithRotate: false,
+    touchPitch: false,
     touchZoomRotate: true,
+    maxPitch: 0,
     config: {
       basemap: { language: 'ja', lightPreset: 'day' }
     },
@@ -1125,6 +1126,9 @@ function initMap() {
       customAttribution: '番地データ: <a href="https://github.com/geolonia/japanese-addresses-v2" target="_blank">Geolonia</a> / アドレス・ベース・レジストリ'
     }
   });
+  map.dragRotate.disable();
+  map.touchZoomRotate.disableRotation();
+  if (map.touchPitch) map.touchPitch.disable();
 
   map.on('rotate', () => {
     const bearing = map.getBearing();
