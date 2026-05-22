@@ -75,21 +75,18 @@
 
   /* ===== Delivery marker (pin + label combined) ===== */
   .delivery-marker {
-    display: block;
-    width: 36px;
-    height: 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
     pointer-events: auto;
-    position: relative;
   }
 
   .delivery-pin {
     width: 36px; height: 44px;
-    position: absolute;
-    left: 0;
-    bottom: 0;
+    position: relative;
     flex-shrink: 0;
   }
   .delivery-pin .pin-shape {
@@ -99,7 +96,7 @@
     border-radius: 50% 50% 50% 0;
     transform: rotate(-45deg);
     position: absolute;
-    left: 3px; top: 2px;
+    left: 3px; top: 4px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.35);
   }
   .delivery-marker.done .delivery-pin .pin-shape {
@@ -114,7 +111,7 @@
   }
   .delivery-pin .pin-num {
     position: absolute;
-    left: 0; top: 6px;
+    left: 0; top: 8px;
     width: 36px; text-align: center;
     color: white; font-weight: 800; font-size: 13px;
     text-shadow: 0 1px 2px rgba(0,0,0,0.5);
@@ -124,10 +121,6 @@
 
   /* ===== Label sits above pin in same wrapper ===== */
   .delivery-label {
-    position: absolute;
-    left: 50%;
-    bottom: 48px;
-    transform: translateX(-50%);
     background: rgba(255,255,255,0.95);
     border: 1.5px solid var(--ink);
     border-radius: 6px;
@@ -138,10 +131,10 @@
     pointer-events: none;
     color: var(--ink);
     line-height: 1.3;
+    margin-bottom: 4px;
     max-width: 220px;
     overflow: hidden;
     text-overflow: ellipsis;
-    z-index: 2;
   }
   .delivery-marker.done .delivery-label { opacity: 0.55; }
   .delivery-label .lbl-num {
@@ -151,26 +144,6 @@
   }
   .delivery-marker.done .delivery-label .lbl-num { color: var(--done); }
   .delivery-label .lbl-bldg { font-weight: 600; }
-
-  .overlap-badge {
-    position: absolute;
-    right: -10px;
-    top: -6px;
-    min-width: 28px;
-    height: 22px;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: var(--ink);
-    color: white;
-    border: 2px solid white;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.35);
-    font-size: 11px;
-    font-weight: 800;
-    line-height: 18px;
-    text-align: center;
-    z-index: 3;
-    pointer-events: none;
-  }
 
   /* ===== GPS / North controls ===== */
   .map-control {
@@ -1112,11 +1085,10 @@ function initMap() {
     zoom: DEFAULT_ZOOM,
     pitch: 0,
     bearing: 0,
-    dragRotate: false,
-    pitchWithRotate: false,
-    touchPitch: false,
+    dragRotate: true,
+    pitchWithRotate: true,
+    touchPitch: true,
     touchZoomRotate: true,
-    maxPitch: 0,
     config: {
       basemap: { language: 'ja', lightPreset: 'day' }
     },
@@ -1125,10 +1097,6 @@ function initMap() {
       customAttribution: '番地データ: <a href="https://github.com/geolonia/japanese-addresses-v2" target="_blank">Geolonia</a> / アドレス・ベース・レジストリ'
     }
   });
-  map.dragRotate.disable();
-  map.touchZoomRotate.disableRotation();
-  if (map.touchPitch) map.touchPitch.disable();
-
   map.on('rotate', () => {
     const bearing = map.getBearing();
     const pitch = map.getPitch();
@@ -1697,61 +1665,21 @@ function isSpotPickupDelivery(d) {
   return !!(d && d.pickupSource === 'ecohai-spot' && d.spotPickupId);
 }
 
-function markerOverlapKey(d) {
-  const lat = Number(d && d.lat);
-  const lng = Number(d && d.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';
-  return `${lat.toFixed(5)},${lng.toFixed(5)}`;
-}
-
-function buildMarkerOverlapInfo() {
-  const groups = new Map();
-  deliveries.forEach(d => {
-    const key = markerOverlapKey(d);
-    if (!key) return;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(d);
-  });
-
-  const overlaps = new Map();
-  groups.forEach(group => {
-    const count = group.length;
-    if (count <= 1) return;
-    group.forEach((d, idx) => {
-      overlaps.set(d.id, {
-        count,
-        index: idx
-      });
-    });
-  });
-  return overlaps;
-}
-
 function renderMarkers() {
   if (!map) return;
   clearAllMarkers();
   const modeKey = LABEL_MODES[labelModeIndex].key;
-  const overlapInfo = buildMarkerOverlapInfo();
 
   deliveries.forEach((d, idx) => {
     if (d.lat == null || d.lng == null) return;
     const num = idx + 1;
-    const overlap = overlapInfo.get(d.id);
 
     const wrapper = document.createElement('div');
     wrapper.className = 'delivery-marker'
       + (d.completed ? ' done' : '')
       + (d.approx ? ' approx' : '')
-      + (isSpotPickupDelivery(d) ? ' spot' : '')
-      + (overlap ? ' overlapped' : '');
+      + (isSpotPickupDelivery(d) ? ' spot' : '');
     wrapper.style.zIndex = String(markerZIndex(d, idx));
-
-    if (overlap && overlap.index === 0) {
-      const badge = document.createElement('div');
-      badge.className = 'overlap-badge';
-      badge.textContent = `${overlap.count}件`;
-      wrapper.appendChild(badge);
-    }
 
     const labelText = buildLabelText(d, num, modeKey);
     if (labelText) {
