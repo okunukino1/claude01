@@ -388,6 +388,10 @@
     background: var(--done);
     color: white;
   }
+  .item-actions button:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
 
   /* ===== Bottom add buttons ===== */
   .add-bar {
@@ -842,6 +846,7 @@ const PICKUP_SHEETS = [
   '浜町店 南',
   '浜町店 北'
 ];
+const PICKUP_DELIVERY_MODE_VALUE = '__delivery__';
 const PICKUP_SYNC_INTERVAL_MS = 20000;
 const SPOT_PICKUP_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -1676,7 +1681,7 @@ function displayNumber(d, idx) {
 function markerZIndex(d, idx) {
   if (d.id === activeDeliveryId) return 100000;
   const priority = deliveries.length - idx;
-  return (d.completed ? 1000 : 10000) + priority;
+  return (isDisplayDone(d) ? 1000 : 10000) + priority;
 }
 
 function updateMarkerZIndexes() {
@@ -1704,6 +1709,14 @@ function isPickupBackedDelivery(d) {
 
 function isSpotPickupDelivery(d) {
   return !!(d && d.pickupSource === 'ecohai-spot' && d.spotPickupId);
+}
+
+function isPickupCheckedFalse(d) {
+  return !!(d && isPickupBackedDelivery(d) && d.pickupChecked === false);
+}
+
+function isDisplayDone(d) {
+  return !!(d && (d.completed || isPickupCheckedFalse(d)));
 }
 
 function markerOverlapKey(d) {
@@ -1746,7 +1759,7 @@ function renderMarkers() {
 
     const wrapper = document.createElement('div');
     wrapper.className = 'delivery-marker'
-      + (d.completed ? ' done' : '')
+      + (isDisplayDone(d) ? ' done' : '')
       + (d.approx ? ' approx' : '')
       + (isSpotPickupDelivery(d) ? ' spot' : '');
     wrapper.style.zIndex = String(markerZIndex(d, idx));
@@ -1899,7 +1912,7 @@ function renderList() {
     stat.textContent = '';
     return;
   }
-  const done = deliveries.filter(d => d.completed).length;
+  const done = deliveries.filter(isDisplayDone).length;
   const syncText = appMode === 'pickup' && pickupLastSyncedAt
     ? ` / 同期 ${formatTime(pickupLastSyncedAt)}`
     : '';
@@ -1907,8 +1920,10 @@ function renderList() {
 
   body.innerHTML = deliveries.map((d, idx) => {
     const num = displayNumber(d, idx);
+    const checkedFalse = isPickupCheckedFalse(d);
+    const displayDone = isDisplayDone(d);
     const cls = 'delivery-item'
-      + (d.completed ? ' done' : '')
+      + (displayDone ? ' done' : '')
       + (d.approx ? ' approx' : '')
       + (isSpotPickupDelivery(d) ? ' spot' : '')
       + (d.id === activeDeliveryId ? ' selected' : '');
@@ -1918,10 +1933,11 @@ function renderList() {
         <div class="item-info">
           <div class="addr">${escapeHtml(d.address)}</div>
           ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}
+          ${checkedFalse ? `<div class="note">対象外 (checked FALSE)</div>` : ''}
           ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
         </div>
         <div class="item-actions">
-          <button class="done-btn ${d.completed ? 'completed' : ''}" data-action="done" data-id="${d.id}" title="完了">${d.completed ? '↩' : '✓'}</button>
+          <button class="done-btn ${displayDone ? 'completed' : ''}" data-action="done" data-id="${d.id}" title="${checkedFalse ? 'checked FALSE' : '完了'}" ${checkedFalse ? 'disabled' : ''}>${checkedFalse ? '済' : (d.completed ? '↩' : '✓')}</button>
           <button class="go-btn" data-action="navi" data-id="${d.id}" title="Google Mapsでナビ">ナビ</button>
           <button data-action="place" data-id="${d.id}" title="位置修正">📍</button>
           <button data-action="edit" data-id="${d.id}" title="編集">✎</button>
@@ -1959,6 +1975,10 @@ function renderList() {
 async function toggleDone(id) {
   const d = deliveries.find(x => x.id === id);
   if (!d) return;
+  if (isPickupCheckedFalse(d)) {
+    showToast('checked が FALSE の集荷先は完了済み表示です');
+    return;
+  }
   const nextCompleted = !d.completed;
   const operatorName = nextCompleted && isPickupBackedDelivery(d) ? await ensureOperatorName() : '';
   if (nextCompleted && isPickupBackedDelivery(d) && !operatorName) {
@@ -2024,7 +2044,9 @@ function openEdit(id) {
   if (!d) return;
   $('edit-address').value = d.address;
   $('edit-note').value = d.note || '';
-  $('btn-edit-done').textContent = d.completed ? '完了解除' : '完了';
+  const doneBtn = $('btn-edit-done');
+  doneBtn.textContent = isPickupCheckedFalse(d) ? '対象外' : (d.completed ? '完了解除' : '完了');
+  doneBtn.disabled = isPickupCheckedFalse(d);
   openModal('modal-edit');
 }
 
@@ -2032,6 +2054,10 @@ async function toggleEditedItemDone() {
   if (!editingItemId) return;
   const d = deliveries.find(x => x.id === editingItemId);
   if (!d) return;
+  if (isPickupCheckedFalse(d)) {
+    showToast('checked が FALSE の集荷先は完了済み表示です');
+    return;
+  }
   const nextCompleted = !d.completed;
   const operatorName = nextCompleted && isPickupBackedDelivery(d) ? await ensureOperatorName() : '';
   if (nextCompleted && isPickupBackedDelivery(d) && !operatorName) {
@@ -2328,7 +2354,7 @@ function compressImage(file, maxSize, quality, rotation = 0) {
 function copyListToClipboard() {
   if (deliveries.length === 0) { showToast('配送先がありません', true); return; }
   const text = deliveries.map((d, i) => {
-    const mark = d.completed ? '✓' : '○';
+    const mark = isDisplayDone(d) ? '✓' : '○';
     return `${mark} ${i + 1}. ${d.address}${d.note ? ' / ' + d.note : ''}`;
   }).join('\n');
   navigator.clipboard.writeText(text).then(
@@ -2481,12 +2507,15 @@ function importDeliveriesFromOtherApp() {
 
 function setupPickupSheetOptions() {
   const select = $('pickup-sheet');
-  if (!select || select.options.length > 0) return;
-  select.innerHTML = PICKUP_SHEETS.map(name =>
-    `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`
-  ).join('');
+  if (!select) return;
+  if (select.options.length === 0) {
+    select.innerHTML = [
+      `<option value="${PICKUP_DELIVERY_MODE_VALUE}">配送モード</option>`,
+      ...PICKUP_SHEETS.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+    ].join('');
+  }
   const saved = getSelectedPickupSheet();
-  if (saved) select.value = saved;
+  select.value = appMode === 'pickup' ? (saved || PICKUP_SHEETS[0]) : PICKUP_DELIVERY_MODE_VALUE;
 }
 
 function openPickupCourseModal() {
@@ -2494,7 +2523,7 @@ function openPickupCourseModal() {
   setupPickupSheetOptions();
   const checkedOnly = $('pickup-checked-only');
   const replaceList = $('pickup-replace-list');
-  if (checkedOnly) checkedOnly.checked = true;
+  if (checkedOnly) checkedOnly.checked = false;
   if (replaceList) replaceList.checked = true;
   openModal('modal-pickup-import');
 }
@@ -2528,6 +2557,7 @@ function pickupNote(item) {
 
 async function syncPickupProgress(d, operatorName, options = {}) {
   if (!isPickupBackedDelivery(d)) return true;
+  if (isPickupCheckedFalse(d)) return true;
   try {
     const res = await fetch('api/pickup_progress.php', {
       method: 'POST',
@@ -2559,7 +2589,7 @@ async function syncPickupProgress(d, operatorName, options = {}) {
 }
 
 async function resetPickupTargets(targets, options = {}) {
-  const items = targets.filter(isPickupBackedDelivery);
+  const items = targets.filter(d => isPickupBackedDelivery(d) && !isPickupCheckedFalse(d));
   if (items.length === 0) return { reset: 0, failed: 0 };
 
   const previousInFlight = pickupSyncInFlight;
@@ -2597,7 +2627,7 @@ async function resetPickupTargets(targets, options = {}) {
 }
 
 function shouldResetStalePickupCompletion(d, todayKey) {
-  if (!isPickupBackedDelivery(d) || !d.completed) return false;
+  if (!isPickupBackedDelivery(d) || isPickupCheckedFalse(d) || !d.completed) return false;
   const completedDate = d.completedAt ? localDateKey(d.completedAt) : '';
   return !completedDate || completedDate < todayKey;
 }
@@ -2672,6 +2702,7 @@ function applyPickupProgressFromItems(items) {
     if (!item) return;
     if (d.pickupId && item.id && String(d.pickupId) !== String(item.id)) return;
 
+    const pickupChecked = item.checked !== false;
     const completed = isTruthyValue(item.collected);
     const completedBy = completed ? (item.collected_by || '') : '';
     const completedAtLabel = completed ? formatTime(item.collected_at || '') : '';
@@ -2679,9 +2710,11 @@ function applyPickupProgressFromItems(items) {
       ? (item.collected_at ? Date.parse(item.collected_at) || d.completedAt || Date.now() : d.completedAt || Date.now())
       : null;
 
-    if (d.completed !== completed ||
+    if (d.pickupChecked !== pickupChecked ||
+        d.completed !== completed ||
         (d.completedBy || '') !== completedBy ||
         (d.completedAtLabel || '') !== completedAtLabel) {
+      d.pickupChecked = pickupChecked;
       d.completed = completed;
       d.completedAt = completedAt;
       d.completedBy = completedBy;
@@ -2911,6 +2944,7 @@ async function importPickupItems(items, replaceList) {
       failed.push(item);
       continue;
     }
+    const pickupChecked = item.checked !== false;
     const collected = isTruthyValue(item.collected);
     const d = {
       id: uid(),
@@ -2928,6 +2962,7 @@ async function importPickupItems(items, replaceList) {
       pickupSheet: item.sheet || '',
       pickupRow: item.row || null,
       pickupId: item.id || '',
+      pickupChecked,
       progressSyncFailed: false
     };
     deliveries.push(d);
@@ -2955,7 +2990,12 @@ async function importPickupItems(items, replaceList) {
 
 async function importPickupSheet() {
   const sheetName = $('pickup-sheet').value;
-  const checkedOnly = true;
+  if (sheetName === PICKUP_DELIVERY_MODE_VALUE) {
+    closeModal('modal-pickup-import');
+    if (appMode !== 'delivery') await switchAppMode('delivery');
+    return;
+  }
+  const checkedOnly = false;
   const replaceList = true;
   setSelectedPickupSheet(sheetName);
   updateModeUi();
@@ -2981,7 +3021,7 @@ async function importPickupSheet() {
 }
 
 function isRoutableDelivery(d) {
-  return d && !d.completed && Number.isFinite(Number(d.lat)) && Number.isFinite(Number(d.lng));
+  return d && !isDisplayDone(d) && Number.isFinite(Number(d.lat)) && Number.isFinite(Number(d.lng));
 }
 
 function routePoint(d) {
@@ -3101,8 +3141,8 @@ function shortRoutePreview(route) {
 function optimizeRouteOrder() {
   closeModal('modal-menu');
   const routeItems = deliveries.filter(isRoutableDelivery);
-  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
-  const completedItems = deliveries.filter(d => d && d.completed);
+  const noLocationItems = deliveries.filter(d => d && !isDisplayDone(d) && !isRoutableDelivery(d));
+  const completedItems = deliveries.filter(d => d && isDisplayDone(d));
 
   if (routeItems.length < 2) {
     showToast(`${modeLabel()}先が2件以上ある時に並べ替えできます`, true);
@@ -3146,8 +3186,8 @@ function optimizeRouteOrder() {
 async function optimizeCarRouteOrder() {
   closeModal('modal-menu');
   const routeItems = deliveries.filter(isRoutableDelivery);
-  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
-  const completedItems = deliveries.filter(d => d && d.completed);
+  const noLocationItems = deliveries.filter(d => d && !isDisplayDone(d) && !isRoutableDelivery(d));
+  const completedItems = deliveries.filter(d => d && isDisplayDone(d));
 
   if (routeItems.length < 2) {
     showToast(`${modeLabel()}先が2件以上ある時に車用ルート検索できます`, true);
@@ -3224,8 +3264,8 @@ async function optimizeCarRouteOrder() {
 async function optimizeGoogleCarRouteOrder() {
   closeModal('modal-menu');
   const routeItems = deliveries.filter(isRoutableDelivery);
-  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
-  const completedItems = deliveries.filter(d => d && d.completed);
+  const noLocationItems = deliveries.filter(d => d && !isDisplayDone(d) && !isRoutableDelivery(d));
+  const completedItems = deliveries.filter(d => d && isDisplayDone(d));
 
   if (routeItems.length < 2) {
     showToast(`${modeLabel()}先が2件以上ある時にGoogle車用ルート検索できます`, true);
