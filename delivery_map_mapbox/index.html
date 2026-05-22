@@ -666,7 +666,7 @@
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
-      <button id="menu-import-pickup" type="button">📦 集荷リストを取り込む</button>
+      <button id="menu-import-pickup" type="button">📦 集荷コースを選択</button>
       <button id="menu-import-spot-pickup" type="button">📍 スポット集荷を反映</button>
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
@@ -706,23 +706,23 @@
 
 <div class="modal-bg" id="modal-pickup-import">
   <div class="modal">
-    <h3>集荷リストを取り込む</h3>
-    <label>取り込むシート</label>
+    <h3>集荷コースを選択</h3>
+    <label>コース</label>
     <select id="pickup-sheet"></select>
-    <label class="checkbox-line">
+    <label class="checkbox-line" style="display:none">
       <input type="checkbox" id="pickup-checked-only" checked>
       checked が TRUE の行だけ取り込む
     </label>
-    <label class="checkbox-line">
+    <label class="checkbox-line" style="display:none">
       <input type="checkbox" id="pickup-replace-list" checked>
       現在の配送リストを置き換える
     </label>
     <div class="modal-help">
-      company をピンのラベル、address を住所、time・method・notes を備考として取り込みます。
+      選んだコースの定期集荷を読み込みます。現在の集荷リストは選んだコースで置き換わります。
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-pickup-import">キャンセル</button>
-      <button class="primary" id="btn-pickup-import" type="button">取り込む</button>
+      <button class="primary" id="btn-pickup-import" type="button">このコースを開く</button>
     </div>
   </div>
 </div>
@@ -823,6 +823,7 @@ const ADDR_VISIBLE_KEY = 'rys-mapbox-addr-visible';
 const ADDR_DATA_KEY = 'rys-mapbox-addr-data-v1';
 const OPERATOR_NAME_KEY = 'rys-mapbox-operator-name';
 const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-pickup-last-reset-date';
+const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-pickup-selected-sheet';
 
 const ADDR_PREF = '東京都';
 const ADDR_CITY = '中央区';
@@ -1030,10 +1031,22 @@ function modeLabel() {
   return appMode === 'pickup' ? '集荷' : '配送';
 }
 
+function getSelectedPickupSheet() {
+  const saved = localStorage.getItem(PICKUP_SELECTED_SHEET_KEY) || '';
+  return PICKUP_SHEETS.includes(saved) ? saved : '';
+}
+
+function setSelectedPickupSheet(sheetName) {
+  if (PICKUP_SHEETS.includes(sheetName)) {
+    localStorage.setItem(PICKUP_SELECTED_SHEET_KEY, sheetName);
+  }
+}
+
 function updateModeUi() {
   const modeBtn = $('btn-app-mode');
   if (modeBtn) {
-    modeBtn.textContent = `モード: ${modeLabel()}`;
+    const course = appMode === 'pickup' ? getSelectedPickupSheet() : '';
+    modeBtn.textContent = appMode === 'pickup' && course ? `モード: 集荷 (${course})` : `モード: ${modeLabel()}`;
     modeBtn.classList.toggle('on', appMode === 'pickup');
   }
   const menuBtn = $('menu-toggle-mode');
@@ -1058,8 +1071,10 @@ async function switchAppMode(mode, showMessage = true) {
     updateModeUi();
     await resetStalePickupCompletions();
     restartPickupAutoSync();
+    if (mode === 'pickup') openPickupCourseModal();
     return;
   }
+  const switchingToPickup = mode === 'pickup';
   saveDeliveries();
   appMode = mode;
   localStorage.setItem(APP_MODE_KEY, appMode);
@@ -1072,6 +1087,7 @@ async function switchAppMode(mode, showMessage = true) {
   updateModeUi();
   restartPickupAutoSync();
   if (showMessage) showToast(`${modeLabel()}モードに切り替えました`);
+  if (switchingToPickup) openPickupCourseModal();
 }
 
 function toggleAppMode() {
@@ -1652,6 +1668,11 @@ function buildLabelText(d, num, modeKey) {
   return body;
 }
 
+function displayNumber(d, idx) {
+  if (isPickupBackedDelivery(d) && d.pickupId) return String(d.pickupId);
+  return String(idx + 1);
+}
+
 function markerZIndex(d, idx) {
   if (d.id === activeDeliveryId) return 100000;
   const priority = deliveries.length - idx;
@@ -1720,7 +1741,7 @@ function renderMarkers() {
 
   deliveries.forEach((d, idx) => {
     if (d.lat == null || d.lng == null) return;
-    const num = idx + 1;
+    const num = displayNumber(d, idx);
     const overlap = overlapInfo.get(d.id);
 
     const wrapper = document.createElement('div');
@@ -1740,7 +1761,7 @@ function renderMarkers() {
 
     const pin = document.createElement('div');
     pin.className = 'delivery-pin';
-    pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${num}${d.approx ? '?' : ''}</div>`;
+    pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${escapeHtml(num)}${d.approx ? '?' : ''}</div>`;
     if (overlap && overlap.index === 0) {
       const overlapLabel = document.createElement('div');
       overlapLabel.className = 'overlap-count-label';
@@ -1885,7 +1906,7 @@ function renderList() {
   stat.textContent = `${done}/${deliveries.length}件 完了${syncText}`;
 
   body.innerHTML = deliveries.map((d, idx) => {
-    const num = idx + 1;
+    const num = displayNumber(d, idx);
     const cls = 'delivery-item'
       + (d.completed ? ' done' : '')
       + (d.approx ? ' approx' : '')
@@ -1893,7 +1914,7 @@ function renderList() {
       + (d.id === activeDeliveryId ? ' selected' : '');
     return `
       <div class="${cls}" data-id="${d.id}">
-        <div class="num-badge">${num}${d.approx ? '?' : ''}</div>
+        <div class="num-badge">${escapeHtml(num)}${d.approx ? '?' : ''}</div>
         <div class="item-info">
           <div class="addr">${escapeHtml(d.address)}</div>
           ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}
@@ -2464,13 +2485,23 @@ function setupPickupSheetOptions() {
   select.innerHTML = PICKUP_SHEETS.map(name =>
     `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`
   ).join('');
+  const saved = getSelectedPickupSheet();
+  if (saved) select.value = saved;
+}
+
+function openPickupCourseModal() {
+  closeModal('modal-menu');
+  setupPickupSheetOptions();
+  const checkedOnly = $('pickup-checked-only');
+  const replaceList = $('pickup-replace-list');
+  if (checkedOnly) checkedOnly.checked = true;
+  if (replaceList) replaceList.checked = true;
+  openModal('modal-pickup-import');
 }
 
 async function openPickupImportModal() {
-  closeModal('modal-menu');
   if (appMode !== 'pickup') await switchAppMode('pickup', false);
-  setupPickupSheetOptions();
-  openModal('modal-pickup-import');
+  else openPickupCourseModal();
 }
 
 function normalizePickupTime(value) {
@@ -2924,29 +2955,25 @@ async function importPickupItems(items, replaceList) {
 
 async function importPickupSheet() {
   const sheetName = $('pickup-sheet').value;
-  const checkedOnly = $('pickup-checked-only').checked;
-  const replaceList = $('pickup-replace-list').checked;
+  const checkedOnly = true;
+  const replaceList = true;
+  setSelectedPickupSheet(sheetName);
+  updateModeUi();
   closeModal('modal-pickup-import');
 
   try {
-    showLoading('集荷リストを取得中...');
+    showLoading(`${sheetName}の集荷コースを読み込み中...`);
     const data = await fetchPickupItems(sheetName, checkedOnly);
-    hideLoading();
 
     const items = data.items || [];
     if (items.length === 0) {
+      hideLoading();
       showToast('取り込める集荷先がありませんでした', true);
       return;
     }
 
-    const mode = replaceList ? '置き換え' : '追加';
-    showConfirm(
-      '集荷リスト取込',
-      `「${data.sheet}」から ${items.length}件 を取り込みます。\n` +
-      `現在の配送リストは「${mode}」になります。\n\n` +
-      `住所検索APIを ${items.length}件分 使用します。よろしいですか？`,
-      () => importPickupItems(items, replaceList)
-    );
+    await importPickupItems(items, replaceList);
+    updateModeUi();
   } catch (e) {
     hideLoading();
     showToast(e.message || '集荷リストの取得に失敗しました', true);
