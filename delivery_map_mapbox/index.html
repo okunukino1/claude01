@@ -842,6 +842,9 @@ const PICKUP_SHEETS = [
   '浜町店 南',
   '浜町店 北'
 ];
+const PICKUP_SPOT_SHEETS_BY_COURSE = {
+  '小舟町店': '小舟町店スポット'
+};
 const PICKUP_DELIVERY_MODE_VALUE = '__delivery__';
 const PICKUP_SYNC_INTERVAL_MS = 20000;
 const SPOT_PICKUP_SYNC_INTERVAL_MS = 5 * 60 * 1000;
@@ -1659,17 +1662,20 @@ function extractBuilding(note) {
 }
 
 function buildLabelText(d, num, modeKey) {
-  if (modeKey === 'num') return '';
+  const spotTime = isSpotPickupDelivery(d) ? normalizePickupTime(d.spotPickupTime || '') : '';
+  if (modeKey === 'num') return spotTime;
   const banchi = extractBanchi(d.address);
   const bldg   = extractBuilding(d.note);
   let body = '';
   if (modeKey === 'both') body = [banchi, bldg].filter(Boolean).join(' ');
   else if (modeKey === 'addr') body = banchi;
   else if (modeKey === 'bldg') body = bldg;
+  if (spotTime) return [spotTime, body].filter(Boolean).join(' ');
   return body;
 }
 
 function displayNumber(d, idx) {
+  if (isSpotPickupDelivery(d)) return 'S';
   if (isPickupBackedDelivery(d) && d.pickupId) return String(d.pickupId);
   return String(idx + 1);
 }
@@ -2520,7 +2526,30 @@ function isTruthyValue(value) {
   return value === true || ['TRUE', '1', 'YES', 'Y', 'ON', '済', '○'].includes(s);
 }
 
+function spotSheetForPickupCourse(sheetName) {
+  return PICKUP_SPOT_SHEETS_BY_COURSE[sheetName] || '';
+}
+
+function isSpotPickupSheet(sheetName) {
+  return Object.values(PICKUP_SPOT_SHEETS_BY_COURSE).includes(sheetName);
+}
+
+function isSpotPickupItem(item) {
+  return !!(item && ((item.source || '') === 'ecohai-spot' || isSpotPickupSheet(item.sheet || '')));
+}
+
 function pickupNote(item) {
+  if (isSpotPickupItem(item)) {
+    const time = normalizePickupTime(item.time);
+    return [
+      item.company || '',
+      'スポット集荷',
+      time ? `希望時間帯: ${time}` : '',
+      item.phone ? `登録電話番号: ${item.phone}` : '',
+      item.notes || ''
+    ].filter(Boolean).join('\n');
+  }
+
   const lines = [];
   if (item.company) lines.push(item.company);
   const time = normalizePickupTime(item.time);
@@ -2697,6 +2726,92 @@ function applyPickupProgressFromItems(items) {
   return changed;
 }
 
+async function mergePickupSheetSpotItems(items, options = {}) {
+  if (!Array.isArray(items)) items = [];
+  const spotItems = items.filter(isSpotPickupItem).filter(item => item.id && item.address);
+  const incomingIds = new Set(spotItems.map(item => String(item.id)));
+  let changed = false;
+
+  const beforeLength = deliveries.length;
+  deliveries = deliveries.filter(d => {
+    if (!isSpotPickupDelivery(d) || !isSpotPickupSheet(d.pickupSheet || '')) return true;
+    return incomingIds.has(String(d.spotPickupId || d.pickupId || ''));
+  });
+  if (deliveries.length !== beforeLength) changed = true;
+
+  for (let i = 0; i < spotItems.length; i++) {
+    const item = spotItems[i];
+    const spotId = String(item.id);
+    const existing = deliveries.find(d => isSpotPickupDelivery(d) && String(d.spotPickupId || '') === spotId);
+    const note = pickupNote(item);
+    const completed = isTruthyValue(item.collected);
+    const completedAt = completed && item.collected_at ? Date.parse(item.collected_at) || Date.now() : null;
+    const completedBy = completed ? (item.collected_by || '') : '';
+    const completedAtLabel = completed ? formatTime(item.collected_at || Date.now()) : '';
+
+    if (existing) {
+      const addressChanged = existing.address !== item.address;
+      existing.address = item.address;
+      existing.note = note;
+      existing.completed = completed;
+      existing.completedAt = completedAt;
+      existing.completedBy = completedBy;
+      existing.completedAtLabel = completedAtLabel;
+      existing.pickupSource = 'ecohai-spot';
+      existing.pickupSheet = item.sheet || existing.pickupSheet || '';
+      existing.pickupRow = item.row || existing.pickupRow || null;
+      existing.pickupId = spotId;
+      existing.spotPickupId = spotId;
+      existing.spotPickupDate = item.date || existing.spotPickupDate || '';
+      existing.spotPickupTime = item.time || existing.spotPickupTime || '';
+      existing.spotPickupPhone = item.phone || existing.spotPickupPhone || '';
+      existing.spotPickupCompany = item.company || existing.spotPickupCompany || '';
+      if (addressChanged || existing.lat == null || existing.lng == null) {
+        if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${i + 1}/${spotItems.length}`);
+        const result = await geocodeAddress(item.address);
+        if (!result) continue;
+        existing.lat = result.lat;
+        existing.lng = result.lng;
+        existing.approx = result.approx;
+        existing.formatted = result.formatted;
+      }
+      changed = true;
+      continue;
+    }
+
+    if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${i + 1}/${spotItems.length}`);
+    const result = await geocodeAddress(item.address);
+    if (!result) continue;
+    deliveries.push({
+      id: `spot-${spotId}`,
+      address: item.address,
+      note,
+      lat: result.lat,
+      lng: result.lng,
+      approx: result.approx,
+      formatted: result.formatted,
+      completed,
+      completedAt,
+      completedBy,
+      completedAtLabel,
+      createdAt: Date.now(),
+      pickupSheet: item.sheet || '',
+      pickupRow: item.row || null,
+      pickupId: spotId,
+      pickupSource: 'ecohai-spot',
+      spotPickupId: spotId,
+      spotPickupDate: item.date || '',
+      spotPickupTime: item.time || '',
+      spotPickupPhone: item.phone || '',
+      spotPickupCompany: item.company || '',
+      progressSyncFailed: false
+    });
+    changed = true;
+  }
+
+  return changed;
+}
+
 async function syncPickupProgressFromSheets(silent = true) {
   if (appMode !== 'pickup' || pickupSyncInFlight) return;
   const sheets = [...new Set(deliveries.filter(isPickupBackedDelivery).map(d => d.pickupSheet))];
@@ -2711,6 +2826,9 @@ async function syncPickupProgressFromSheets(silent = true) {
     let changed = false;
     for (const sheet of sheets) {
       const data = await fetchPickupItems(sheet, false);
+      if (isSpotPickupSheet(sheet)) {
+        changed = await mergePickupSheetSpotItems(data.items || [], { silent }) || changed;
+      }
       changed = applyPickupProgressFromItems(data.items || []) || changed;
     }
     pickupLastSyncedAt = new Date();
@@ -2744,8 +2862,10 @@ function restartPickupAutoSync() {
   }
   syncPickupProgressFromSheets(true);
   pickupSyncTimer = setInterval(() => syncPickupProgressFromSheets(true), PICKUP_SYNC_INTERVAL_MS);
-  syncSpotPickups(true);
-  spotPickupSyncTimer = setInterval(() => syncSpotPickups(true), SPOT_PICKUP_SYNC_INTERVAL_MS);
+  if (!spotSheetForPickupCourse(getSelectedPickupSheet())) {
+    syncSpotPickups(true);
+    spotPickupSyncTimer = setInterval(() => syncSpotPickups(true), SPOT_PICKUP_SYNC_INTERVAL_MS);
+  }
 }
 
 function spotPickupNote(item) {
@@ -2914,9 +3034,11 @@ async function importPickupItems(items, replaceList) {
       failed.push(item);
       continue;
     }
+    const spotItem = isSpotPickupItem(item);
+    const pickupId = String(item.id || '');
     const collected = isTruthyValue(item.collected);
     const d = {
-      id: uid(),
+      id: spotItem && pickupId ? `spot-${pickupId}` : uid(),
       address: item.address,
       note: pickupNote(item),
       lat: result.lat,
@@ -2930,7 +3052,13 @@ async function importPickupItems(items, replaceList) {
       createdAt: Date.now(),
       pickupSheet: item.sheet || '',
       pickupRow: item.row || null,
-      pickupId: item.id || '',
+      pickupId,
+      pickupSource: spotItem ? 'ecohai-spot' : '',
+      spotPickupId: spotItem ? pickupId : '',
+      spotPickupDate: spotItem ? (item.date || '') : '',
+      spotPickupTime: spotItem ? (item.time || '') : '',
+      spotPickupPhone: spotItem ? (item.phone || '') : '',
+      spotPickupCompany: spotItem ? (item.company || '') : '',
       progressSyncFailed: false
     };
     deliveries.push(d);
@@ -2970,9 +3098,22 @@ async function importPickupSheet() {
 
   try {
     showLoading(`${sheetName}の集荷コースを読み込み中...`);
-    const data = await fetchPickupItems(sheetName);
+    const sourceSheets = [sheetName];
+    const spotSheet = spotSheetForPickupCourse(sheetName);
+    if (spotSheet) sourceSheets.push(spotSheet);
 
-    const items = data.items || [];
+    const items = [];
+    const warnings = [];
+    for (const sourceSheet of sourceSheets) {
+      try {
+        const data = await fetchPickupItems(sourceSheet);
+        items.push(...(data.items || []));
+      } catch (e) {
+        if (sourceSheet === sheetName) throw e;
+        warnings.push(e.message || `${sourceSheet}の取得に失敗しました`);
+      }
+    }
+
     if (items.length === 0) {
       hideLoading();
       showToast('取り込める集荷先がありませんでした', true);
@@ -2981,6 +3122,7 @@ async function importPickupSheet() {
 
     await importPickupItems(items, replaceList);
     updateModeUi();
+    if (warnings.length > 0) showToast(`スポット集荷の取得に失敗しました: ${warnings[0]}`, true);
   } catch (e) {
     hideLoading();
     showToast(e.message || '集荷リストの取得に失敗しました', true);

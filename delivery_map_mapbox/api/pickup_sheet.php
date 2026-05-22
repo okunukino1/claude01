@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 $spreadsheetId = '1KLblt-Ccx1xBppSzx9BnYcJuEHYkAlJ2KDEXeTa0swU';
 $allowedSheets = [
   '小舟町店' => 2042847900,
+  '小舟町店スポット' => 728416139,
   '浜町店 南' => 1102972916,
   '浜町店 北' => 591145494,
 ];
@@ -121,10 +122,10 @@ while (($row = fgetcsv($fp)) !== false) {
 }
 fclose($fp);
 
-if (count($rows) < 2) {
+if (count($rows) < 1) {
   http_response_code(502);
   echo json_encode([
-    'error' => '集荷リストに行データがありません',
+    'error' => '集荷リストにヘッダー行がありません',
     'sheet' => $sheet,
   ], JSON_UNESCAPED_UNICODE);
   exit;
@@ -160,6 +161,9 @@ for ($i = 1; $i < count($rows); $i++) {
     'time' => value_at($row, $indexMap, 'time'),
     'method' => value_at($row, $indexMap, 'method'),
     'notes' => value_at($row, $indexMap, 'notes'),
+    'phone' => value_at($row, $indexMap, 'phone'),
+    'date' => value_at($row, $indexMap, 'date'),
+    'source' => value_at($row, $indexMap, 'source'),
     'collected' => truthy_cell(value_at($row, $indexMap, 'collected')),
     'collected_at' => value_at($row, $indexMap, 'collected_at'),
     'collected_by' => value_at($row, $indexMap, 'collected_by'),

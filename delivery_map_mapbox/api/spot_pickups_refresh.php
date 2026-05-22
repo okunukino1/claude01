@@ -232,6 +232,87 @@ function write_cache($path, $cache) {
   }
 }
 
+function sync_spot_pickup_sheet($items, $date) {
+  $webappUrl = cfg('PICKUP_PROGRESS_WEBAPP_URL');
+  $secret = cfg('PICKUP_PROGRESS_SECRET');
+  $sheetName = cfg('SPOT_PICKUP_SHEET_NAME', '小舟町店スポット');
+  if ($webappUrl === '' || $webappUrl === 'https://script.google.com/macros/s/.../exec' ||
+      $secret === '' || $secret === 'change-this-secret') {
+    return [
+      'ok' => false,
+      'skipped' => true,
+      'reason' => 'PICKUP_PROGRESS_WEBAPP_URL または PICKUP_PROGRESS_SECRET が未設定です',
+    ];
+  }
+
+  $payloadItems = [];
+  foreach ($items as $item) {
+    if (!is_array($item)) continue;
+    $phone = (string)($item['phone'] ?? '');
+    $time = (string)($item['time'] ?? '');
+    $payloadItems[] = [
+      'id' => (string)($item['id'] ?? ''),
+      'company' => (string)($item['company'] ?? ''),
+      'address' => (string)($item['address'] ?? ''),
+      'time' => $time,
+      'method' => 'スポット',
+      'notes' => trim(implode("\n", array_filter([
+        'スポット集荷',
+        $time !== '' ? '希望時間帯: ' . $time : '',
+        $phone !== '' ? '登録電話番号: ' . $phone : '',
+      ]))),
+      'phone' => $phone,
+      'date' => (string)($item['date'] ?? $date),
+      'source' => 'ecohai-spot',
+    ];
+  }
+
+  $ch = curl_init($webappUrl);
+  curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CONNECTTIMEOUT => 8,
+    CURLOPT_TIMEOUT => 30,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_MAXREDIRS => 5,
+    CURLOPT_SSL_VERIFYPEER => false,
+    CURLOPT_SSL_VERIFYHOST => false,
+    CURLOPT_POST => true,
+    CURLOPT_HTTPHEADER => ['Content-Type: application/json; charset=utf-8'],
+    CURLOPT_POSTFIELDS => json_encode([
+      'action' => 'spotPickupsSync',
+      'secret' => $secret,
+      'sheet' => $sheetName,
+      'date' => $date,
+      'items' => $payloadItems,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+  ]);
+  $response = curl_exec($ch);
+  $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  $curlErr = curl_error($ch);
+  curl_close($ch);
+
+  if ($response === false || $httpCode < 200 || $httpCode >= 300) {
+    return [
+      'ok' => false,
+      'skipped' => false,
+      'error' => $curlErr ?: ('HTTP ' . $httpCode),
+    ];
+  }
+  $data = json_decode((string)$response, true);
+  if (!is_array($data) || empty($data['ok'])) {
+    return [
+      'ok' => false,
+      'skipped' => false,
+      'error' => is_array($data) && isset($data['error']) ? (string)$data['error'] : substr((string)$response, 0, 300),
+    ];
+  }
+  return [
+    'ok' => true,
+    'sheet' => $sheetName,
+    'count' => (int)($data['count'] ?? count($payloadItems)),
+  ];
+}
+
 $date = current_pickup_date();
 $slot = requested_slot();
 $cookieFile = tempnam(sys_get_temp_dir(), 'ecohai_cookie_');
@@ -294,6 +375,7 @@ try {
     'items' => array_values($byId),
   ];
   write_cache($path, $cache);
+  $sheetSync = sync_spot_pickup_sheet($cache['items'], $date);
 
   echo json_encode([
     'ok' => true,
@@ -303,6 +385,7 @@ try {
     'target' => $target,
     'fetched' => count($items),
     'cached' => count($cache['items']),
+    'sheet_sync' => $sheetSync,
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
   http_response_code(500);

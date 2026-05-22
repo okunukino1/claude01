@@ -36,7 +36,7 @@ if (!is_array($input)) {
   exit;
 }
 
-$allowedSheets = ['小舟町店', '浜町店 南', '浜町店 北'];
+$allowedSheets = ['小舟町店', '小舟町店スポット', '浜町店 南', '浜町店 北'];
 $sheet = trim((string)($input['sheet'] ?? ''));
 $row = (int)($input['row'] ?? 0);
 $pickupId = trim((string)($input['id'] ?? ''));

@@ -6,6 +6,9 @@ function doPost(e) {
     if (body.action === 'pickupProgress') {
       return handlePickupProgress(body);
     }
+    if (body.action === 'spotPickupsSync') {
+      return handleSpotPickupsSync(body);
+    }
 
     const course = toCourseKey(body.course);
     if (!course) return respond({ ok: false, error: 'course is required' });
