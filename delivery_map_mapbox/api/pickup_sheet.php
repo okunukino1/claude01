@@ -22,7 +22,6 @@ if (!array_key_exists($sheet, $allowedSheets)) {
   exit;
 }
 
-$checkedOnly = (string)($_GET['checked_only'] ?? '1') !== '0';
 $gid = $allowedSheets[$sheet];
 $urls = [
   'https://docs.google.com/spreadsheets/d/' . rawurlencode($spreadsheetId)
@@ -152,10 +151,6 @@ for ($i = 1; $i < count($rows); $i++) {
   $address = value_at($row, $indexMap, 'address');
   if ($address === '') continue;
 
-  $checkedValue = value_at($row, $indexMap, 'checked');
-  $checked = $checkedValue === '' ? true : truthy_cell($checkedValue);
-  if ($checkedOnly && !$checked) continue;
-
   $items[] = [
     'row' => $i + 1,
     'sheet' => $sheet,
@@ -165,7 +160,6 @@ for ($i = 1; $i < count($rows); $i++) {
     'time' => value_at($row, $indexMap, 'time'),
     'method' => value_at($row, $indexMap, 'method'),
     'notes' => value_at($row, $indexMap, 'notes'),
-    'checked' => $checked,
     'collected' => truthy_cell(value_at($row, $indexMap, 'collected')),
     'collected_at' => value_at($row, $indexMap, 'collected_at'),
     'collected_by' => value_at($row, $indexMap, 'collected_by'),
@@ -175,7 +169,6 @@ for ($i = 1; $i < count($rows); $i++) {
 echo json_encode([
   'spreadsheetId' => $spreadsheetId,
   'sheet' => $sheet,
-  'checkedOnly' => $checkedOnly,
   'count' => count($items),
   'items' => $items,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
