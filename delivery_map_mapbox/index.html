@@ -145,6 +145,26 @@
   .delivery-marker.done .delivery-label .lbl-num { color: var(--done); }
   .delivery-label .lbl-bldg { font-weight: 600; }
 
+  .overlap-count-label {
+    position: absolute;
+    right: -22px;
+    top: -2px;
+    min-width: 28px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: white;
+    color: var(--accent);
+    border: 2px solid var(--ink);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 18px;
+    text-align: center;
+    z-index: 3;
+    pointer-events: none;
+  }
+
   /* ===== GPS / North controls ===== */
   .map-control {
     position: fixed;
@@ -1665,14 +1685,43 @@ function isSpotPickupDelivery(d) {
   return !!(d && d.pickupSource === 'ecohai-spot' && d.spotPickupId);
 }
 
+function markerOverlapKey(d) {
+  const lat = Number(d && d.lat);
+  const lng = Number(d && d.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';
+  return `${lat.toFixed(5)},${lng.toFixed(5)}`;
+}
+
+function buildMarkerOverlapInfo() {
+  const groups = new Map();
+  deliveries.forEach(d => {
+    const key = markerOverlapKey(d);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(d);
+  });
+
+  const overlaps = new Map();
+  groups.forEach(group => {
+    const count = group.length;
+    if (count <= 1) return;
+    group.forEach((d, idx) => {
+      overlaps.set(d.id, { count, index: idx });
+    });
+  });
+  return overlaps;
+}
+
 function renderMarkers() {
   if (!map) return;
   clearAllMarkers();
   const modeKey = LABEL_MODES[labelModeIndex].key;
+  const overlapInfo = buildMarkerOverlapInfo();
 
   deliveries.forEach((d, idx) => {
     if (d.lat == null || d.lng == null) return;
     const num = idx + 1;
+    const overlap = overlapInfo.get(d.id);
 
     const wrapper = document.createElement('div');
     wrapper.className = 'delivery-marker'
@@ -1692,6 +1741,12 @@ function renderMarkers() {
     const pin = document.createElement('div');
     pin.className = 'delivery-pin';
     pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${num}${d.approx ? '?' : ''}</div>`;
+    if (overlap && overlap.index === 0) {
+      const overlapLabel = document.createElement('div');
+      overlapLabel.className = 'overlap-count-label';
+      overlapLabel.textContent = `${overlap.count}件`;
+      pin.appendChild(overlapLabel);
+    }
     wrapper.appendChild(pin);
 
     wrapper.addEventListener('click', (e) => {
