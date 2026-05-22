@@ -172,35 +172,6 @@
     pointer-events: none;
   }
 
-  .delivery-cluster-marker {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: var(--ink);
-    color: white;
-    border: 3px solid white;
-    box-shadow: 0 3px 8px rgba(0,0,0,0.35);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-  .delivery-cluster-marker .cluster-count {
-    font-size: 18px;
-    font-weight: 900;
-    line-height: 1;
-  }
-  .delivery-cluster-marker .cluster-label {
-    font-size: 11px;
-    font-weight: 800;
-    line-height: 1.1;
-    margin-top: 3px;
-  }
-
-
   /* ===== GPS / North controls ===== */
   .map-control {
     position: fixed;
@@ -883,8 +854,6 @@ const SPOT_PICKUP_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_CENTER_LNG = 139.7745;
 const DEFAULT_CENTER_LAT = 35.6845;
 const DEFAULT_ZOOM = 16;
-const MARKER_CLUSTER_MAX_ZOOM = 15.7;
-const MARKER_CLUSTER_GRID_PX = 180;
 
 function detectInitialAppMode() {
   const saved = localStorage.getItem(APP_MODE_KEY);
@@ -901,7 +870,6 @@ let mapboxConfig = null;
 let appMode = detectInitialAppMode();
 let deliveries = [];
 let markers = new Map();
-let markerRenderFrame = null;
 let activeDeliveryId = null;
 let userMarker = null;
 let userMarkerEl = null;
@@ -1171,9 +1139,6 @@ function initMap() {
     const pitch = map.getPitch();
     $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
   });
-  map.on('zoom', scheduleRenderMarkers);
-  map.on('moveend', renderMarkers);
-
   map.on('click', (e) => {
     if (!placingItemId) return;
     pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
@@ -1762,98 +1727,14 @@ function buildMarkerOverlapInfo() {
   return overlaps;
 }
 
-function deliveryHasPosition(d) {
-  return d && d.lat != null && d.lng != null
-    && Number.isFinite(Number(d.lat)) && Number.isFinite(Number(d.lng));
-}
-
-function buildMarkerRenderGroups() {
-  if (!map || map.getZoom() >= MARKER_CLUSTER_MAX_ZOOM) {
-    return deliveries
-      .map((d, idx) => ({ type: 'single', delivery: d, index: idx, firstIndex: idx }))
-      .filter(group => deliveryHasPosition(group.delivery));
-  }
-
-  const buckets = new Map();
-  deliveries.forEach((d, idx) => {
-    if (!deliveryHasPosition(d)) return;
-    const point = map.project([Number(d.lng), Number(d.lat)]);
-    const key = `${Math.floor(point.x / MARKER_CLUSTER_GRID_PX)},${Math.floor(point.y / MARKER_CLUSTER_GRID_PX)}`;
-    if (!buckets.has(key)) {
-      buckets.set(key, { type: 'cluster', items: [], firstIndex: idx });
-    }
-    const bucket = buckets.get(key);
-    bucket.items.push({ delivery: d, index: idx });
-    bucket.firstIndex = Math.min(bucket.firstIndex, idx);
-  });
-
-  const groups = [];
-  buckets.forEach(bucket => {
-    if (bucket.items.length === 1) {
-      const only = bucket.items[0];
-      groups.push({ type: 'single', delivery: only.delivery, index: only.index, firstIndex: only.index });
-    } else {
-      groups.push(bucket);
-    }
-  });
-  return groups.sort((a, b) => a.firstIndex - b.firstIndex);
-}
-
-function renderClusterMarker(group) {
-  const lngs = group.items.map(item => Number(item.delivery.lng));
-  const lats = group.items.map(item => Number(item.delivery.lat));
-  const center = [
-    lngs.reduce((sum, v) => sum + v, 0) / lngs.length,
-    lats.reduce((sum, v) => sum + v, 0) / lats.length
-  ];
-
-  const el = document.createElement('div');
-  el.className = 'delivery-cluster-marker';
-  el.innerHTML = `<div class="cluster-count">${group.items.length}</div><div class="cluster-label">件</div>`;
-  el.style.zIndex = '90000';
-  el.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const bounds = new mapboxgl.LngLatBounds();
-    group.items.forEach(item => bounds.extend([Number(item.delivery.lng), Number(item.delivery.lat)]));
-    map.fitBounds(bounds, {
-      padding: 90,
-      maxZoom: 17.2,
-      duration: 650
-    });
-  });
-
-  const marker = new mapboxgl.Marker({
-    element: el,
-    anchor: 'center',
-    rotationAlignment: 'viewport',
-    pitchAlignment: 'viewport'
-  }).setLngLat(center).addTo(map);
-  markers.set(`cluster:${group.firstIndex}:${group.items.length}`, marker);
-}
-
-function scheduleRenderMarkers() {
-  if (markerRenderFrame) return;
-  markerRenderFrame = requestAnimationFrame(() => {
-    markerRenderFrame = null;
-    renderMarkers();
-  });
-}
-
 function renderMarkers() {
   if (!map) return;
   clearAllMarkers();
   const modeKey = LABEL_MODES[labelModeIndex].key;
   const overlapInfo = buildMarkerOverlapInfo();
-  const renderGroups = buildMarkerRenderGroups();
 
-  renderGroups.forEach(group => {
-    if (group.type === 'cluster') {
-      renderClusterMarker(group);
-      return;
-    }
-
-    const d = group.delivery;
-    const idx = group.index;
+  deliveries.forEach((d, idx) => {
+    if (d.lat == null || d.lng == null) return;
     const num = idx + 1;
     const overlap = overlapInfo.get(d.id);
 
