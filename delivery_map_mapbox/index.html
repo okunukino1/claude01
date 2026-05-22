@@ -117,6 +117,10 @@
     text-shadow: 0 1px 2px rgba(0,0,0,0.5);
     z-index: 2;
   }
+  .delivery-marker.spot .delivery-pin .pin-num {
+    font-size: 11px;
+    top: 9px;
+  }
   .delivery-marker.approx .delivery-pin .pin-num { color: var(--ink); }
 
   /* ===== Label sits above pin in same wrapper ===== */
@@ -344,6 +348,7 @@
   .delivery-item.spot .num-badge {
     background: #0284c7;
     color: white;
+    font-size: 12px;
   }
   .item-info {
     flex: 1;
@@ -1662,20 +1667,18 @@ function extractBuilding(note) {
 }
 
 function buildLabelText(d, num, modeKey) {
-  const spotTime = isSpotPickupDelivery(d) ? normalizePickupTime(d.spotPickupTime || '') : '';
-  if (modeKey === 'num') return spotTime;
+  if (modeKey === 'num') return '';
   const banchi = extractBanchi(d.address);
   const bldg   = extractBuilding(d.note);
   let body = '';
   if (modeKey === 'both') body = [banchi, bldg].filter(Boolean).join(' ');
   else if (modeKey === 'addr') body = banchi;
   else if (modeKey === 'bldg') body = bldg;
-  if (spotTime) return [spotTime, body].filter(Boolean).join(' ');
   return body;
 }
 
 function displayNumber(d, idx) {
-  if (isSpotPickupDelivery(d)) return 'S';
+  if (isSpotPickupDelivery(d)) return spotPickupTimeCode(d.spotPickupTime || '');
   if (isPickupBackedDelivery(d) && d.pickupId) return String(d.pickupId);
   return String(idx + 1);
 }
@@ -2519,6 +2522,18 @@ function normalizePickupTime(value) {
   const m = s.match(/^1899-12-30T(\d{2}):(\d{2})/);
   if (!m) return s;
   return `${Number(m[1])}:${m[2]}`;
+}
+
+function spotPickupTimeCode(value) {
+  const s = String(value || '')
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[〜～－ー−]/g, '-')
+    .replace(/[　\s]/g, '');
+  if (/9時-?13時|09時-?13時/.test(s)) return 'S09';
+  if (/14時-?16時/.test(s)) return 'S14';
+  if (/16時-?18時/.test(s)) return 'S16';
+  const hour = s.match(/(\d{1,2})時/);
+  return hour ? `S${hour[1].padStart(2, '0')}` : 'S';
 }
 
 function isTruthyValue(value) {
