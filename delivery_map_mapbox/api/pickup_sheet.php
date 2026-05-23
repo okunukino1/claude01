@@ -16,6 +16,8 @@ $allowedSheets = [
   '浜町店 北' => 591145494,
 ];
 
+date_default_timezone_set('Asia/Tokyo');
+
 $sheet = trim((string)($_GET['sheet'] ?? '小舟町店'));
 if (!array_key_exists($sheet, $allowedSheets)) {
   http_response_code(400);
@@ -112,6 +114,14 @@ function value_at($row, $indexMap, $name) {
   return isset($row[$idx]) ? trim((string)$row[$idx]) : '';
 }
 
+function normalize_date_key($value) {
+  $v = trim((string)$value);
+  if ($v === '') return '';
+  $digits = preg_replace('/\D+/', '', $v);
+  if (strlen($digits) >= 8) return substr($digits, 0, 8);
+  return $digits;
+}
+
 $fp = fopen('php://temp', 'r+');
 fwrite($fp, $body);
 rewind($fp);
@@ -147,10 +157,14 @@ if (!isset($indexMap['address'])) {
 }
 
 $items = [];
+$todayKey = date('Ymd');
+$isSpotSheet = $sheet === '小舟町店スポット';
 for ($i = 1; $i < count($rows); $i++) {
   $row = $rows[$i];
   $address = value_at($row, $indexMap, 'address');
   if ($address === '') continue;
+  $dateValue = value_at($row, $indexMap, 'date');
+  if ($isSpotSheet && normalize_date_key($dateValue) !== $todayKey) continue;
 
   $items[] = [
     'row' => $i + 1,
@@ -162,7 +176,7 @@ for ($i = 1; $i < count($rows); $i++) {
     'method' => value_at($row, $indexMap, 'method'),
     'notes' => value_at($row, $indexMap, 'notes'),
     'phone' => value_at($row, $indexMap, 'phone'),
-    'date' => value_at($row, $indexMap, 'date'),
+    'date' => $dateValue,
     'source' => value_at($row, $indexMap, 'source'),
     'collected' => truthy_cell(value_at($row, $indexMap, 'collected')),
     'collected_at' => value_at($row, $indexMap, 'collected_at'),
@@ -173,6 +187,7 @@ for ($i = 1; $i < count($rows); $i++) {
 echo json_encode([
   'spreadsheetId' => $spreadsheetId,
   'sheet' => $sheet,
+  'dateFilter' => $isSpotSheet ? $todayKey : '',
   'count' => count($items),
   'items' => $items,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

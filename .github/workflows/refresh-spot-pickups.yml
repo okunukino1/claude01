@@ -2,6 +2,8 @@ name: Refresh ecohai spot pickups
 
 on:
   schedule:
+    # JST 00:05 (UTC 15:05) clears the previous day's spot pickup sheet.
+    - cron: '5 15 * * *'
     # JST 09:00-17:10 (UTC 00:00-08:10). The :10 run is a backup for GitHub cron delays.
     - cron: '0,10 0-8 * * *'
   workflow_dispatch:
