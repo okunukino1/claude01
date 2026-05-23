@@ -1727,6 +1727,43 @@ function isSpotPickupDelivery(d) {
   return !!(d && d.pickupSource === 'ecohai-spot' && d.spotPickupId);
 }
 
+function isRegularPickupBackedDelivery(d) {
+  return isPickupBackedDelivery(d) && !isSpotPickupDelivery(d);
+}
+
+function finiteCoordinate(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function pickupLocationFromItem(item) {
+  const lat = finiteCoordinate(item && item.lat);
+  const lng = finiteCoordinate(item && item.lng);
+  if (lat === null || lng === null) return null;
+  return {
+    lat,
+    lng,
+    approx: isTruthyValue(item.approx),
+    formatted: item.formatted || item.address || ''
+  };
+}
+
+function applyPickupLocationFromItem(d, item) {
+  const location = pickupLocationFromItem(item);
+  if (!location) return false;
+  const changed = finiteCoordinate(d.lat) !== location.lat ||
+    finiteCoordinate(d.lng) !== location.lng ||
+    !!d.approx !== !!location.approx ||
+    (d.formatted || '') !== (location.formatted || '');
+  if (!changed) return false;
+  d.lat = location.lat;
+  d.lng = location.lng;
+  d.approx = location.approx;
+  d.formatted = location.formatted;
+  return true;
+}
+
 function markerOverlapKey(d) {
   const lat = Number(d && d.lat);
   const lng = Number(d && d.lng);
@@ -2018,20 +2055,22 @@ function startPlacement(id) {
   showToast('地図上で位置をタップしてください');
 }
 
-function commitPlacement() {
+async function commitPlacement() {
   if (!placingItemId || !pendingPlacementCoord) return;
   const d = deliveries.find(x => x.id === placingItemId);
   if (!d) return;
   d.lat = pendingPlacementCoord.lat;
   d.lng = pendingPlacementCoord.lng;
   d.approx = false;
+  d.formatted = d.address || d.formatted || '';
   saveDeliveries();
   renderMarkers();
   renderList();
+  const locationSynced = await syncPickupLocation(d, { silent: true });
   placingItemId = null;
   pendingPlacementCoord = null;
   document.body.classList.remove('placing-mode');
-  showToast('位置を更新しました');
+  showToast(locationSynced ? '位置を更新しました' : '位置は更新しましたが固定位置の共有保存に失敗しました', !locationSynced);
 }
 
 function cancelPlacement() {
@@ -2105,10 +2144,12 @@ async function reGeocodeEditedItem() {
   saveDeliveries();
   renderMarkers();
   renderList();
+  const locationSynced = await syncPickupLocation(d, { silent: true });
   map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
   closeModal('modal-edit');
   editingItemId = null;
-  showToast(result.approx ? '概算位置で更新しました' : '住所検索でピン位置を更新しました');
+  const message = result.approx ? '概算位置で更新しました' : '住所検索でピン位置を更新しました';
+  showToast(locationSynced ? message : `${message}（固定位置の共有保存は未完了）`, !locationSynced);
 }
 
 async function saveEditedItem() {
@@ -2142,9 +2183,10 @@ async function saveEditedItem() {
   saveDeliveries();
   renderMarkers();
   renderList();
+  const locationSynced = await syncPickupLocation(d, { silent: true });
   closeModal('modal-edit');
   editingItemId = null;
-  showToast('更新しました');
+  showToast(locationSynced ? '更新しました' : '更新しました（固定位置の共有保存は未完了）', !locationSynced);
 }
 
 function deleteEditedItem() {
@@ -2672,6 +2714,47 @@ async function syncPickupProgress(d, operatorName, options = {}) {
   }
 }
 
+function pickupLocationPayloadForDelivery(d) {
+  return {
+    sheet: d.pickupSheet,
+    row: d.pickupRow,
+    id: d.pickupId || '',
+    lat: finiteCoordinate(d.lat),
+    lng: finiteCoordinate(d.lng),
+    approx: !!d.approx,
+    formatted: d.formatted || d.address || ''
+  };
+}
+
+async function postPickupLocationPayload(payload) {
+  const res = await fetch('api/pickup_location.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || data.error) {
+    const detail = data && data.detail ? ` (${data.detail})` : '';
+    throw new Error(((data && data.error) || '固定位置の保存に失敗しました') + detail);
+  }
+  return data;
+}
+
+async function syncPickupLocation(d, options = {}) {
+  if (!isRegularPickupBackedDelivery(d)) return true;
+  const payload = pickupLocationPayloadForDelivery(d);
+  if (payload.lat === null || payload.lng === null) return false;
+  try {
+    await postPickupLocationPayload(payload);
+    return true;
+  } catch (e) {
+    console.warn('pickup location sync failed', e);
+    if (!options.silent) showToast('ピン位置は端末内で更新しました。固定位置の共有保存に失敗しました', true);
+    return false;
+  }
+}
+
 async function retryPendingPickupProgress(options = {}) {
   if (pickupPendingRetryInFlight) return { sent: 0, failed: 0 };
   const pending = loadPendingPickupProgress();
@@ -2820,10 +2903,11 @@ function applyPickupProgressFromItems(items) {
 
   deliveries.forEach(d => {
     if (!isPickupBackedDelivery(d)) return;
-    if (d.progressSyncFailed) return;
     const item = byKey.get(`${d.pickupSheet}:${d.pickupRow}`);
     if (!item) return;
     if (d.pickupId && item.id && String(d.pickupId) !== String(item.id)) return;
+    if (applyPickupLocationFromItem(d, item)) changed = true;
+    if (d.progressSyncFailed) return;
 
     const completed = isTruthyValue(item.collected);
     const completedBy = completed ? (item.collected_by || '') : '';
@@ -2869,6 +2953,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
     const completedAt = completed && item.collected_at ? Date.parse(item.collected_at) || Date.now() : null;
     const completedBy = completed ? (item.collected_by || '') : '';
     const completedAtLabel = completed ? formatTime(item.collected_at || Date.now()) : '';
+    const savedLocation = pickupLocationFromItem(item);
 
     if (existing) {
       const addressChanged = existing.address !== item.address;
@@ -2889,7 +2974,12 @@ async function mergePickupSheetSpotItems(items, options = {}) {
       existing.spotPickupTime = item.time || existing.spotPickupTime || '';
       existing.spotPickupPhone = item.phone || existing.spotPickupPhone || '';
       existing.spotPickupCompany = item.company || existing.spotPickupCompany || '';
-      if (addressChanged || existing.lat == null || existing.lng == null) {
+      if (savedLocation) {
+        existing.lat = savedLocation.lat;
+        existing.lng = savedLocation.lng;
+        existing.approx = savedLocation.approx;
+        existing.formatted = savedLocation.formatted;
+      } else if (addressChanged || existing.lat == null || existing.lng == null) {
         if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${i + 1}/${spotItems.length}`);
         const result = await geocodeAddress(item.address);
         if (!result) continue;
@@ -2902,8 +2992,11 @@ async function mergePickupSheetSpotItems(items, options = {}) {
       continue;
     }
 
-    if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${i + 1}/${spotItems.length}`);
-    const result = await geocodeAddress(item.address);
+    let result = savedLocation;
+    if (!result) {
+      if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${i + 1}/${spotItems.length}`);
+      result = await geocodeAddress(item.address);
+    }
     if (!result) continue;
     deliveries.push({
       id: `spot-${spotId}`,
@@ -2996,8 +3089,14 @@ async function importPickupItems(items, replaceList) {
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    showLoading(`住所を検索中... ${i + 1}/${items.length}`);
-    const result = await geocodeAddress(item.address);
+    const savedLocation = pickupLocationFromItem(item);
+    let result = savedLocation;
+    if (result) {
+      showLoading(`固定位置を読み込み中... ${i + 1}/${items.length}`);
+    } else {
+      showLoading(`住所を検索中... ${i + 1}/${items.length}`);
+      result = await geocodeAddress(item.address);
+    }
     if (!result) {
       failed.push(item);
       continue;
@@ -3031,6 +3130,7 @@ async function importPickupItems(items, replaceList) {
     };
     deliveries.push(d);
     imported.push(d);
+    if (!savedLocation && !spotItem) syncPickupLocation(d, { silent: true });
   }
 
   saveDeliveries();

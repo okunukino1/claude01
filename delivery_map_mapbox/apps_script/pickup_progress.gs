@@ -7,6 +7,9 @@
 //    if (body.action === 'pickupProgress') {
 //      return handlePickupProgress(body);
 //    }
+//    if (body.action === 'pickupLocation') {
+//      return handlePickupLocation(body);
+//    }
 //    if (body.action === 'spotPickupsSync') {
 //      return handleSpotPickupsSync(body);
 //    }
@@ -18,6 +21,7 @@
 const PICKUP_PROGRESS_SECRET = 'change-this-secret';
 const PICKUP_PROGRESS_ALLOWED_SHEETS = ['小舟町店', '小舟町店スポット', '浜町店 南', '浜町店 北'];
 const PICKUP_PROGRESS_COLUMNS = ['collected', 'collected_at', 'collected_by'];
+const PICKUP_LOCATION_COLUMNS = ['lat', 'lng', 'approx', 'formatted'];
 const SPOT_PICKUP_SHEET_NAME = '小舟町店スポット';
 const SPOT_PICKUP_COLUMNS = [
   'id',
@@ -86,6 +90,75 @@ function ensurePickupProgressColumns(sheet) {
   });
 
   PICKUP_PROGRESS_COLUMNS.forEach(name => {
+    if (!headers[name]) {
+      const col = sheet.getLastColumn() + 1;
+      sheet.getRange(1, col).setValue(name);
+      headers[name] = col;
+    }
+  });
+
+  return headers;
+}
+
+function handlePickupLocation(payload) {
+  if (payload.secret !== PICKUP_PROGRESS_SECRET) {
+    return respond({ ok: false, error: 'unauthorized' });
+  }
+
+  const sheetName = String(payload.sheet || '').trim();
+  if (!PICKUP_PROGRESS_ALLOWED_SHEETS.includes(sheetName)) {
+    return respond({ ok: false, error: 'unsupported sheet' });
+  }
+
+  const row = Number(payload.row || 0);
+  if (!Number.isInteger(row) || row < 2) {
+    return respond({ ok: false, error: 'invalid row' });
+  }
+
+  const lat = Number(payload.lat);
+  const lng = Number(payload.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return respond({ ok: false, error: 'invalid location' });
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return respond({ ok: false, error: 'sheet not found' });
+  if (row > sheet.getMaxRows()) return respond({ ok: false, error: 'row out of range' });
+
+  const headers = ensurePickupLocationColumns(sheet);
+  const idCol = headers.id;
+  if (payload.id && idCol) {
+    const currentId = String(sheet.getRange(row, idCol).getDisplayValue()).trim();
+    if (currentId !== String(payload.id).trim()) {
+      return respond({ ok: false, error: 'id mismatch' });
+    }
+  }
+
+  sheet.getRange(row, headers.lat).setValue(lat);
+  sheet.getRange(row, headers.lng).setValue(lng);
+  sheet.getRange(row, headers.approx).setValue(!!payload.approx);
+  sheet.getRange(row, headers.formatted).setValue(String(payload.formatted || ''));
+
+  return respond({
+    ok: true,
+    sheet: sheetName,
+    row,
+    lat,
+    lng,
+  });
+}
+
+function ensurePickupLocationColumns(sheet) {
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headerValues = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  const headers = {};
+  headerValues.forEach((value, index) => {
+    const key = String(value || '').trim();
+    if (key) headers[key] = index + 1;
+  });
+
+  PICKUP_LOCATION_COLUMNS.forEach(name => {
     if (!headers[name]) {
       const col = sheet.getLastColumn() + 1;
       sheet.getRange(1, col).setValue(name);
