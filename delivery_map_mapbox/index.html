@@ -326,6 +326,9 @@
     opacity: 0.55;
     background: var(--paper-soft);
   }
+  .delivery-item.sync-pending {
+    box-shadow: inset 4px 0 0 #f59e0b;
+  }
   .delivery-item.selected {
     background: var(--accent-soft);
   }
@@ -828,6 +831,7 @@ const ADDR_DATA_KEY = 'rys-mapbox-addr-data-v1';
 const OPERATOR_NAME_KEY = 'rys-mapbox-operator-name';
 const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-pickup-last-reset-date';
 const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-pickup-selected-sheet';
+const PICKUP_PENDING_SYNC_KEY = 'rys-mapbox-pickup-pending-sync-v1';
 
 const ADDR_PREF = '東京都';
 const ADDR_CITY = '中央区';
@@ -882,6 +886,7 @@ let operatorSaveCallback = null;
 let operatorCancelCallback = null;
 let pickupSyncTimer = null;
 let pickupSyncInFlight = false;
+let pickupPendingRetryInFlight = false;
 let pickupLastSyncedAt = null;
 let pendingPhotoFile = null;
 let pendingPhotoUrl = '';
@@ -988,6 +993,12 @@ function localDateKey(value = Date.now()) {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function localIsoString(value = Date.now()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString();
 }
 
 function openOperatorModal(callback, cancelCallback) {
@@ -1703,6 +1714,15 @@ function isPickupBackedDelivery(d) {
   return !!(d && d.pickupSheet && d.pickupRow);
 }
 
+function pickupProgressKeyFromParts(sheet, row, id) {
+  return `${sheet || ''}:${row || ''}:${id || ''}`;
+}
+
+function pickupProgressKey(d) {
+  if (!isPickupBackedDelivery(d)) return '';
+  return pickupProgressKeyFromParts(d.pickupSheet, d.pickupRow, d.pickupId || '');
+}
+
 function isSpotPickupDelivery(d) {
   return !!(d && d.pickupSource === 'ecohai-spot' && d.spotPickupId);
 }
@@ -1912,6 +1932,7 @@ function renderList() {
       + (d.completed ? ' done' : '')
       + (d.approx ? ' approx' : '')
       + (isSpotPickupDelivery(d) ? ' spot' : '')
+      + (d.progressSyncFailed ? ' sync-pending' : '')
       + (d.id === activeDeliveryId ? ' selected' : '');
     return `
       <div class="${cls}" data-id="${d.id}">
@@ -1920,6 +1941,7 @@ function renderList() {
           <div class="addr">${escapeHtml(d.address)}</div>
           ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}
           ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
+          ${d.progressSyncFailed ? `<div class="note">未同期: 通信回復後に自動再送します</div>` : ''}
         </div>
         <div class="item-actions">
           <button class="done-btn ${d.completed ? 'completed' : ''}" data-action="done" data-id="${d.id}" title="完了">${d.completed ? '↩' : '✓'}</button>
@@ -2565,19 +2587,57 @@ function pickupNote(item) {
   return lines.join('\n');
 }
 
-async function syncPickupProgress(d, operatorName, options = {}) {
-  if (!isPickupBackedDelivery(d)) return true;
+function loadPendingPickupProgress() {
+  try {
+    const list = JSON.parse(localStorage.getItem(PICKUP_PENDING_SYNC_KEY) || '[]');
+    return Array.isArray(list) ? list.filter(item => item && item.key) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function savePendingPickupProgress(list) {
+  localStorage.setItem(PICKUP_PENDING_SYNC_KEY, JSON.stringify(list || []));
+}
+
+function pendingPayloadForDelivery(d, operatorName) {
+  const completedAt = d.completed ? localIsoString(d.completedAt || Date.now()) : '';
+  return {
+    sheet: d.pickupSheet,
+    row: d.pickupRow,
+    id: d.pickupId || '',
+    collected: !!d.completed,
+    collected_at: completedAt,
+    collected_by: d.completed ? (operatorName || d.completedBy || '') : ''
+  };
+}
+
+function upsertPendingPickupProgress(d, payload) {
+  const key = pickupProgressKey(d);
+  if (!key) return;
+  const list = loadPendingPickupProgress().filter(item => item.key !== key);
+  list.push({
+    key,
+    payload,
+    queuedAt: Date.now(),
+    attempts: 0,
+    lastError: ''
+  });
+  savePendingPickupProgress(list);
+}
+
+function removePendingPickupProgress(key) {
+  if (!key) return;
+  const list = loadPendingPickupProgress().filter(item => item.key !== key);
+  savePendingPickupProgress(list);
+}
+
+async function postPickupProgressPayload(payload) {
   try {
     const res = await fetch('api/pickup_progress.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sheet: d.pickupSheet,
-        row: d.pickupRow,
-        id: d.pickupId || '',
-        collected: !!d.completed,
-        collected_by: d.completed ? operatorName : ''
-      })
+      body: JSON.stringify(payload)
     });
     let data = null;
     try { data = await res.json(); } catch (e) {}
@@ -2585,15 +2645,70 @@ async function syncPickupProgress(d, operatorName, options = {}) {
       const detail = data && data.detail ? ` (${data.detail})` : '';
       throw new Error(((data && data.error) || 'スプレッドシート更新に失敗しました') + detail);
     }
+    return data;
+  } catch (e) {
+    throw e;
+  }
+}
+
+async function syncPickupProgress(d, operatorName, options = {}) {
+  if (!isPickupBackedDelivery(d)) return true;
+  const key = pickupProgressKey(d);
+  const payload = pendingPayloadForDelivery(d, operatorName);
+  try {
+    await postPickupProgressPayload(payload);
     d.progressSyncFailed = false;
+    removePendingPickupProgress(key);
     saveDeliveries();
     return true;
   } catch (e) {
     console.warn('pickup progress sync failed', e);
     d.progressSyncFailed = true;
+    upsertPendingPickupProgress(d, payload);
     saveDeliveries();
-    if (!options.silent) showToast('スプレッドシート更新に失敗しました', true);
+    renderList();
+    if (!options.silent) showToast('通信不安定のため未同期です。通信回復後に自動再送します', true);
     return false;
+  }
+}
+
+async function retryPendingPickupProgress(options = {}) {
+  if (pickupPendingRetryInFlight) return { sent: 0, failed: 0 };
+  const pending = loadPendingPickupProgress();
+  if (pending.length === 0) return { sent: 0, failed: 0 };
+
+  pickupPendingRetryInFlight = true;
+  let sent = 0;
+  let failed = 0;
+  const remaining = [];
+
+  try {
+    for (const item of pending) {
+      try {
+        await postPickupProgressPayload(item.payload);
+        sent++;
+        const d = deliveries.find(x => pickupProgressKey(x) === item.key);
+        if (d) d.progressSyncFailed = false;
+      } catch (e) {
+        failed++;
+        remaining.push({
+          ...item,
+          attempts: (item.attempts || 0) + 1,
+          lastError: e.message || String(e),
+          lastAttemptAt: Date.now()
+        });
+      }
+    }
+    savePendingPickupProgress(remaining);
+    if (sent > 0) {
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      if (!options.silent) showToast(`未同期の集荷完了を${sent}件送信しました`);
+    }
+    return { sent, failed };
+  } finally {
+    pickupPendingRetryInFlight = false;
   }
 }
 
@@ -2759,10 +2874,12 @@ async function mergePickupSheetSpotItems(items, options = {}) {
       const addressChanged = existing.address !== item.address;
       existing.address = item.address;
       existing.note = note;
-      existing.completed = completed;
-      existing.completedAt = completedAt;
-      existing.completedBy = completedBy;
-      existing.completedAtLabel = completedAtLabel;
+      if (!existing.progressSyncFailed) {
+        existing.completed = completed;
+        existing.completedAt = completedAt;
+        existing.completedBy = completedBy;
+        existing.completedAtLabel = completedAtLabel;
+      }
       existing.pickupSource = 'ecohai-spot';
       existing.pickupSheet = item.sheet || existing.pickupSheet || '';
       existing.pickupRow = item.row || existing.pickupRow || null;
@@ -2820,6 +2937,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
 
 async function syncPickupProgressFromSheets(silent = true) {
   if (appMode !== 'pickup' || pickupSyncInFlight) return;
+  await retryPendingPickupProgress({ silent: true });
   const sheetSet = new Set(deliveries.filter(isPickupBackedDelivery).map(d => d.pickupSheet));
   const selectedSpotSheet = spotSheetForPickupCourse(getSelectedPickupSheet());
   if (selectedSpotSheet) sheetSet.add(selectedSpotSheet);
@@ -3515,6 +3633,10 @@ document.querySelectorAll('[data-close]').forEach(btn => {
 });
 
 document.querySelector('.placement-banner').addEventListener('click', cancelPlacement);
+window.addEventListener('online', () => retryPendingPickupProgress({ silent: false }));
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) retryPendingPickupProgress({ silent: true });
+});
 
 (async function init() {
   try {

@@ -42,6 +42,7 @@ $row = (int)($input['row'] ?? 0);
 $pickupId = trim((string)($input['id'] ?? ''));
 $collected = !empty($input['collected']);
 $collectedBy = trim((string)($input['collected_by'] ?? ''));
+$collectedAtInput = trim((string)($input['collected_at'] ?? ''));
 
 if (!in_array($sheet, $allowedSheets, true)) {
   http_response_code(400);
@@ -65,6 +66,15 @@ if (mb_strlen($collectedBy, 'UTF-8') > 50) {
 }
 
 $now = new DateTime('now', new DateTimeZone('Asia/Tokyo'));
+$collectedAt = $now;
+if ($collected && $collectedAtInput !== '') {
+  try {
+    $collectedAt = new DateTime($collectedAtInput);
+    $collectedAt->setTimezone(new DateTimeZone('Asia/Tokyo'));
+  } catch (Throwable $e) {
+    $collectedAt = $now;
+  }
+}
 $payload = [
   'action' => 'pickupProgress',
   'secret' => $secret,
@@ -72,7 +82,7 @@ $payload = [
   'row' => $row,
   'id' => $pickupId,
   'collected' => $collected,
-  'collected_at' => $collected ? $now->format(DateTime::ATOM) : '',
+  'collected_at' => $collected ? $collectedAt->format(DateTime::ATOM) : '',
   'collected_by' => $collected ? $collectedBy : '',
 ];
 
