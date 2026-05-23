@@ -13,6 +13,7 @@ $allowedSheets = [
   '小舟町店' => 2042847900,
   '小舟町店スポット' => 728416139,
   '浜町店 南' => 1102972916,
+  '浜町店 南スポット' => null,
   '浜町店 北' => 591145494,
 ];
 
@@ -28,12 +29,20 @@ if (!array_key_exists($sheet, $allowedSheets)) {
 $gid = $allowedSheets[$sheet];
 $urls = [
   'https://docs.google.com/spreadsheets/d/' . rawurlencode($spreadsheetId)
-    . '/export?format=csv&gid=' . rawurlencode((string)$gid),
-  'https://docs.google.com/spreadsheets/d/' . rawurlencode($spreadsheetId)
-    . '/gviz/tq?tqx=out:csv&gid=' . rawurlencode((string)$gid),
-  'https://docs.google.com/spreadsheets/d/' . rawurlencode($spreadsheetId)
     . '/gviz/tq?tqx=out:csv&sheet=' . rawurlencode($sheet),
 ];
+if ($gid !== null && $gid !== '') {
+  array_unshift(
+    $urls,
+    'https://docs.google.com/spreadsheets/d/' . rawurlencode($spreadsheetId)
+      . '/gviz/tq?tqx=out:csv&gid=' . rawurlencode((string)$gid)
+  );
+  array_unshift(
+    $urls,
+    'https://docs.google.com/spreadsheets/d/' . rawurlencode($spreadsheetId)
+      . '/export?format=csv&gid=' . rawurlencode((string)$gid)
+  );
+}
 
 function fetch_csv_url($url) {
   $ch = curl_init($url);
@@ -158,7 +167,7 @@ if (!isset($indexMap['address'])) {
 
 $items = [];
 $todayKey = date('Ymd');
-$isSpotSheet = $sheet === '小舟町店スポット';
+$isSpotSheet = in_array($sheet, ['小舟町店スポット', '浜町店 南スポット'], true);
 for ($i = 1; $i < count($rows); $i++) {
   $row = $rows[$i];
   $address = value_at($row, $indexMap, 'address');

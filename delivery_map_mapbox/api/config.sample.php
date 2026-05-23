@@ -66,7 +66,26 @@ define('ECOHAI_USER_PASS', 'change-this-password');
 // 例: https://your-domain.com/delivery_map_mapbox/api/spot_pickups_refresh.php?secret=...
 define('SPOT_PICKUP_REFRESH_SECRET', 'change-this-refresh-secret');
 
-// 今回のテスト対象: 小舟1
+// スポット集荷取得対象
+// SPOT_PICKUP_TARGETS を設定すると複数POTをまとめて取得できます。
+define('SPOT_PICKUP_TARGETS', [
+  [
+    'label' => '小舟1',
+    'area' => '10',
+    'shop' => '0220',
+    'pot' => '07021644139',
+    'sheet' => '小舟町店スポット',
+  ],
+  [
+    'label' => '浜町1',
+    'area' => '10',
+    'shop' => '0262',
+    'pot' => '07012121206',
+    'sheet' => '浜町店 南スポット',
+  ],
+]);
+
+// 旧設定名です。SPOT_PICKUP_TARGETS 未設定の場合の小舟1用として使われます。
 define('SPOT_PICKUP_TARGET_LABEL', '小舟1');
 define('SPOT_PICKUP_TARGET_AREA', '10');
 define('SPOT_PICKUP_TARGET_SHOP', '0220');

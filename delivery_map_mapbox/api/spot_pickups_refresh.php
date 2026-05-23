@@ -32,12 +32,42 @@ if ($userId === '' || $userId === 'change-this-user-id' || $userPass === '' || $
 
 date_default_timezone_set('Asia/Tokyo');
 
-$target = [
-  'label' => cfg('SPOT_PICKUP_TARGET_LABEL', '小舟1'),
-  'area' => cfg('SPOT_PICKUP_TARGET_AREA', '10'),
-  'shop' => cfg('SPOT_PICKUP_TARGET_SHOP', '0220'),
-  'pot' => cfg('SPOT_PICKUP_TARGET_POT', '07021644139'),
-];
+function spot_pickup_targets() {
+  if (defined('SPOT_PICKUP_TARGETS') && is_array(SPOT_PICKUP_TARGETS)) {
+    $targets = [];
+    foreach (SPOT_PICKUP_TARGETS as $target) {
+      if (!is_array($target)) continue;
+      $targets[] = [
+        'label' => trim((string)($target['label'] ?? '')),
+        'area' => trim((string)($target['area'] ?? '')),
+        'shop' => trim((string)($target['shop'] ?? '')),
+        'pot' => trim((string)($target['pot'] ?? '')),
+        'sheet' => trim((string)($target['sheet'] ?? '')),
+      ];
+    }
+    $targets = array_values(array_filter($targets, function($target) {
+      return $target['label'] !== '' && $target['area'] !== '' && $target['shop'] !== '' && $target['pot'] !== '' && $target['sheet'] !== '';
+    }));
+    if (count($targets) > 0) return $targets;
+  }
+
+  return [
+    [
+      'label' => cfg('SPOT_PICKUP_TARGET_LABEL', '小舟1'),
+      'area' => cfg('SPOT_PICKUP_TARGET_AREA', '10'),
+      'shop' => cfg('SPOT_PICKUP_TARGET_SHOP', '0220'),
+      'pot' => cfg('SPOT_PICKUP_TARGET_POT', '07021644139'),
+      'sheet' => cfg('SPOT_PICKUP_SHEET_NAME', '小舟町店スポット'),
+    ],
+    [
+      'label' => '浜町1',
+      'area' => '10',
+      'shop' => '0262',
+      'pot' => '07012121206',
+      'sheet' => '浜町店 南スポット',
+    ],
+  ];
+}
 
 function current_pickup_date() {
   return date('Ymd');
@@ -203,6 +233,7 @@ function parse_pickups($html, $slot, $date, $target) {
     $item['source'] = 'ecohai-spot';
     $item['pot_label'] = $target['label'];
     $item['pot'] = $target['pot'];
+    $item['spot_sheet'] = $target['sheet'];
     $item['slot'] = $slot;
     $filtered[] = $item;
   }
@@ -232,10 +263,9 @@ function write_cache($path, $cache) {
   }
 }
 
-function sync_spot_pickup_sheet($items, $date) {
+function sync_spot_pickup_sheet($items, $date, $sheetName) {
   $webappUrl = cfg('PICKUP_PROGRESS_WEBAPP_URL');
   $secret = cfg('PICKUP_PROGRESS_SECRET');
-  $sheetName = cfg('SPOT_PICKUP_SHEET_NAME', '小舟町店スポット');
   if ($webappUrl === '' || $webappUrl === 'https://script.google.com/macros/s/.../exec' ||
       $secret === '' || $secret === 'change-this-secret') {
     return [
@@ -264,6 +294,7 @@ function sync_spot_pickup_sheet($items, $date) {
       'phone' => $phone,
       'date' => (string)($item['date'] ?? $date),
       'source' => 'ecohai-spot',
+      'spot_sheet' => (string)($item['spot_sheet'] ?? $sheetName),
     ];
   }
 
@@ -315,6 +346,7 @@ function sync_spot_pickup_sheet($items, $date) {
 
 $date = current_pickup_date();
 $slot = requested_slot();
+$targets = spot_pickup_targets();
 $cookieFile = tempnam(sys_get_temp_dir(), 'ecohai_cookie_');
 
 try {
@@ -331,27 +363,40 @@ try {
     exit;
   }
 
-  $pickupUrl = sprintf(
-    'https://driver.ecohai.co.jp/ecohai-kun/Pickup/view/%s/%s/%s/%s/%s',
-    rawurlencode($date),
-    rawurlencode($target['pot']),
-    rawurlencode($target['area']),
-    rawurlencode($target['shop']),
-    rawurlencode($target['pot'])
-  );
-  $page = http_request($pickupUrl, 'GET', null, $cookieFile);
-  if ($page['body'] === false || $page['httpCode'] < 200 || $page['httpCode'] >= 400) {
-    http_response_code(502);
-    echo json_encode(['error' => 'エコ配の集荷ページを取得できませんでした', 'detail' => $page['curlErr'] ?: ('HTTP ' . $page['httpCode'])], JSON_UNESCAPED_UNICODE);
-    exit;
-  }
-  if (strpos((string)$page['body'], 'USER ID') !== false && strpos((string)$page['body'], 'USER PASS') !== false) {
-    http_response_code(502);
-    echo json_encode(['error' => 'エコ配ログイン後のセッションを取得できませんでした'], JSON_UNESCAPED_UNICODE);
-    exit;
-  }
+  $items = [];
+  $fetchResults = [];
+  foreach ($targets as $target) {
+    $pickupUrl = sprintf(
+      'https://driver.ecohai.co.jp/ecohai-kun/Pickup/view/%s/%s/%s/%s/%s',
+      rawurlencode($date),
+      rawurlencode($target['pot']),
+      rawurlencode($target['area']),
+      rawurlencode($target['shop']),
+      rawurlencode($target['pot'])
+    );
+    $page = http_request($pickupUrl, 'GET', null, $cookieFile);
+    if ($page['body'] === false || $page['httpCode'] < 200 || $page['httpCode'] >= 400) {
+      http_response_code(502);
+      echo json_encode([
+        'error' => 'エコ配の集荷ページを取得できませんでした',
+        'target' => $target,
+        'detail' => $page['curlErr'] ?: ('HTTP ' . $page['httpCode']),
+      ], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (strpos((string)$page['body'], 'USER ID') !== false && strpos((string)$page['body'], 'USER PASS') !== false) {
+      http_response_code(502);
+      echo json_encode(['error' => 'エコ配ログイン後のセッションを取得できませんでした'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
 
-  $items = parse_pickups((string)$page['body'], $slot, $date, $target);
+    $targetItems = parse_pickups((string)$page['body'], $slot, $date, $target);
+    $items = array_merge($items, $targetItems);
+    $fetchResults[] = [
+      'target' => $target,
+      'fetched' => count($targetItems),
+    ];
+  }
   $path = cache_path();
   $cache = read_cache($path);
   if (($cache['date'] ?? '') !== $date) {
@@ -369,20 +414,32 @@ try {
   $cache = [
     'date' => $date,
     'updated_at' => date('c'),
-    'target' => $target,
+    'targets' => $targets,
     'last_slot' => $slot,
     'last_slot_label' => slot_label($slot),
     'items' => array_values($byId),
   ];
   write_cache($path, $cache);
-  $sheetSync = sync_spot_pickup_sheet($cache['items'], $date);
+  $itemsBySheet = [];
+  foreach ($cache['items'] as $item) {
+    if (!is_array($item)) continue;
+    $sheetName = (string)($item['spot_sheet'] ?? '');
+    if ($sheetName === '') continue;
+    if (!isset($itemsBySheet[$sheetName])) $itemsBySheet[$sheetName] = [];
+    $itemsBySheet[$sheetName][] = $item;
+  }
+  $sheetSync = [];
+  foreach ($itemsBySheet as $sheetName => $sheetItems) {
+    $sheetSync[$sheetName] = sync_spot_pickup_sheet($sheetItems, $date, $sheetName);
+  }
 
   echo json_encode([
     'ok' => true,
     'date' => $date,
     'slot' => $slot,
     'slot_label' => slot_label($slot),
-    'target' => $target,
+    'targets' => $targets,
+    'fetch_results' => $fetchResults,
     'fetched' => count($items),
     'cached' => count($cache['items']),
     'sheet_sync' => $sheetSync,

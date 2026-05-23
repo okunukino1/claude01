@@ -6,6 +6,9 @@ function doPost(e) {
     if (body.action === 'pickupProgress') {
       return handlePickupProgress(body);
     }
+    if (body.action === 'pickupLocation') {
+      return handlePickupLocation(body);
+    }
     if (body.action === 'spotPickupsSync') {
       return handleSpotPickupsSync(body);
     }
