@@ -4,10 +4,10 @@ on:
   schedule:
     # JST 00:05 (UTC 15:05) clears the previous day's spot pickup sheet.
     - cron: '5 15 * * *'
-    # JST 07:00 and 08:00 (UTC 22:00 and 23:00 on the previous day).
-    - cron: '0 22,23 * * *'
-    # JST 09:00-17:10 (UTC 00:00-08:10). The :10 run is a backup for GitHub cron delays.
-    - cron: '0,10 0-8 * * *'
+    # JST 07:00-08:50 (UTC 22:00-23:50 on the previous day).
+    - cron: '*/10 22,23 * * *'
+    # JST 09:00-17:50 (UTC 00:00-08:50).
+    - cron: '*/10 0-8 * * *'
   workflow_dispatch:
 
 jobs:

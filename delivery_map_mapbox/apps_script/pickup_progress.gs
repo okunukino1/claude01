@@ -199,10 +199,11 @@ function handleSpotPickupsSync(payload) {
     .map(item => {
       const id = String(item.id || '').trim();
       const saved = existing[id] || {};
+      const cancelled = item.cancelled === true || String(item.cancelled || '').toUpperCase() === 'TRUE';
       return SPOT_PICKUP_COLUMNS.map(name => {
-        if (name === 'collected') return saved.collected || false;
-        if (name === 'collected_at') return saved.collected_at || '';
-        if (name === 'collected_by') return saved.collected_by || '';
+        if (name === 'collected') return cancelled ? true : (saved.collected || false);
+        if (name === 'collected_at') return cancelled ? String(item.collected_at || '') : (saved.collected_at || '');
+        if (name === 'collected_by') return cancelled ? 'キャンセル' : (saved.collected_by || '');
         return String(item[name] || '');
       });
     });

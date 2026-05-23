@@ -231,12 +231,14 @@ function parse_pickups($html, $slot, $date, $target) {
 
   $filtered = [];
   foreach ($items as $item) {
-    if (($item['status'] ?? '') !== '集荷依頼') continue;
+    $status = (string)($item['status'] ?? '');
+    if (!in_array($status, ['集荷依頼', '集荷キャンセル'], true)) continue;
     if ($item['company'] === '' || $item['time'] === '' || $item['address'] === '' || $item['phone'] === '') continue;
     if (!slot_matches($item['time'], $slot)) continue;
     $item['id'] = pickup_id($date, $target, $item['company'], $item['time'], $item['address'], $item['phone']);
     $item['date'] = $date;
     $item['source'] = 'ecohai-spot';
+    $item['cancelled'] = $status === '集荷キャンセル';
     $item['pot_label'] = $target['label'];
     $item['pot'] = $target['pot'];
     $item['spot_sheet'] = $target['sheet'];
@@ -286,14 +288,15 @@ function sync_spot_pickup_sheet($items, $date, $sheetName) {
     if (!is_array($item)) continue;
     $phone = (string)($item['phone'] ?? '');
     $time = (string)($item['time'] ?? '');
+    $cancelled = !empty($item['cancelled']);
     $payloadItems[] = [
       'id' => (string)($item['id'] ?? ''),
       'company' => (string)($item['company'] ?? ''),
       'address' => (string)($item['address'] ?? ''),
       'time' => $time,
-      'method' => 'スポット',
+      'method' => $cancelled ? 'キャンセル' : 'スポット',
       'notes' => trim(implode("\n", array_filter([
-        'スポット集荷',
+        $cancelled ? 'スポット集荷キャンセル' : 'スポット集荷',
         $time !== '' ? '希望時間帯: ' . $time : '',
         $phone !== '' ? '登録電話番号: ' . $phone : '',
       ]))),
@@ -301,6 +304,10 @@ function sync_spot_pickup_sheet($items, $date, $sheetName) {
       'date' => (string)($item['date'] ?? $date),
       'source' => 'ecohai-spot',
       'spot_sheet' => (string)($item['spot_sheet'] ?? $sheetName),
+      'cancelled' => $cancelled,
+      'collected' => $cancelled,
+      'collected_at' => $cancelled ? date('c') : '',
+      'collected_by' => $cancelled ? 'キャンセル' : '',
     ];
   }
 

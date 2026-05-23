@@ -66,6 +66,9 @@ define('ECOHAI_USER_PASS', 'change-this-password');
 // 例: https://your-domain.com/delivery_map_mapbox/api/spot_pickups_refresh.php?secret=...
 define('SPOT_PICKUP_REFRESH_SECRET', 'change-this-refresh-secret');
 
+// アプリ起動時のスポット集荷取得は、短時間に連続実行されないよう間隔を空けます。
+define('SPOT_PICKUP_TOUCH_MIN_INTERVAL_SECONDS', 300);
+
 // スポット集荷取得対象
 // SPOT_PICKUP_TARGETS を設定すると複数POTをまとめて取得できます。
 define('SPOT_PICKUP_TARGETS', [

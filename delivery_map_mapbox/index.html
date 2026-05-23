@@ -2989,6 +2989,23 @@ async function fetchPickupItems(sheetName) {
   return data;
 }
 
+async function triggerSpotPickupTouch(options = {}) {
+  try {
+    const res = await fetch('api/spot_pickups_touch.php', { method: 'POST' });
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok || !data || data.error) {
+      const detail = data && data.detail ? ` (${data.detail})` : '';
+      throw new Error(((data && data.error) || 'スポット集荷チェックに失敗しました') + detail);
+    }
+    return data;
+  } catch (e) {
+    console.warn('spot pickup touch failed', e);
+    if (!options.silent) showToast(e.message || 'スポット集荷チェックに失敗しました', true);
+    return null;
+  }
+}
+
 function applyPickupProgressFromItems(items) {
   let changed = false;
   const byKey = new Map();
@@ -3263,7 +3280,10 @@ async function importPickupSheet() {
     showLoading(`${sheetName}の集荷コースを読み込み中...`);
     const sourceSheets = [sheetName];
     const spotSheet = spotSheetForPickupCourse(sheetName);
-    if (spotSheet) sourceSheets.push(spotSheet);
+    if (spotSheet) {
+      await triggerSpotPickupTouch({ silent: true });
+      sourceSheets.push(spotSheet);
+    }
 
     const items = [];
     const warnings = [];
@@ -3855,6 +3875,9 @@ document.addEventListener('visibilitychange', () => {
     ensureGpsWatching();
     updateGpsButton();
     hideLoading();
+    triggerSpotPickupTouch({ silent: true }).then(() => {
+      if (appMode === 'pickup') syncPickupProgressFromSheets(true);
+    });
 
     if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {
       ensureAddressData().then(data => {
