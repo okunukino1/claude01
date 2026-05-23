@@ -17,6 +17,8 @@
     --accent: #ff5722;
     --accent-soft: #ffe0d6;
     --done: #6b7280;
+    --spot-done: #16a34a;
+    --spot-done-border: #052e16;
     --danger: #d32f2f;
     --list-height: 50dvh;
     --list-collapsed-height: 46px;
@@ -108,6 +110,11 @@
   }
   .delivery-marker.spot .delivery-pin .pin-shape {
     background: #0284c7;
+  }
+  .delivery-marker.spot.done .delivery-pin .pin-shape {
+    background: var(--spot-done);
+    border-color: var(--spot-done-border);
+    opacity: 1;
   }
   .delivery-pin .pin-num {
     position: absolute;
@@ -352,6 +359,11 @@
     background: #0284c7;
     color: white;
     font-size: 12px;
+  }
+  .delivery-item.spot.done .num-badge {
+    background: var(--spot-done);
+    border: 2px solid var(--spot-done-border);
+    color: white;
   }
   .item-info {
     flex: 1;
