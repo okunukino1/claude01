@@ -174,6 +174,8 @@ for ($i = 1; $i < count($rows); $i++) {
   if ($address === '') continue;
   $dateValue = value_at($row, $indexMap, 'date');
   if ($isSpotSheet && normalize_date_key($dateValue) !== $todayKey) continue;
+  $method = value_at($row, $indexMap, 'method');
+  $isCancelled = trim($method) === 'キャンセル';
 
   $items[] = [
     'row' => $i + 1,
@@ -182,7 +184,7 @@ for ($i = 1; $i < count($rows); $i++) {
     'company' => value_at($row, $indexMap, 'company'),
     'address' => $address,
     'time' => value_at($row, $indexMap, 'time'),
-    'method' => value_at($row, $indexMap, 'method'),
+    'method' => $method,
     'notes' => value_at($row, $indexMap, 'notes'),
     'phone' => value_at($row, $indexMap, 'phone'),
     'date' => $dateValue,
@@ -191,9 +193,9 @@ for ($i = 1; $i < count($rows); $i++) {
     'lng' => value_at($row, $indexMap, 'lng'),
     'approx' => value_at($row, $indexMap, 'approx'),
     'formatted' => value_at($row, $indexMap, 'formatted'),
-    'collected' => truthy_cell(value_at($row, $indexMap, 'collected')),
+    'collected' => $isCancelled ? true : truthy_cell(value_at($row, $indexMap, 'collected')),
     'collected_at' => value_at($row, $indexMap, 'collected_at'),
-    'collected_by' => value_at($row, $indexMap, 'collected_by'),
+    'collected_by' => $isCancelled ? 'キャンセル' : value_at($row, $indexMap, 'collected_by'),
   ];
 }
 
