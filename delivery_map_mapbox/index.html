@@ -2829,7 +2829,10 @@ async function mergePickupSheetSpotItems(items, options = {}) {
 
 async function syncPickupProgressFromSheets(silent = true) {
   if (appMode !== 'pickup' || pickupSyncInFlight) return;
-  const sheets = [...new Set(deliveries.filter(isPickupBackedDelivery).map(d => d.pickupSheet))];
+  const sheetSet = new Set(deliveries.filter(isPickupBackedDelivery).map(d => d.pickupSheet));
+  const selectedSpotSheet = spotSheetForPickupCourse(getSelectedPickupSheet());
+  if (selectedSpotSheet) sheetSet.add(selectedSpotSheet);
+  const sheets = [...sheetSet].filter(Boolean);
   if (sheets.length === 0) {
     pickupLastSyncedAt = null;
     renderList();
