@@ -18,6 +18,7 @@ require_once $configFile;
 
 $webappUrl = defined('PICKUP_PROGRESS_WEBAPP_URL') ? trim((string)PICKUP_PROGRESS_WEBAPP_URL) : '';
 $secret = defined('PICKUP_PROGRESS_SECRET') ? trim((string)PICKUP_PROGRESS_SECRET) : '';
+$locationAdminPin = defined('PICKUP_LOCATION_ADMIN_PIN') ? trim((string)PICKUP_LOCATION_ADMIN_PIN) : '';
 if ($webappUrl === '' || $secret === '' ||
     $webappUrl === 'https://script.google.com/macros/s/.../exec' ||
     $secret === 'change-this-secret') {
@@ -25,6 +26,14 @@ if ($webappUrl === '' || $secret === '' ||
   echo json_encode([
     'error' => '集荷位置の書き込み設定が未設定です',
     'detail' => 'api/config.php の PICKUP_PROGRESS_WEBAPP_URL と PICKUP_PROGRESS_SECRET を設定してください',
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+if ($locationAdminPin === '' || $locationAdminPin === 'change-this-admin-pin') {
+  http_response_code(500);
+  echo json_encode([
+    'error' => '集荷位置の管理者PINが未設定です',
+    'detail' => 'api/config.php の PICKUP_LOCATION_ADMIN_PIN を設定してください',
   ], JSON_UNESCAPED_UNICODE);
   exit;
 }
@@ -44,6 +53,13 @@ $lat = isset($input['lat']) ? (float)$input['lat'] : null;
 $lng = isset($input['lng']) ? (float)$input['lng'] : null;
 $approx = !empty($input['approx']);
 $formatted = trim((string)($input['formatted'] ?? ''));
+$adminPin = trim((string)($input['admin_pin'] ?? ''));
+
+if (!hash_equals($locationAdminPin, $adminPin)) {
+  http_response_code(403);
+  echo json_encode(['error' => '定期集荷ピン位置の管理者PINが違います'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
 
 if (!in_array($sheet, $allowedSheets, true)) {
   http_response_code(400);

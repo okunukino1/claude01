@@ -832,6 +832,7 @@ const OPERATOR_NAME_KEY = 'rys-mapbox-operator-name';
 const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-pickup-last-reset-date';
 const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-pickup-selected-sheet';
 const PICKUP_PENDING_SYNC_KEY = 'rys-mapbox-pickup-pending-sync-v1';
+const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-pickup-location-admin-pin-v1';
 
 const ADDR_PREF = '東京都';
 const ADDR_CITY = '中央区';
@@ -2049,7 +2050,30 @@ function openEditedItemNavigation() {
   openNavigation(editingItemId);
 }
 
-function startPlacement(id) {
+function getPickupLocationAdminPin() {
+  return (localStorage.getItem(PICKUP_LOCATION_ADMIN_PIN_KEY) || '').trim();
+}
+
+function clearPickupLocationAdminPin() {
+  localStorage.removeItem(PICKUP_LOCATION_ADMIN_PIN_KEY);
+}
+
+function requestPickupLocationAdminPin() {
+  const saved = getPickupLocationAdminPin();
+  if (saved) return saved;
+  const pin = window.prompt('定期集荷ピン位置の変更には管理者PINが必要です。');
+  if (!pin || !pin.trim()) {
+    showToast('管理者PINがないため位置変更をキャンセルしました', true);
+    return '';
+  }
+  localStorage.setItem(PICKUP_LOCATION_ADMIN_PIN_KEY, pin.trim());
+  return pin.trim();
+}
+
+async function startPlacement(id) {
+  const d = deliveries.find(x => x.id === id);
+  if (!d) return;
+  if (isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
   placingItemId = id;
   document.body.classList.add('placing-mode');
   showToast('地図上で位置をタップしてください');
@@ -2059,6 +2083,12 @@ async function commitPlacement() {
   if (!placingItemId || !pendingPlacementCoord) return;
   const d = deliveries.find(x => x.id === placingItemId);
   if (!d) return;
+  const before = {
+    lat: d.lat,
+    lng: d.lng,
+    approx: d.approx,
+    formatted: d.formatted
+  };
   d.lat = pendingPlacementCoord.lat;
   d.lng = pendingPlacementCoord.lng;
   d.approx = false;
@@ -2066,10 +2096,21 @@ async function commitPlacement() {
   saveDeliveries();
   renderMarkers();
   renderList();
-  const locationSynced = await syncPickupLocation(d, { silent: true });
+  const locationSynced = await syncPickupLocation(d, { silent: true, requireAdmin: true });
   placingItemId = null;
   pendingPlacementCoord = null;
   document.body.classList.remove('placing-mode');
+  if (!locationSynced && isRegularPickupBackedDelivery(d)) {
+    d.lat = before.lat;
+    d.lng = before.lng;
+    d.approx = before.approx;
+    d.formatted = before.formatted;
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    showToast('管理者確認に失敗したため、位置変更を取り消しました', true);
+    return;
+  }
   showToast(locationSynced ? '位置を更新しました' : '位置は更新しましたが固定位置の共有保存に失敗しました', !locationSynced);
 }
 
@@ -2124,6 +2165,16 @@ async function reGeocodeEditedItem() {
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
   if (!newAddr) { showToast('住所を入力してください', true); return; }
+  if (isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
+
+  const before = {
+    address: d.address,
+    note: d.note,
+    lat: d.lat,
+    lng: d.lng,
+    approx: d.approx,
+    formatted: d.formatted
+  };
 
   showLoading('住所を再検索中...');
   const result = await geocodeAddress(newAddr);
@@ -2144,7 +2195,20 @@ async function reGeocodeEditedItem() {
   saveDeliveries();
   renderMarkers();
   renderList();
-  const locationSynced = await syncPickupLocation(d, { silent: true });
+  const locationSynced = await syncPickupLocation(d, { silent: true, requireAdmin: true });
+  if (!locationSynced && isRegularPickupBackedDelivery(d)) {
+    d.address = before.address;
+    d.note = before.note;
+    d.lat = before.lat;
+    d.lng = before.lng;
+    d.approx = before.approx;
+    d.formatted = before.formatted;
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    showToast('管理者確認に失敗したため、住所再検索を取り消しました', true);
+    return;
+  }
   map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
   closeModal('modal-edit');
   editingItemId = null;
@@ -2161,8 +2225,18 @@ async function saveEditedItem() {
   if (!newAddr) { showToast('住所を入力してください', true); return; }
 
   const addressChanged = (newAddr !== d.address);
+  if (addressChanged && isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
+  const before = {
+    address: d.address,
+    note: d.note,
+    lat: d.lat,
+    lng: d.lng,
+    approx: d.approx,
+    formatted: d.formatted
+  };
   d.note = newNote;
 
+  let locationChanged = false;
   if (addressChanged) {
     showLoading('住所を再検索中...');
     const result = await geocodeAddress(newAddr);
@@ -2173,6 +2247,7 @@ async function saveEditedItem() {
       d.lng = result.lng;
       d.approx = result.approx;
       d.formatted = result.formatted;
+      locationChanged = true;
     } else {
       showToast('住所が見つかりませんでした(備考のみ更新)', true);
     }
@@ -2183,7 +2258,22 @@ async function saveEditedItem() {
   saveDeliveries();
   renderMarkers();
   renderList();
-  const locationSynced = await syncPickupLocation(d, { silent: true });
+  const locationSynced = locationChanged
+    ? await syncPickupLocation(d, { silent: true, requireAdmin: true })
+    : true;
+  if (!locationSynced && isRegularPickupBackedDelivery(d)) {
+    d.address = before.address;
+    d.note = before.note;
+    d.lat = before.lat;
+    d.lng = before.lng;
+    d.approx = before.approx;
+    d.formatted = before.formatted;
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    showToast('管理者確認に失敗したため、住所変更を取り消しました', true);
+    return;
+  }
   closeModal('modal-edit');
   editingItemId = null;
   showToast(locationSynced ? '更新しました' : '更新しました（固定位置の共有保存は未完了）', !locationSynced);
@@ -2714,7 +2804,7 @@ async function syncPickupProgress(d, operatorName, options = {}) {
   }
 }
 
-function pickupLocationPayloadForDelivery(d) {
+function pickupLocationPayloadForDelivery(d, adminPin = '') {
   return {
     sheet: d.pickupSheet,
     row: d.pickupRow,
@@ -2722,7 +2812,8 @@ function pickupLocationPayloadForDelivery(d) {
     lat: finiteCoordinate(d.lat),
     lng: finiteCoordinate(d.lng),
     approx: !!d.approx,
-    formatted: d.formatted || d.address || ''
+    formatted: d.formatted || d.address || '',
+    admin_pin: adminPin
   };
 }
 
@@ -2743,13 +2834,16 @@ async function postPickupLocationPayload(payload) {
 
 async function syncPickupLocation(d, options = {}) {
   if (!isRegularPickupBackedDelivery(d)) return true;
-  const payload = pickupLocationPayloadForDelivery(d);
+  const adminPin = options.requireAdmin ? requestPickupLocationAdminPin() : getPickupLocationAdminPin();
+  if (!adminPin) return false;
+  const payload = pickupLocationPayloadForDelivery(d, adminPin);
   if (payload.lat === null || payload.lng === null) return false;
   try {
     await postPickupLocationPayload(payload);
     return true;
   } catch (e) {
     console.warn('pickup location sync failed', e);
+    if (/PIN|403|unauthorized|権限|管理者/.test(e.message || '')) clearPickupLocationAdminPin();
     if (!options.silent) showToast('ピン位置は端末内で更新しました。固定位置の共有保存に失敗しました', true);
     return false;
   }

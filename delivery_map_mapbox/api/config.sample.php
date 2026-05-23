@@ -53,6 +53,10 @@ define('PICKUP_PROGRESS_WEBAPP_URL', 'https://script.google.com/macros/s/.../exe
 // 推測されにくい長い文字列にします。
 define('PICKUP_PROGRESS_SECRET', 'change-this-secret');
 
+// === 定期集荷ピン固定位置の管理者PIN ===
+// 定期集荷の lat/lng をスプレッドシートへ保存できる人だけに共有してください。
+define('PICKUP_LOCATION_ADMIN_PIN', 'change-this-admin-pin');
+
 // === エコ配 スポット集荷 自動取得 ===
 // エコ配のログイン情報です。ブラウザ側には出さず、サーバー上の config.php だけに保存します。
 define('ECOHAI_USER_ID', 'change-this-user-id');
