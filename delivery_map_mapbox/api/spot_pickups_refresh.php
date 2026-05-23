@@ -190,6 +190,7 @@ function parse_pickups($html, $slot, $date, $target) {
       if ($current) $items[] = $current;
       $current = [
         'company' => trim($m[1]),
+        'status' => '',
         'time' => '',
         'address' => '',
         'phone' => '',
@@ -216,6 +217,10 @@ function parse_pickups($html, $slot, $date, $target) {
       } else {
         $pendingField = 'time';
       }
+    } elseif (strpos($line, '集荷依頼') !== false) {
+      $current['status'] = '集荷依頼';
+    } elseif (strpos($line, '集荷キャンセル') !== false) {
+      $current['status'] = '集荷キャンセル';
     } elseif (strpos($line, '住所') !== false) {
       $current['address'] = normalize_address(strip_label($line, '住所'));
     } elseif (strpos($line, '登録電話番号') !== false) {
@@ -226,6 +231,7 @@ function parse_pickups($html, $slot, $date, $target) {
 
   $filtered = [];
   foreach ($items as $item) {
+    if (($item['status'] ?? '') !== '集荷依頼') continue;
     if ($item['company'] === '' || $item['time'] === '' || $item['address'] === '' || $item['phone'] === '') continue;
     if (!slot_matches($item['time'], $slot)) continue;
     $item['id'] = pickup_id($date, $target, $item['company'], $item['time'], $item['address'], $item['phone']);
@@ -376,18 +382,21 @@ try {
     );
     $page = http_request($pickupUrl, 'GET', null, $cookieFile);
     if ($page['body'] === false || $page['httpCode'] < 200 || $page['httpCode'] >= 400) {
-      http_response_code(502);
-      echo json_encode([
-        'error' => 'エコ配の集荷ページを取得できませんでした',
+      $fetchResults[] = [
         'target' => $target,
+        'fetched' => 0,
+        'error' => 'エコ配の集荷ページを取得できませんでした',
         'detail' => $page['curlErr'] ?: ('HTTP ' . $page['httpCode']),
-      ], JSON_UNESCAPED_UNICODE);
-      exit;
+      ];
+      continue;
     }
     if (strpos((string)$page['body'], 'USER ID') !== false && strpos((string)$page['body'], 'USER PASS') !== false) {
-      http_response_code(502);
-      echo json_encode(['error' => 'エコ配ログイン後のセッションを取得できませんでした'], JSON_UNESCAPED_UNICODE);
-      exit;
+      $fetchResults[] = [
+        'target' => $target,
+        'fetched' => 0,
+        'error' => 'エコ配ログイン後のセッションを取得できませんでした',
+      ];
+      continue;
     }
 
     $targetItems = parse_pickups((string)$page['body'], $slot, $date, $target);
