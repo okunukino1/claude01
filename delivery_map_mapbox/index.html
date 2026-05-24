@@ -1081,12 +1081,31 @@ function updateModeUi() {
   }
   const menuBtn = $('menu-toggle-mode');
   if (menuBtn) {
-    menuBtn.textContent = appMode === 'pickup' ? '🔁 配送モードに切替' : '🔁 集荷モードに切替';
+    menuBtn.textContent = '🔁 モード・コースを選択';
+  }
+  const importPickupBtn = $('menu-import-pickup');
+  if (importPickupBtn) {
+    importPickupBtn.style.display = 'none';
   }
   const resetPickupBtn = $('menu-reset-pickup');
   if (resetPickupBtn) {
     resetPickupBtn.style.display = appMode === 'pickup' ? 'block' : 'none';
   }
+  const pickupOnlyIds = ['menu-operator'];
+  const deliveryOnlyIds = ['menu-optimize-walk', 'menu-optimize-car', 'menu-optimize-google', 'menu-clear-done', 'menu-usage'];
+  const hiddenDailyIds = ['menu-export-json', 'menu-copy', 'menu-clear-all'];
+  pickupOnlyIds.forEach(id => {
+    const el = $(id);
+    if (el) el.style.display = appMode === 'pickup' ? 'block' : 'none';
+  });
+  deliveryOnlyIds.forEach(id => {
+    const el = $(id);
+    if (el) el.style.display = appMode === 'delivery' ? 'block' : 'none';
+  });
+  hiddenDailyIds.forEach(id => {
+    const el = $(id);
+    if (el) el.style.display = 'none';
+  });
   const title = document.querySelector('.list-header h2');
   if (title) title.textContent = `${modeLabel()}リスト`;
 }
@@ -1118,7 +1137,7 @@ async function switchAppMode(mode, showMessage = true) {
 
 function toggleAppMode() {
   closeModal('modal-menu');
-  switchAppMode(appMode === 'pickup' ? 'delivery' : 'pickup');
+  openPickupCourseModal();
 }
 
 function escapeHtml(s) {
