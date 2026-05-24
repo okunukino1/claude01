@@ -19,11 +19,11 @@
 // ============================================================
 
 const PICKUP_PROGRESS_SECRET = 'change-this-secret';
-const PICKUP_PROGRESS_ALLOWED_SHEETS = ['小舟町店', '小舟町店スポット', '浜町店 南', '浜町店 南スポット', '浜町店 北'];
+const PICKUP_PROGRESS_ALLOWED_SHEETS = ['小舟町店', '小舟町店スポット', '浜町店 南', '浜町店 南スポット', '浜町店 北', '浜町店 北スポット'];
 const PICKUP_PROGRESS_COLUMNS = ['collected', 'collected_at', 'collected_by'];
 const PICKUP_LOCATION_COLUMNS = ['lat', 'lng', 'approx', 'formatted'];
 const SPOT_PICKUP_SHEET_NAME = '小舟町店スポット';
-const SPOT_PICKUP_SHEET_NAMES = ['小舟町店スポット', '浜町店 南スポット'];
+const SPOT_PICKUP_SHEET_NAMES = ['小舟町店スポット', '浜町店 南スポット', '浜町店 北スポット'];
 const SPOT_PICKUP_COLUMNS = [
   'id',
   'company',

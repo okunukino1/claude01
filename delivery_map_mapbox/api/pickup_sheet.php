@@ -15,6 +15,7 @@ $allowedSheets = [
   '浜町店 南' => 1102972916,
   '浜町店 南スポット' => null,
   '浜町店 北' => 591145494,
+  '浜町店 北スポット' => null,
 ];
 
 date_default_timezone_set('Asia/Tokyo');
@@ -167,7 +168,7 @@ if (!isset($indexMap['address'])) {
 
 $items = [];
 $todayKey = date('Ymd');
-$isSpotSheet = in_array($sheet, ['小舟町店スポット', '浜町店 南スポット'], true);
+$isSpotSheet = in_array($sheet, ['小舟町店スポット', '浜町店 南スポット', '浜町店 北スポット'], true);
 for ($i = 1; $i < count($rows); $i++) {
   $row = $rows[$i];
   $address = value_at($row, $indexMap, 'address');
