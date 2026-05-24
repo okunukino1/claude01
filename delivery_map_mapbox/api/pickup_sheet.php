@@ -27,6 +27,8 @@ if (!array_key_exists($sheet, $allowedSheets)) {
   exit;
 }
 
+$spotSheets = ['小舟町店スポット', '浜町店 南スポット', '浜町店 北スポット'];
+$isSpotSheet = in_array($sheet, $spotSheets, true);
 $gid = $allowedSheets[$sheet];
 $urls = [
   'https://docs.google.com/spreadsheets/d/' . rawurlencode($spreadsheetId)
@@ -143,6 +145,16 @@ while (($row = fgetcsv($fp)) !== false) {
 fclose($fp);
 
 if (count($rows) < 1) {
+  if ($isSpotSheet) {
+    echo json_encode([
+      'spreadsheetId' => $spreadsheetId,
+      'sheet' => $sheet,
+      'dateFilter' => date('Ymd'),
+      'count' => 0,
+      'items' => [],
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+  }
   http_response_code(502);
   echo json_encode([
     'error' => '集荷リストにヘッダー行がありません',
@@ -158,6 +170,16 @@ foreach ($headers as $i => $name) {
 }
 
 if (!isset($indexMap['address'])) {
+  if ($isSpotSheet) {
+    echo json_encode([
+      'spreadsheetId' => $spreadsheetId,
+      'sheet' => $sheet,
+      'dateFilter' => date('Ymd'),
+      'count' => 0,
+      'items' => [],
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+  }
   http_response_code(502);
   echo json_encode([
     'error' => 'address列が見つかりません。スプレッドシートの共有設定を「リンクを知っている全員が閲覧可」にするか、列名を確認してください。',
@@ -168,7 +190,6 @@ if (!isset($indexMap['address'])) {
 
 $items = [];
 $todayKey = date('Ymd');
-$isSpotSheet = in_array($sheet, ['小舟町店スポット', '浜町店 南スポット', '浜町店 北スポット'], true);
 for ($i = 1; $i < count($rows); $i++) {
   $row = $rows[$i];
   $address = value_at($row, $indexMap, 'address');
