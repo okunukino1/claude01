@@ -1110,13 +1110,14 @@ function updateModeUi() {
   if (title) title.textContent = `${modeLabel()}リスト`;
 }
 
-async function switchAppMode(mode, showMessage = true) {
+async function switchAppMode(mode, showMessage = true, options = {}) {
   if (mode !== 'pickup' && mode !== 'delivery') return;
+  const openCourseModal = options.openCourseModal !== false;
   if (appMode === mode) {
     updateModeUi();
     await resetStalePickupCompletions();
     restartPickupAutoSync();
-    if (mode === 'pickup') openPickupCourseModal();
+    if (mode === 'pickup' && openCourseModal) openPickupCourseModal();
     return;
   }
   const switchingToPickup = mode === 'pickup';
@@ -1132,7 +1133,7 @@ async function switchAppMode(mode, showMessage = true) {
   updateModeUi();
   restartPickupAutoSync();
   if (showMessage) showToast(`${modeLabel()}モードに切り替えました`);
-  if (switchingToPickup) openPickupCourseModal();
+  if (switchingToPickup && openCourseModal) openPickupCourseModal();
 }
 
 function toggleAppMode() {
@@ -3304,6 +3305,7 @@ async function importPickupSheet() {
     return;
   }
   const replaceList = true;
+  if (appMode !== 'pickup') await switchAppMode('pickup', false, { openCourseModal: false });
   setSelectedPickupSheet(sheetName);
   updateModeUi();
   closeModal('modal-pickup-import');
