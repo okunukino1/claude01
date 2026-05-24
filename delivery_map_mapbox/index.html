@@ -729,15 +729,15 @@
 
 <div class="modal-bg" id="modal-pickup-import">
   <div class="modal">
-    <h3>集荷コースを選択</h3>
-    <label>コース</label>
+    <h3>モード・集荷コースを選択</h3>
+    <label>モード / コース</label>
     <select id="pickup-sheet"></select>
     <label class="checkbox-line" style="display:none">
       <input type="checkbox" id="pickup-replace-list" checked>
       現在の配送リストを置き換える
     </label>
     <div class="modal-help">
-      選んだコースの定期集荷を読み込みます。現在の集荷リストは選んだコースで置き換わります。
+      配送モード、または集荷コースを選んで開きます。集荷コースを選ぶと定期集荷とスポット集荷を読み込みます。
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-pickup-import">キャンセル</button>
@@ -3764,7 +3764,7 @@ function centerOnUser() {
 
 $('btn-menu').addEventListener('click', () => openModal('modal-menu'));
 $('btn-gps').addEventListener('click', toggleGpsTracking);
-$('btn-app-mode').addEventListener('click', () => switchAppMode(appMode === 'pickup' ? 'delivery' : 'pickup'));
+$('btn-app-mode').addEventListener('click', openPickupCourseModal);
 $('btn-label-mode').addEventListener('click', cycleLabelMode);
 
 function toggleListCollapse(forceState) {
