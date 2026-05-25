@@ -37,6 +37,19 @@ jobs:
             **/.git*
             **/node_modules/**
             **/data/private/*.json
+            **/vendor/**/.github/**
+            **/vendor/**/docs/**
+            **/vendor/**/test/**
+            **/vendor/**/tests/**
+            **/vendor/**/*.md
+            **/vendor/**/LICENSE*
+            **/vendor/**/composer.json
+            **/vendor/**/*.lock
+            **/vendor/**/*.neon
+            **/vendor/**/*.xml
+            **/vendor/**/.coveralls.yml
+            **/vendor/**/.styleci.yml
+            **/vendor/**/.travis.yml
           log-level: standard
 
       - name: Refresh spot pickup cache
