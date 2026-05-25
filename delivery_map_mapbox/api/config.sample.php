@@ -69,6 +69,13 @@ define('SPOT_PICKUP_REFRESH_SECRET', 'change-this-refresh-secret');
 // アプリ起動時のスポット集荷取得は、短時間に連続実行されないよう間隔を空けます。
 define('SPOT_PICKUP_TOUCH_MIN_INTERVAL_SECONDS', 300);
 
+// === スポット集荷 Web Push通知 ===
+// VAPID鍵は一度発行した同じ組を継続して使います。秘密鍵はブラウザ側へ公開しません。
+// iPhoneはホーム画面に追加したWebアプリで通知を許可すると受信できます。
+define('PUSH_VAPID_PUBLIC_KEY', 'change-this-vapid-public-key');
+define('PUSH_VAPID_PRIVATE_KEY', 'change-this-vapid-private-key');
+define('PUSH_VAPID_SUBJECT', 'mailto:change-this-contact@example.com');
+
 // スポット集荷取得対象
 // SPOT_PICKUP_TARGETS を設定すると複数POTをまとめて取得できます。
 define('SPOT_PICKUP_TARGETS', [

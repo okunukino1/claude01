@@ -9,6 +9,7 @@ if (!file_exists($configFile)) {
   exit;
 }
 require_once $configFile;
+require_once __DIR__ . '/push_common.php';
 
 function cfg($name, $default = '') {
   return defined($name) ? trim((string)constant($name)) : $default;
@@ -455,6 +456,7 @@ try {
   foreach ($itemsBySheet as $sheetName => $sheetItems) {
     $sheetSync[$sheetName] = sync_spot_pickup_sheet($sheetItems, $date, $sheetName);
   }
+  $notifications = push_process_spot_notifications($cache, $sheetSync);
 
   echo json_encode([
     'ok' => true,
@@ -466,6 +468,7 @@ try {
     'fetched' => count($items),
     'cached' => count($cache['items']),
     'sheet_sync' => $sheetSync,
+    'notifications' => $notifications,
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
   http_response_code(500);

@@ -15,6 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up PHP for Web Push dependencies
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          tools: composer:v2
+
+      - name: Install Web Push dependencies
+        run: composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader --working-dir=delivery_map_mapbox
+
       - name: FTP Deploy to お名前.com
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -27,6 +36,7 @@ jobs:
             **/config.php
             **/.git*
             **/node_modules/**
+            **/data/private/*.json
           log-level: standard
 
       - name: Refresh spot pickup cache

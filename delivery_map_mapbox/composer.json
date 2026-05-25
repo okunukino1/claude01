@@ -1,0 +1,15 @@
+{
+  "name": "rys/delivery-map-mapbox",
+  "description": "Server dependencies for RYS delivery map",
+  "type": "project",
+  "license": "proprietary",
+  "require": {
+    "minishlink/web-push": "7.0.0"
+  },
+  "config": {
+    "platform": {
+      "php": "7.4.0"
+    },
+    "sort-packages": true
+  }
+}

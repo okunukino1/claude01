@@ -7,6 +7,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#ff5722">
 <title>RYS配送マップ (Mapbox版テスト)</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="app-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="app-icon.svg">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
 <style>
   :root {
@@ -591,6 +594,25 @@
     cursor: pointer;
     min-height: 44px;
   }
+  .notification-status {
+    border: 1px solid #d4cfb8;
+    border-radius: 6px;
+    background: #f7f4e7;
+    color: var(--ink-soft);
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 10px;
+    margin-bottom: 12px;
+  }
+  .notification-courses {
+    border: 1px solid #d4cfb8;
+    border-radius: 6px;
+    padding: 10px 10px 2px;
+    margin-bottom: 10px;
+  }
+  .notification-courses .checkbox-line {
+    color: var(--ink);
+  }
 
   /* ===== Toast ===== */
   .toast {
@@ -704,10 +726,34 @@
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
+      <button id="menu-notifications" type="button">🔔 通知設定</button>
       <button id="menu-manual" type="button">📖 使い方マニュアル</button>
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-notifications">
+  <div class="modal">
+    <h3>スポット集荷の通知設定</h3>
+    <div class="notification-status" id="notification-status">通知状態を確認しています...</div>
+    <label>通知を受け取るコース</label>
+    <div class="notification-courses">
+      <label class="checkbox-line"><input type="checkbox" name="push-course" value="小舟町店">小舟町店</label>
+      <label class="checkbox-line"><input type="checkbox" name="push-course" value="浜町店 南">浜町店 南</label>
+      <label class="checkbox-line"><input type="checkbox" name="push-course" value="浜町店 北">浜町店 北</label>
+    </div>
+    <div class="modal-help">
+      通知にはコース名・時間帯コード・件数のみ表示します。iPhoneはホーム画面に追加したアプリから通知を有効にしてください。
+    </div>
+    <div class="modal-actions">
+      <button class="danger" id="btn-notification-disable" type="button">解除</button>
+      <button class="primary" id="btn-notification-save" type="button">有効化 / 更新</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-notifications">閉じる</button>
     </div>
   </div>
 </div>
@@ -845,6 +891,7 @@ const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-pickup-last-reset-date';
 const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-pickup-selected-sheet';
 const PICKUP_PENDING_SYNC_KEY = 'rys-mapbox-pickup-pending-sync-v1';
 const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-pickup-location-admin-pin-v1';
+const PUSH_SELECTED_COURSES_KEY = 'rys-mapbox-push-selected-courses-v1';
 
 const ADDR_PREF = '東京都';
 const ADDR_CITY = '中央区';
@@ -870,6 +917,7 @@ const PICKUP_SPOT_SHEETS_BY_COURSE = {
 };
 const PICKUP_DELIVERY_MODE_VALUE = '__delivery__';
 const PICKUP_SYNC_INTERVAL_MS = 20000;
+let pushRegistrationPromise = null;
 
 const DEFAULT_CENTER_LNG = 139.7745;
 const DEFAULT_CENTER_LAT = 35.6845;
@@ -952,6 +1000,152 @@ function showConfirm(title, msg, callback) {
   $('confirm-msg').textContent = msg;
   confirmCallback = callback;
   openModal('modal-confirm');
+}
+
+function selectedPushCourses() {
+  return [...document.querySelectorAll('input[name="push-course"]:checked')].map(input => input.value);
+}
+
+function savedPushCourses() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PUSH_SELECTED_COURSES_KEY) || '[]');
+    return Array.isArray(saved) ? saved.filter(course => PICKUP_SHEETS.includes(course)) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function setPushCourseChecks(courses) {
+  document.querySelectorAll('input[name="push-course"]').forEach(input => {
+    input.checked = courses.includes(input.value);
+  });
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function isStandaloneApp() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+async function ensurePushServiceWorker() {
+  if (!('serviceWorker' in navigator)) throw new Error('この端末は通知に対応していません');
+  if (!pushRegistrationPromise) {
+    pushRegistrationPromise = navigator.serviceWorker.register('service-worker.js');
+  }
+  return pushRegistrationPromise;
+}
+
+async function fetchPushConfig() {
+  const res = await fetch('api/push_config.php', { cache: 'no-store' });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || data.error) throw new Error((data && data.error) || '通知設定を取得できませんでした');
+  return data;
+}
+
+async function currentPushSubscription() {
+  if (!('serviceWorker' in navigator)) return null;
+  const registration = await ensurePushServiceWorker();
+  return registration.pushManager.getSubscription();
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map(character => character.charCodeAt(0)));
+}
+
+async function openNotificationSettings() {
+  closeModal('modal-menu');
+  openModal('modal-notifications');
+  $('notification-status').textContent = '通知状態を確認しています...';
+  setPushCourseChecks(savedPushCourses());
+  try {
+    const config = await fetchPushConfig();
+    if (!config.enabled) {
+      $('notification-status').textContent = '通知機能はサーバー設定中です。設定完了後に有効化できます。';
+      return;
+    }
+    if (!('Notification' in window) || !('PushManager' in window)) {
+      $('notification-status').textContent = 'この端末またはブラウザはプッシュ通知に対応していません。';
+      return;
+    }
+    if (isIosDevice() && !isStandaloneApp()) {
+      $('notification-status').textContent = 'iPhoneでは、先にホーム画面へ追加して、そのアイコンからアプリを開いてください。';
+      return;
+    }
+    const subscription = await currentPushSubscription();
+    const permission = Notification.permission;
+    $('notification-status').textContent = subscription && permission === 'granted'
+      ? '通知は有効です。受け取るコースを変更できます。'
+      : permission === 'denied'
+        ? '通知がブロックされています。端末の設定で許可を変更してください。'
+        : '通知はまだ有効になっていません。';
+  } catch (e) {
+    $('notification-status').textContent = e.message || '通知状態を確認できませんでした。';
+  }
+}
+
+async function savePushSettings() {
+  const courses = selectedPushCourses();
+  if (courses.length === 0) {
+    showToast('通知するコースを1つ以上選択してください', true);
+    return;
+  }
+  try {
+    if (isIosDevice() && !isStandaloneApp()) {
+      throw new Error('iPhoneではホーム画面に追加したアプリから設定してください');
+    }
+    const config = await fetchPushConfig();
+    if (!config.enabled || !config.publicKey) throw new Error('通知機能はサーバー設定中です');
+    if (!('Notification' in window) || !('PushManager' in window)) throw new Error('この端末は通知に対応していません');
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') throw new Error('通知が許可されていません');
+    const registration = await ensurePushServiceWorker();
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(config.publicKey)
+      });
+    }
+    const res = await fetch('api/push_subscriptions.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', subscription: subscription.toJSON(), courses })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || '通知設定を保存できませんでした');
+    localStorage.setItem(PUSH_SELECTED_COURSES_KEY, JSON.stringify(courses));
+    $('notification-status').textContent = '通知は有効です。選択したコースの新規・キャンセルを通知します。';
+    showToast('通知設定を保存しました');
+  } catch (e) {
+    showToast(e.message || '通知設定を保存できませんでした', true);
+  }
+}
+
+async function disablePushNotifications() {
+  try {
+    const subscription = await currentPushSubscription();
+    if (subscription) {
+      await fetch('api/push_subscriptions.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'remove', endpoint: subscription.endpoint })
+      });
+      await subscription.unsubscribe();
+    }
+    localStorage.removeItem(PUSH_SELECTED_COURSES_KEY);
+    setPushCourseChecks([]);
+    $('notification-status').textContent = '通知は無効です。';
+    showToast('通知を解除しました');
+  } catch (e) {
+    showToast(e.message || '通知を解除できませんでした', true);
+  }
 }
 
 function uid() {
@@ -3346,6 +3540,19 @@ async function importPickupSheet() {
   }
 }
 
+async function openPickupCourseFromNotification() {
+  const params = new URLSearchParams(window.location.search);
+  const course = params.get('pickup_course') || '';
+  if (!PICKUP_SHEETS.includes(course)) return false;
+  setupPickupSheetOptions();
+  $('pickup-sheet').value = course;
+  await importPickupSheet();
+  params.delete('pickup_course');
+  const query = params.toString();
+  history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
+  return true;
+}
+
 function isRoutableDelivery(d) {
   return d && !d.completed && Number.isFinite(Number(d.lat)) && Number.isFinite(Number(d.lng));
 }
@@ -3853,6 +4060,7 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
 });
 $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
+$('menu-notifications').addEventListener('click', openNotificationSettings);
 $('menu-manual').addEventListener('click', () => {
   closeModal('modal-menu');
   window.open('manual.html', '_blank', 'noopener');
@@ -3862,6 +4070,8 @@ $('btn-reset-usage').addEventListener('click', resetUsage);
 $('btn-pickup-import').addEventListener('click', importPickupSheet);
 $('btn-operator-save').addEventListener('click', saveOperatorFromModal);
 $('btn-operator-cancel').addEventListener('click', cancelOperatorModal);
+$('btn-notification-save').addEventListener('click', savePushSettings);
+$('btn-notification-disable').addEventListener('click', disablePushNotifications);
 
 $('confirm-ok').addEventListener('click', () => {
   closeModal('modal-confirm');
@@ -3909,9 +4119,13 @@ document.addEventListener('visibilitychange', () => {
     ensureGpsWatching();
     updateGpsButton();
     hideLoading();
-    triggerSpotPickupTouch({ silent: true }).then(() => {
-      if (appMode === 'pickup') syncPickupProgressFromSheets(true);
-    });
+    ensurePushServiceWorker().catch(e => console.warn('push service worker registration failed', e));
+    const openedFromNotification = await openPickupCourseFromNotification();
+    if (!openedFromNotification) {
+      triggerSpotPickupTouch({ silent: true }).then(() => {
+        if (appMode === 'pickup') syncPickupProgressFromSheets(true);
+      });
+    }
 
     if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {
       ensureAddressData().then(data => {
