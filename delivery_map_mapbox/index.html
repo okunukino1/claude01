@@ -843,6 +843,7 @@
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
       <button id="menu-text-size" type="button">Aa 文字サイズ</button>
       <button id="menu-notifications" type="button">🔔 通知設定</button>
+      <button id="menu-reload-app" type="button">🔄 アプリを更新</button>
       <button id="menu-manual" type="button">📖 使い方マニュアル</button>
     </div>
     <div class="modal-actions">
@@ -1174,6 +1175,29 @@ function openTextSizeSettings() {
   closeModal('modal-menu');
   applyTextSize(currentTextSize(), false);
   openModal('modal-text-size');
+}
+
+async function reloadLatestApp() {
+  closeModal('modal-menu');
+  showToast('最新のアプリを読み込みます...');
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        await Promise.race([
+          registration.update(),
+          new Promise(resolve => setTimeout(resolve, 1500))
+        ]);
+      }
+    }
+  } catch (e) {
+    console.warn('service worker update check failed', e);
+  }
+
+  const url = new URL(window.location.href);
+  url.searchParams.set('refresh', String(Date.now()));
+  window.location.replace(url.toString());
 }
 
 function selectedPushCourses() {
@@ -4399,6 +4423,7 @@ $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
 $('menu-text-size').addEventListener('click', openTextSizeSettings);
 $('menu-notifications').addEventListener('click', openNotificationSettings);
+$('menu-reload-app').addEventListener('click', reloadLatestApp);
 $('menu-manual').addEventListener('click', () => {
   closeModal('modal-menu');
   window.open('manual.html', '_blank', 'noopener');
