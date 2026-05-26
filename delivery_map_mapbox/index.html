@@ -613,6 +613,38 @@
   .notification-courses .checkbox-line {
     color: var(--ink);
   }
+  .notification-install {
+    border: 1px solid #e2bea7;
+    border-left: 4px solid var(--accent);
+    border-radius: 6px;
+    background: #fff7f2;
+    color: var(--ink);
+    padding: 10px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .notification-install[hidden] { display: none; }
+  .notification-install strong {
+    display: block;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .notification-install ol {
+    padding-left: 20px;
+    margin: 6px 0 8px;
+  }
+  .notification-install button {
+    width: 100%;
+    min-height: 42px;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent);
+    color: white;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
 
   /* ===== Toast ===== */
   .toast {
@@ -739,6 +771,20 @@
   <div class="modal">
     <h3>スポット集荷の通知設定</h3>
     <div class="notification-status" id="notification-status">通知状態を確認しています...</div>
+    <div class="notification-install" id="notification-install" hidden>
+      <strong id="notification-install-title"></strong>
+      <div id="notification-install-text"></div>
+      <ol id="notification-install-ios-steps" hidden>
+        <li>このページをSafariで開く</li>
+        <li>共有ボタンから「ホーム画面に追加」を選ぶ</li>
+        <li>ホーム画面のRYS配送マップを開き、もう一度通知設定を行う</li>
+      </ol>
+      <ol id="notification-install-android-steps" hidden>
+        <li>この画面のボタン、またはChromeのメニューからアプリをインストール</li>
+        <li>ホーム画面のRYS配送マップを開き、通知を有効化</li>
+      </ol>
+      <button id="btn-notification-install" type="button" hidden>アプリをインストール</button>
+    </div>
     <label>通知を受け取るコース</label>
     <div class="notification-courses">
       <label class="checkbox-line"><input type="checkbox" name="push-course" value="小舟町店">小舟町店</label>
@@ -918,6 +964,7 @@ const PICKUP_SPOT_SHEETS_BY_COURSE = {
 const PICKUP_DELIVERY_MODE_VALUE = '__delivery__';
 const PICKUP_SYNC_INTERVAL_MS = 20000;
 let pushRegistrationPromise = null;
+let deferredInstallPrompt = null;
 
 const DEFAULT_CENTER_LNG = 139.7745;
 const DEFAULT_CENTER_LAT = 35.6845;
@@ -1030,6 +1077,54 @@ function isStandaloneApp() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
 
+function updateNotificationInstallGuide() {
+  const guide = $('notification-install');
+  const title = $('notification-install-title');
+  const text = $('notification-install-text');
+  const iosSteps = $('notification-install-ios-steps');
+  const androidSteps = $('notification-install-android-steps');
+  const installButton = $('btn-notification-install');
+
+  if (isStandaloneApp()) {
+    guide.hidden = true;
+    return;
+  }
+
+  guide.hidden = false;
+  if (isIosDevice()) {
+    title.textContent = 'iPhoneは先にホーム画面へ追加してください';
+    text.textContent = 'App Storeからダウンロードするアプリではありません。下の手順でこのWebアプリを追加します。';
+    iosSteps.hidden = false;
+    androidSteps.hidden = true;
+    installButton.hidden = true;
+    return;
+  }
+
+  title.textContent = deferredInstallPrompt
+    ? 'アプリをインストールして通知を受け取る'
+    : '通知設定ができない場合はアプリから開いてください';
+  text.textContent = deferredInstallPrompt
+    ? 'インストール後、ホーム画面のアイコンから開いて通知を設定してください。'
+    : 'Chromeのメニューに「アプリをインストール」または「ホーム画面に追加」が表示される場合は、そこから追加してください。';
+  iosSteps.hidden = true;
+  androidSteps.hidden = false;
+  installButton.hidden = !deferredInstallPrompt;
+}
+
+async function installPushApp() {
+  if (!deferredInstallPrompt) {
+    showToast('Chromeのメニューからアプリをインストールしてください');
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  updateNotificationInstallGuide();
+  if (choice && choice.outcome === 'accepted') {
+    showToast('ホーム画面のアプリから通知設定を行ってください');
+  }
+}
+
 async function ensurePushServiceWorker() {
   if (!('serviceWorker' in navigator)) throw new Error('この端末は通知に対応していません');
   if (!pushRegistrationPromise) {
@@ -1064,6 +1159,7 @@ async function openNotificationSettings() {
   openModal('modal-notifications');
   $('notification-status').textContent = '通知状態を確認しています...';
   setPushCourseChecks(savedPushCourses());
+  updateNotificationInstallGuide();
   try {
     const config = await fetchPushConfig();
     if (!config.enabled) {
@@ -4072,6 +4168,7 @@ $('btn-operator-save').addEventListener('click', saveOperatorFromModal);
 $('btn-operator-cancel').addEventListener('click', cancelOperatorModal);
 $('btn-notification-save').addEventListener('click', savePushSettings);
 $('btn-notification-disable').addEventListener('click', disablePushNotifications);
+$('btn-notification-install').addEventListener('click', installPushApp);
 
 $('confirm-ok').addEventListener('click', () => {
   closeModal('modal-confirm');
@@ -4093,6 +4190,15 @@ document.querySelectorAll('[data-close]').forEach(btn => {
 
 document.querySelector('.placement-banner').addEventListener('click', cancelPlacement);
 window.addEventListener('online', () => retryPendingPickupProgress({ silent: false }));
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updateNotificationInstallGuide();
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  updateNotificationInstallGuide();
+});
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) retryPendingPickupProgress({ silent: true });
 });
