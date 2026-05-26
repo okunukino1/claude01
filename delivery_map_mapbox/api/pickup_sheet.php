@@ -211,6 +211,7 @@ for ($i = 1; $i < count($rows); $i++) {
     'phone' => value_at($row, $indexMap, 'phone'),
     'date' => $dateValue,
     'source' => value_at($row, $indexMap, 'source'),
+    'list_tab' => value_at($row, $indexMap, 'list_tab'),
     'lat' => value_at($row, $indexMap, 'lat'),
     'lng' => value_at($row, $indexMap, 'lng'),
     'approx' => value_at($row, $indexMap, 'approx'),

@@ -313,6 +313,40 @@
   body.list-collapsed .list-body {
     display: none;
   }
+  body.list-collapsed .pickup-list-tabs {
+    display: none !important;
+  }
+  .pickup-list-tabs {
+    display: none;
+    gap: 6px;
+    padding: 6px 10px;
+    background: white;
+    border-bottom: 1px solid #e0dac4;
+    flex-shrink: 0;
+  }
+  .pickup-list-tabs.show {
+    display: flex;
+  }
+  .pickup-list-tab {
+    flex: 1;
+    min-height: 36px;
+    border: 1.5px solid #b8b29f;
+    background: #f7f5ec;
+    color: var(--ink);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .pickup-list-tab.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+  .pickup-list-tab .tab-count {
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 4px;
+  }
   .list-body {
     flex: 1;
     overflow-y: auto;
@@ -816,6 +850,10 @@
     <div class="stat" id="list-stat"></div>
     <div class="toggle-icon" aria-label="リストを折りたたむ">▼</div>
   </div>
+  <div class="pickup-list-tabs" id="pickup-list-tabs" role="tablist" aria-label="集荷種別">
+    <button class="pickup-list-tab selected" id="pickup-tab-regular" type="button" role="tab" data-pickup-list-tab="regular" aria-selected="true">定期集荷 <span class="tab-count" id="pickup-tab-regular-count"></span></button>
+    <button class="pickup-list-tab" id="pickup-tab-spot" type="button" role="tab" data-pickup-list-tab="spot" aria-selected="false">スポット集荷 <span class="tab-count" id="pickup-tab-spot-count"></span></button>
+  </div>
   <div class="list-body" id="list-body"></div>
 </div>
 
@@ -1037,6 +1075,7 @@ const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-pickup-last-reset-date';
 const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-pickup-selected-sheet';
 const PICKUP_PENDING_SYNC_KEY = 'rys-mapbox-pickup-pending-sync-v1';
 const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-pickup-location-admin-pin-v1';
+const PICKUP_LIST_TAB_KEY = 'rys-mapbox-pickup-list-tab-v1';
 const PUSH_SELECTED_COURSES_KEY = 'rys-mapbox-push-selected-courses-v1';
 const TEXT_SIZE_KEY = 'rys-mapbox-text-size-v1';
 const TEXT_SIZE_OPTIONS = {
@@ -1068,6 +1107,8 @@ const PICKUP_SPOT_SHEETS_BY_COURSE = {
   '浜町店 北': '浜町店 北スポット'
 };
 const PICKUP_DELIVERY_MODE_VALUE = '__delivery__';
+const PICKUP_LIST_TAB_REGULAR = 'regular';
+const PICKUP_LIST_TAB_SPOT = 'spot';
 const PICKUP_SYNC_INTERVAL_MS = 20000;
 let pushRegistrationPromise = null;
 let deferredInstallPrompt = null;
@@ -1568,6 +1609,43 @@ function setSelectedPickupSheet(sheetName) {
   }
 }
 
+function normalizePickupListTab(value) {
+  const tab = String(value || '').trim().toLowerCase();
+  return ['spot', 'スポット', 'スポット集荷'].includes(tab) ? PICKUP_LIST_TAB_SPOT : PICKUP_LIST_TAB_REGULAR;
+}
+
+function currentPickupListTab() {
+  return normalizePickupListTab(localStorage.getItem(PICKUP_LIST_TAB_KEY));
+}
+
+function isPickupListSpotDelivery(d) {
+  return isSpotPickupDelivery(d) || normalizePickupListTab(d && d.pickupListTab) === PICKUP_LIST_TAB_SPOT;
+}
+
+function setPickupListTab(tab) {
+  localStorage.setItem(PICKUP_LIST_TAB_KEY, normalizePickupListTab(tab));
+  renderList();
+}
+
+function updatePickupListTabs() {
+  const tabs = $('pickup-list-tabs');
+  if (!tabs) return;
+  const visible = appMode === 'pickup';
+  tabs.classList.toggle('show', visible);
+  if (!visible) return;
+
+  const selectedTab = currentPickupListTab();
+  const regularCount = deliveries.filter(d => !isPickupListSpotDelivery(d)).length;
+  const spotCount = deliveries.filter(d => isPickupListSpotDelivery(d)).length;
+  $('pickup-tab-regular-count').textContent = `(${regularCount})`;
+  $('pickup-tab-spot-count').textContent = `(${spotCount})`;
+  document.querySelectorAll('[data-pickup-list-tab]').forEach(button => {
+    const selected = button.dataset.pickupListTab === selectedTab;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+  });
+}
+
 function updateModeUi() {
   const modeBtn = $('btn-app-mode');
   if (modeBtn) {
@@ -1604,6 +1682,7 @@ function updateModeUi() {
   });
   const title = document.querySelector('.list-header h2');
   if (title) title.textContent = `${modeLabel()}リスト`;
+  updatePickupListTabs();
 }
 
 async function switchAppMode(mode, showMessage = true, options = {}) {
@@ -2497,18 +2576,31 @@ function pickupListDisplay(d) {
 function renderList() {
   const body = $('list-body');
   const stat = $('list-stat');
-  if (deliveries.length === 0) {
-    body.innerHTML = '<div class="empty">配送先がありません<br>下のボタンから追加してください</div>';
+  updatePickupListTabs();
+  const selectedPickupTab = currentPickupListTab();
+  const listItems = appMode === 'pickup'
+    ? deliveries
+        .map((delivery, index) => ({ delivery, index }))
+        .filter(entry => selectedPickupTab === PICKUP_LIST_TAB_SPOT
+          ? isPickupListSpotDelivery(entry.delivery)
+          : !isPickupListSpotDelivery(entry.delivery))
+    : deliveries.map((delivery, index) => ({ delivery, index }));
+
+  if (listItems.length === 0) {
+    const emptyMessage = appMode === 'pickup'
+      ? (selectedPickupTab === PICKUP_LIST_TAB_SPOT ? 'スポット集荷はありません' : '定期集荷はありません')
+      : '配送先がありません<br>下のボタンから追加してください';
+    body.innerHTML = `<div class="empty">${emptyMessage}</div>`;
     stat.textContent = '';
     return;
   }
-  const done = deliveries.filter(d => d.completed).length;
+  const done = listItems.filter(entry => entry.delivery.completed).length;
   const syncText = appMode === 'pickup' && pickupLastSyncedAt
     ? ` / 同期 ${formatTime(pickupLastSyncedAt)}`
     : '';
-  stat.textContent = `${done}/${deliveries.length}件 完了${syncText}`;
+  stat.textContent = `${done}/${listItems.length}件 完了${syncText}`;
 
-  body.innerHTML = deliveries.map((d, idx) => {
+  body.innerHTML = listItems.map(({ delivery: d, index: idx }) => {
     const num = displayNumber(d, idx);
     const cls = 'delivery-item'
       + (d.completed ? ' done' : '')
@@ -3565,6 +3657,11 @@ function applyPickupProgressFromItems(items) {
     const item = byKey.get(`${d.pickupSheet}:${d.pickupRow}`);
     if (!item) return;
     if (d.pickupId && item.id && String(d.pickupId) !== String(item.id)) return;
+    const listTab = isSpotPickupItem(item) ? PICKUP_LIST_TAB_SPOT : normalizePickupListTab(item.list_tab);
+    if (normalizePickupListTab(d.pickupListTab) !== listTab) {
+      d.pickupListTab = listTab;
+      changed = true;
+    }
     if (applyPickupLocationFromItem(d, item)) changed = true;
     if (d.progressSyncFailed) return;
 
@@ -3628,6 +3725,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
       existing.pickupSheet = item.sheet || existing.pickupSheet || '';
       existing.pickupRow = item.row || existing.pickupRow || null;
       existing.pickupId = spotId;
+      existing.pickupListTab = PICKUP_LIST_TAB_SPOT;
       existing.spotPickupId = spotId;
       existing.spotPickupDate = item.date || existing.spotPickupDate || '';
       existing.spotPickupTime = item.time || existing.spotPickupTime || '';
@@ -3675,6 +3773,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
       pickupRow: item.row || null,
       pickupId: spotId,
       pickupSource: 'ecohai-spot',
+      pickupListTab: PICKUP_LIST_TAB_SPOT,
       pickupCompany: item.company || '',
       spotPickupId: spotId,
       spotPickupDate: item.date || '',
@@ -3792,6 +3891,7 @@ async function importPickupItems(items, replaceList, options = {}) {
       pickupRow: item.row || null,
       pickupId,
       pickupSource: spotItem ? 'ecohai-spot' : '',
+      pickupListTab: spotItem ? PICKUP_LIST_TAB_SPOT : normalizePickupListTab(item.list_tab),
       pickupCompany: item.company || '',
       spotPickupId: spotItem ? pickupId : '',
       spotPickupDate: spotItem ? (item.date || '') : '',
@@ -4365,6 +4465,9 @@ function toggleListCollapse(forceState) {
   setTimeout(() => { if (map) map.resize(); }, 280);
 }
 $('list-header').addEventListener('click', () => toggleListCollapse());
+document.querySelectorAll('[data-pickup-list-tab]').forEach(button => {
+  button.addEventListener('click', () => setPickupListTab(button.dataset.pickupListTab));
+});
 $('btn-north').addEventListener('click', () => {
   map.easeTo({ bearing: 0, pitch: 0, duration: 400 });
   showToast('🧭 北向き・水平に戻しました');
