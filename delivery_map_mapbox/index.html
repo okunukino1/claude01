@@ -380,6 +380,22 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .item-info .pickup-company {
+    font-size: 13px;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .item-info .pickup-detail {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--ink-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
   .item-info .note {
     font-size: 11px;
     color: var(--ink-soft);
@@ -693,11 +709,13 @@
   .notification-status,
   .notification-install,
   .toast { font-size: calc(13px * var(--text-scale)); }
+  .item-info .pickup-company { font-size: calc(13px * var(--text-scale)); }
   .delivery-marker.spot .delivery-pin .pin-num,
   .delivery-label,
   .overlap-count-label,
   .list-header .stat,
-  .item-info .note { font-size: calc(11px * var(--text-scale)); }
+  .item-info .note,
+  .item-info .pickup-detail { font-size: calc(11px * var(--text-scale)); }
   .map-control-left button,
   .list-header .toggle-icon,
   .delivery-item.spot .num-badge,
@@ -2382,6 +2400,20 @@ async function addDelivery({ address, note }) {
   showToast(result.approx ? '⚠ 概算位置で追加しました' : '配送先を追加しました');
 }
 
+function pickupListDisplay(d) {
+  const noteLines = String(d.note || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const storedCompany = String(d.pickupCompany || d.spotPickupCompany || '').trim();
+  const possibleCompany = noteLines[0] && !/^(時間|希望時間帯|連絡|登録電話番号|スポット集荷)[:：]?/.test(noteLines[0])
+    ? noteLines[0]
+    : '';
+  const company = storedCompany || possibleCompany;
+  const details = noteLines.slice(company && noteLines[0] === company ? 1 : 0);
+  return {
+    company: company || d.address,
+    detail: (company ? [d.address, ...details] : details).filter(Boolean).join(' / ')
+  };
+}
+
 function renderList() {
   const body = $('list-body');
   const stat = $('list-stat');
@@ -2404,12 +2436,16 @@ function renderList() {
       + (isSpotPickupDelivery(d) ? ' spot' : '')
       + (d.progressSyncFailed ? ' sync-pending' : '')
       + (d.id === activeDeliveryId ? ' selected' : '');
+    const pickupDisplay = isPickupBackedDelivery(d) ? pickupListDisplay(d) : null;
     return `
       <div class="${cls}" data-id="${d.id}">
         <div class="num-badge">${escapeHtml(num)}${d.approx ? '?' : ''}</div>
         <div class="item-info">
-          <div class="addr">${escapeHtml(d.address)}</div>
-          ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}
+          ${pickupDisplay
+            ? `<div class="pickup-company">${escapeHtml(pickupDisplay.company)}</div>
+               <div class="pickup-detail">${escapeHtml(pickupDisplay.detail)}</div>`
+            : `<div class="addr">${escapeHtml(d.address)}</div>
+               ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}`}
           ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
           ${d.progressSyncFailed ? `<div class="note">未同期: 通信回復後に自動再送します</div>` : ''}
         </div>
@@ -3517,6 +3553,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
       existing.spotPickupTime = item.time || existing.spotPickupTime || '';
       existing.spotPickupPhone = item.phone || existing.spotPickupPhone || '';
       existing.spotPickupCompany = item.company || existing.spotPickupCompany || '';
+      existing.pickupCompany = item.company || existing.pickupCompany || '';
       if (savedLocation) {
         existing.lat = savedLocation.lat;
         existing.lng = savedLocation.lng;
@@ -3558,6 +3595,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
       pickupRow: item.row || null,
       pickupId: spotId,
       pickupSource: 'ecohai-spot',
+      pickupCompany: item.company || '',
       spotPickupId: spotId,
       spotPickupDate: item.date || '',
       spotPickupTime: item.time || '',
@@ -3664,6 +3702,7 @@ async function importPickupItems(items, replaceList) {
       pickupRow: item.row || null,
       pickupId,
       pickupSource: spotItem ? 'ecohai-spot' : '',
+      pickupCompany: item.company || '',
       spotPickupId: spotItem ? pickupId : '',
       spotPickupDate: spotItem ? (item.date || '') : '',
       spotPickupTime: spotItem ? (item.time || '') : '',
