@@ -25,6 +25,7 @@
     --danger: #d32f2f;
     --list-height: 50dvh;
     --list-collapsed-height: 46px;
+    --text-scale: 1;
   }
   body.list-collapsed { --list-height: var(--list-collapsed-height); }
 
@@ -645,6 +646,70 @@
     font-weight: 700;
     cursor: pointer;
   }
+  .text-size-choices {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 4px 0 12px;
+  }
+  .text-size-choice {
+    min-height: 58px;
+    border: 2px solid #c0bca8;
+    border-radius: 6px;
+    background: white;
+    color: var(--ink);
+    font-weight: 700;
+    cursor: pointer;
+    font-size: calc(14px * var(--text-scale));
+  }
+  .text-size-choice.selected {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: white;
+  }
+  .text-size-choice.size-small { font-size: calc(12px * var(--text-scale)); }
+  .text-size-choice.size-large { font-size: calc(17px * var(--text-scale)); }
+
+  /* Text sizing is intentionally separate from map and marker dimensions. */
+  .topbar h1,
+  .num-badge,
+  .item-actions button,
+  .modal-actions button,
+  .menu-list button,
+  .notification-install strong,
+  .notification-install button,
+  .confirm-msg,
+  .loading-overlay .msg { font-size: calc(14px * var(--text-scale)); }
+  .topbar h1 .badge-test,
+  .map-control .gps-status { font-size: calc(10px * var(--text-scale)); }
+  .topbar button,
+  .delivery-pin .pin-num,
+  .map-control button,
+  .placement-banner,
+  .empty,
+  .item-info .addr,
+  .inline-action,
+  .checkbox-line,
+  .notification-status,
+  .notification-install,
+  .toast { font-size: calc(13px * var(--text-scale)); }
+  .delivery-marker.spot .delivery-pin .pin-num,
+  .delivery-label,
+  .overlap-count-label,
+  .list-header .stat,
+  .item-info .note { font-size: calc(11px * var(--text-scale)); }
+  .map-control-left button,
+  .list-header .toggle-icon,
+  .delivery-item.spot .num-badge,
+  .add-bar button,
+  .modal label,
+  .modal-help { font-size: calc(12px * var(--text-scale)); }
+  .modal h3 { font-size: calc(16px * var(--text-scale)); }
+  .modal input[type=text],
+  .modal input[type=tel],
+  .modal select,
+  .modal textarea { font-size: calc(15px * var(--text-scale)); }
+  #usage-content { font-size: calc(13px * var(--text-scale)) !important; }
 
   /* ===== Toast ===== */
   .toast {
@@ -758,11 +823,26 @@
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
+      <button id="menu-text-size" type="button">Aa 文字サイズ</button>
       <button id="menu-notifications" type="button">🔔 通知設定</button>
       <button id="menu-manual" type="button">📖 使い方マニュアル</button>
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-text-size">
+  <div class="modal">
+    <h3>文字サイズ</h3>
+    <div class="text-size-choices" role="group" aria-label="文字サイズ">
+      <button class="text-size-choice size-small" type="button" data-text-size="small">小</button>
+      <button class="text-size-choice" type="button" data-text-size="normal">標準</button>
+      <button class="text-size-choice size-large" type="button" data-text-size="large">大</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-text-size">閉じる</button>
     </div>
   </div>
 </div>
@@ -938,6 +1018,12 @@ const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-pickup-selected-sheet';
 const PICKUP_PENDING_SYNC_KEY = 'rys-mapbox-pickup-pending-sync-v1';
 const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-pickup-location-admin-pin-v1';
 const PUSH_SELECTED_COURSES_KEY = 'rys-mapbox-push-selected-courses-v1';
+const TEXT_SIZE_KEY = 'rys-mapbox-text-size-v1';
+const TEXT_SIZE_OPTIONS = {
+  small: 0.9,
+  normal: 1,
+  large: 1.15
+};
 
 const ADDR_PREF = '東京都';
 const ADDR_CITY = '中央区';
@@ -1047,6 +1133,28 @@ function showConfirm(title, msg, callback) {
   $('confirm-msg').textContent = msg;
   confirmCallback = callback;
   openModal('modal-confirm');
+}
+
+function currentTextSize() {
+  const saved = localStorage.getItem(TEXT_SIZE_KEY) || 'normal';
+  return Object.prototype.hasOwnProperty.call(TEXT_SIZE_OPTIONS, saved) ? saved : 'normal';
+}
+
+function applyTextSize(size, saveSetting = true) {
+  const selected = Object.prototype.hasOwnProperty.call(TEXT_SIZE_OPTIONS, size) ? size : 'normal';
+  document.documentElement.style.setProperty('--text-scale', String(TEXT_SIZE_OPTIONS[selected]));
+  document.querySelectorAll('[data-text-size]').forEach(button => {
+    const active = button.dataset.textSize === selected;
+    button.classList.toggle('selected', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  if (saveSetting) localStorage.setItem(TEXT_SIZE_KEY, selected);
+}
+
+function openTextSizeSettings() {
+  closeModal('modal-menu');
+  applyTextSize(currentTextSize(), false);
+  openModal('modal-text-size');
 }
 
 function selectedPushCourses() {
@@ -4156,6 +4264,7 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
 });
 $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
+$('menu-text-size').addEventListener('click', openTextSizeSettings);
 $('menu-notifications').addEventListener('click', openNotificationSettings);
 $('menu-manual').addEventListener('click', () => {
   closeModal('modal-menu');
@@ -4169,6 +4278,9 @@ $('btn-operator-cancel').addEventListener('click', cancelOperatorModal);
 $('btn-notification-save').addEventListener('click', savePushSettings);
 $('btn-notification-disable').addEventListener('click', disablePushNotifications);
 $('btn-notification-install').addEventListener('click', installPushApp);
+document.querySelectorAll('[data-text-size]').forEach(button => {
+  button.addEventListener('click', () => applyTextSize(button.dataset.textSize));
+});
 
 $('confirm-ok').addEventListener('click', () => {
   closeModal('modal-confirm');
@@ -4205,6 +4317,7 @@ document.addEventListener('visibilitychange', () => {
 
 (async function init() {
   try {
+    applyTextSize(currentTextSize(), false);
     if (localStorage.getItem(LIST_COLLAPSED_KEY) === '1') {
       document.body.classList.add('list-collapsed');
     }
