@@ -1438,7 +1438,14 @@ function saveRegularPickupCache(sheetName, source = deliveries) {
 function showCachedRegularPickupCourse(sheetName) {
   const cached = loadRegularPickupCache(sheetName);
   if (cached.length === 0) return false;
-  deliveries = cached;
+  const todayDigits = localDateKey().replace(/\D/g, '');
+  const spotSheet = spotSheetForPickupCourse(sheetName);
+  const knownTodaySpots = deliveries.filter(item =>
+    isSpotPickupDelivery(item) &&
+    item.pickupSheet === spotSheet &&
+    String(item.spotPickupDate || '').replace(/\D/g, '').slice(0, 8) === todayDigits
+  );
+  deliveries = [...cached, ...knownTodaySpots];
   activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
