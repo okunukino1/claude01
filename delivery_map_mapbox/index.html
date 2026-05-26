@@ -1023,6 +1023,7 @@
 
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
+const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
 const APP_MODE_KEY = 'rys-mapbox-app-mode';
 const USAGE_KEY = 'rys-mapbox-usage-v1';
 const NEIGHBORHOOD_KEY = 'rys-mapbox-neighborhoods-visible';
@@ -1380,6 +1381,10 @@ function currentStorageKey() {
 
 function saveDeliveries() {
   localStorage.setItem(currentStorageKey(), JSON.stringify(deliveries));
+  if (appMode === 'pickup') {
+    const sheetName = getSelectedPickupSheet();
+    if (sheetName) saveRegularPickupCache(sheetName, deliveries);
+  }
 }
 function loadDeliveries() {
   try { deliveries = JSON.parse(localStorage.getItem(currentStorageKey()) || '[]'); }
@@ -1395,6 +1400,50 @@ function loadDeliveries() {
       }
     } catch (e) {}
   }
+}
+
+function pickupRegularCacheKey(sheetName) {
+  return PICKUP_REGULAR_CACHE_PREFIX + String(sheetName || '');
+}
+
+function regularPickupIdentity(item) {
+  const sheet = String(item.sheet || item.pickupSheet || '');
+  const id = String(item.id || item.pickupId || '').trim();
+  const row = String(item.row || item.pickupRow || '').trim();
+  return `${sheet}:${id ? `id-${id}` : `row-${row}`}`;
+}
+
+function loadRegularPickupCache(sheetName) {
+  if (!PICKUP_SHEETS.includes(sheetName)) return [];
+  try {
+    const cached = JSON.parse(localStorage.getItem(pickupRegularCacheKey(sheetName)) || '[]');
+    return Array.isArray(cached)
+      ? cached.filter(item => item && item.pickupSheet === sheetName && !isSpotPickupDelivery(item))
+      : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveRegularPickupCache(sheetName, source = deliveries) {
+  if (!PICKUP_SHEETS.includes(sheetName)) return;
+  const regularItems = source.filter(item =>
+    item && item.pickupSheet === sheetName && !isSpotPickupDelivery(item)
+  );
+  if (regularItems.length > 0) {
+    localStorage.setItem(pickupRegularCacheKey(sheetName), JSON.stringify(regularItems));
+  }
+}
+
+function showCachedRegularPickupCourse(sheetName) {
+  const cached = loadRegularPickupCache(sheetName);
+  if (cached.length === 0) return false;
+  deliveries = cached;
+  activeDeliveryId = null;
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  return true;
 }
 
 function bumpUsage(kind) {
@@ -3660,7 +3709,11 @@ function restartPickupAutoSync() {
   pickupSyncTimer = setInterval(() => syncPickupProgressFromSheets(true), PICKUP_SYNC_INTERVAL_MS);
 }
 
-async function importPickupItems(items, replaceList) {
+async function importPickupItems(items, replaceList, options = {}) {
+  const courseName = options.courseName || getSelectedPickupSheet();
+  const cachedRegular = new Map(
+    loadRegularPickupCache(courseName).map(item => [regularPickupIdentity(item), item])
+  );
   if (replaceList) {
     deliveries = [];
     activeDeliveryId = null;
@@ -3670,23 +3723,29 @@ async function importPickupItems(items, replaceList) {
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    const savedLocation = pickupLocationFromItem(item);
+    const spotItem = isSpotPickupItem(item);
+    const cachedItem = !spotItem ? cachedRegular.get(regularPickupIdentity(item)) : null;
+    const cachedLocation = cachedItem && cachedItem.address === item.address
+      ? pickupLocationFromItem(cachedItem)
+      : null;
+    const savedLocation = pickupLocationFromItem(item) || cachedLocation;
     let result = savedLocation;
     if (result) {
-      showLoading(`固定位置を読み込み中... ${i + 1}/${items.length}`);
+      if (!options.background && !options.cacheVisible) {
+        showLoading(`${cachedLocation ? '保存済み位置' : '固定位置'}を読み込み中... ${i + 1}/${items.length}`);
+      }
     } else {
-      showLoading(`住所を検索中... ${i + 1}/${items.length}`);
+      if (!options.background) showLoading(`住所を検索中... ${i + 1}/${items.length}`);
       result = await geocodeAddress(item.address);
     }
     if (!result) {
       failed.push(item);
       continue;
     }
-    const spotItem = isSpotPickupItem(item);
     const pickupId = String(item.id || '');
     const collected = isTruthyValue(item.collected);
     const d = {
-      id: spotItem && pickupId ? `spot-${pickupId}` : uid(),
+      id: spotItem && pickupId ? `spot-${pickupId}` : (cachedItem && cachedItem.id ? cachedItem.id : uid()),
       address: item.address,
       note: pickupNote(item),
       lat: result.lat,
@@ -3716,13 +3775,14 @@ async function importPickupItems(items, replaceList) {
   }
 
   saveDeliveries();
+  saveRegularPickupCache(courseName);
   await resetStalePickupCompletions();
   renderMarkers();
   renderList();
   restartPickupAutoSync();
-  hideLoading();
+  if (!options.background) hideLoading();
 
-  if (imported.length > 0) {
+  if (imported.length > 0 && options.focusFirst !== false) {
     const first = imported[0];
     activeDeliveryId = first.id;
     updateMarkerZIndexes();
@@ -3731,7 +3791,46 @@ async function importPickupItems(items, replaceList) {
   }
 
   const failMsg = failed.length > 0 ? ` / ${failed.length}件は住所検索できませんでした` : '';
-  showToast(`${imported.length}件 取り込みました${failMsg}`, failed.length > 0);
+  if (!options.background) showToast(`${imported.length}件 取り込みました${failMsg}`, failed.length > 0);
+}
+
+async function fetchPickupCourseItems(sheetName, refreshSpots = true) {
+  const sourceSheets = [sheetName];
+  const spotSheet = spotSheetForPickupCourse(sheetName);
+  if (spotSheet) {
+    if (refreshSpots) await triggerSpotPickupTouch({ silent: true });
+    sourceSheets.push(spotSheet);
+  }
+
+  const items = [];
+  const warnings = [];
+  for (const sourceSheet of sourceSheets) {
+    try {
+      const data = await fetchPickupItems(sourceSheet);
+      items.push(...(data.items || []));
+    } catch (e) {
+      if (sourceSheet === sheetName) throw e;
+      warnings.push(e.message || `${sourceSheet}の取得に失敗しました`);
+    }
+  }
+  return { items, warnings };
+}
+
+async function refreshSelectedPickupCourseInBackground() {
+  const sheetName = getSelectedPickupSheet();
+  if (appMode !== 'pickup' || !PICKUP_SHEETS.includes(sheetName)) return;
+  try {
+    const result = await fetchPickupCourseItems(sheetName, false);
+    if (result.items.length === 0) return;
+    await importPickupItems(result.items, true, {
+      courseName: sheetName,
+      background: true,
+      cacheVisible: true,
+      focusFirst: false
+    });
+  } catch (e) {
+    console.warn('background pickup course refresh failed', e);
+  }
 }
 
 async function importPickupSheet() {
@@ -3746,27 +3845,15 @@ async function importPickupSheet() {
   setSelectedPickupSheet(sheetName);
   updateModeUi();
   closeModal('modal-pickup-import');
+  const cacheVisible = showCachedRegularPickupCourse(sheetName);
 
   try {
-    showLoading(`${sheetName}の集荷コースを読み込み中...`);
-    const sourceSheets = [sheetName];
-    const spotSheet = spotSheetForPickupCourse(sheetName);
-    if (spotSheet) {
-      await triggerSpotPickupTouch({ silent: true });
-      sourceSheets.push(spotSheet);
+    if (cacheVisible) {
+      showToast('保存済みの定期集荷を表示しました。最新情報を確認中...');
+    } else {
+      showLoading(`${sheetName}の集荷コースを読み込み中...`);
     }
-
-    const items = [];
-    const warnings = [];
-    for (const sourceSheet of sourceSheets) {
-      try {
-        const data = await fetchPickupItems(sourceSheet);
-        items.push(...(data.items || []));
-      } catch (e) {
-        if (sourceSheet === sheetName) throw e;
-        warnings.push(e.message || `${sourceSheet}の取得に失敗しました`);
-      }
-    }
+    const { items, warnings } = await fetchPickupCourseItems(sheetName);
 
     if (items.length === 0) {
       hideLoading();
@@ -3774,7 +3861,7 @@ async function importPickupSheet() {
       return;
     }
 
-    await importPickupItems(items, replaceList);
+    await importPickupItems(items, replaceList, { courseName: sheetName, cacheVisible });
     updateModeUi();
     if (warnings.length > 0) showToast(`スポット集荷の取得に失敗しました: ${warnings[0]}`, true);
   } catch (e) {
@@ -4368,6 +4455,11 @@ document.addEventListener('visibilitychange', () => {
     mapboxConfig = await loadMapboxConfig();
     await initMap();
     loadDeliveries();
+    if (appMode === 'pickup') {
+      const selectedCourse = getSelectedPickupSheet();
+      saveRegularPickupCache(selectedCourse, deliveries);
+      showCachedRegularPickupCourse(selectedCourse);
+    }
     await resetStalePickupCompletions();
     renderMarkers();
     renderList();
@@ -4381,7 +4473,7 @@ document.addEventListener('visibilitychange', () => {
     const openedFromNotification = await openPickupCourseFromNotification();
     if (!openedFromNotification) {
       triggerSpotPickupTouch({ silent: true }).then(() => {
-        if (appMode === 'pickup') syncPickupProgressFromSheets(true);
+        if (appMode === 'pickup') refreshSelectedPickupCourseInBackground();
       });
     }
 
