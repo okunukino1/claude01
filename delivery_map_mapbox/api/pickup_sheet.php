@@ -1,6 +1,9 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
   http_response_code(405);
@@ -30,20 +33,24 @@ if (!array_key_exists($sheet, $allowedSheets)) {
 $spotSheets = ['小舟町店スポット', '浜町店 南スポット', '浜町店 北スポット'];
 $isSpotSheet = in_array($sheet, $spotSheets, true);
 $gid = $allowedSheets[$sheet];
+$cacheBust = (string)round(microtime(true) * 1000);
 $urls = [
   'https://docs.google.com/spreadsheets/d/' . rawurlencode($spreadsheetId)
-    . '/gviz/tq?tqx=out:csv&sheet=' . rawurlencode($sheet),
+    . '/gviz/tq?tqx=out:csv&sheet=' . rawurlencode($sheet)
+    . '&_=' . rawurlencode($cacheBust),
 ];
 if ($gid !== null && $gid !== '') {
   array_unshift(
     $urls,
     'https://docs.google.com/spreadsheets/d/' . rawurlencode($spreadsheetId)
       . '/gviz/tq?tqx=out:csv&gid=' . rawurlencode((string)$gid)
+      . '&_=' . rawurlencode($cacheBust)
   );
   array_unshift(
     $urls,
     'https://docs.google.com/spreadsheets/d/' . rawurlencode($spreadsheetId)
       . '/export?format=csv&gid=' . rawurlencode((string)$gid)
+      . '&_=' . rawurlencode($cacheBust)
   );
 }
 
@@ -61,6 +68,8 @@ function fetch_csv_url($url) {
     CURLOPT_HTTPHEADER => [
       'Accept: text/csv,text/plain,*/*',
       'Accept-Language: ja,en;q=0.9',
+      'Cache-Control: no-cache',
+      'Pragma: no-cache',
     ],
   ]);
   $body = curl_exec($ch);

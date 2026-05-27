@@ -211,6 +211,7 @@ function handleSpotPickupsSync(payload) {
   if (rows.length > 0) {
     sheet.getRange(2, 1, rows.length, SPOT_PICKUP_COLUMNS.length).setValues(rows);
   }
+  SpreadsheetApp.flush();
 
   return respond({
     ok: true,

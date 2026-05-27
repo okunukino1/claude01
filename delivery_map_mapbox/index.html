@@ -3710,9 +3710,10 @@ function resetPickupCompletionsManually() {
 
 async function fetchPickupItems(sheetName) {
   const params = new URLSearchParams({
-    sheet: sheetName
+    sheet: sheetName,
+    refresh: String(Date.now())
   });
-  const res = await fetch(`api/pickup_sheet.php?${params.toString()}`);
+  const res = await fetch(`api/pickup_sheet.php?${params.toString()}`, { cache: 'no-store' });
   let data = null;
   try { data = await res.json(); } catch (e) {}
   if (!res.ok || !data || data.error) {
