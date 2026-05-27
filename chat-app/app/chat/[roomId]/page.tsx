@@ -56,6 +56,8 @@ export default function ChatRoomPage() {
   const [showAI, setShowAI] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
+  // モバイル: true=サイドバー表示, false=チャット表示
+  const [showSidebar, setShowSidebar] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -89,9 +91,13 @@ export default function ChatRoomPage() {
         if (prev.find((m) => m.id === msg.id)) return prev
         return [...prev, msg]
       })
-      setRooms((prev) => prev.map((r) => r.id === msg.roomId ? { ...r, messages: [msg], updatedAt: msg.createdAt } : r).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()))
+      setRooms((prev) =>
+        prev
+          .map((r) => r.id === msg.roomId ? { ...r, messages: [msg], updatedAt: msg.createdAt } : r)
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      )
     })
-    sock.on('user_typing', ({ userId: uid, displayName }: { userId: string; displayName: string }) => {
+    sock.on('user_typing', ({ displayName }: { userId: string; displayName: string }) => {
       setTypingUsers((prev) => new Set([...prev, displayName]))
     })
     sock.on('user_stop_typing', () => setTypingUsers(new Set()))
@@ -112,7 +118,15 @@ export default function ChatRoomPage() {
       .catch(() => {})
     const room = rooms.find((r) => r.id === roomId)
     if (room) setCurrentRoom(room)
-  }, [roomId, token, rooms])
+    // モバイルでルームを選択したらチャット画面へ
+    setShowSidebar(false)
+  }, [roomId, token])
+
+  // roomsが読み込まれた後にcurrentRoomを設定
+  useEffect(() => {
+    const room = rooms.find((r) => r.id === roomId)
+    if (room) setCurrentRoom(room)
+  }, [rooms, roomId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -188,6 +202,11 @@ export default function ChatRoomPage() {
     setShowMenu(false)
   }
 
+  function navigateToRoom(id: string) {
+    router.push(`/chat/${id}`)
+    setShowSidebar(false)
+  }
+
   if (!user) return null
 
   const groupedMessages: { date: string; messages: Message[] }[] = []
@@ -198,232 +217,344 @@ export default function ChatRoomPage() {
     else groupedMessages.push({ date, messages: [msg] })
   })
 
-  return (
-    <div className="h-screen flex bg-white overflow-hidden">
-      {/* サイドバー */}
-      <div className={`${showSearch ? 'w-80' : 'w-72'} flex-shrink-0 bg-white border-r border-gray-200 flex flex-col`}>
-        {/* ヘッダー */}
-        <div className="p-3 border-b border-gray-200">
-          {showSearch ? (
-            <SearchPanel token={token} onClose={() => setShowSearch(false)} />
-          ) : (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-sm">💬</span>
-                </div>
-                <span className="font-semibold text-gray-900 text-sm">社内チャット</span>
+  // サイドバーコンテンツ
+  const sidebarContent = (
+    <div className="flex flex-col h-full bg-white">
+      {/* サイドバーヘッダー */}
+      <div className="p-3 border-b border-gray-200 safe-top">
+        {showSearch ? (
+          <SearchPanel token={token} onClose={() => setShowSearch(false)} />
+        ) : (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+                <span className="text-white text-sm">💬</span>
               </div>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setShowSearch(true)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="検索">
-                  🔍
-                </button>
-                <button onClick={() => setShowCreateRoom(true)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="グループ作成">
-                  ✏️
-                </button>
-              </div>
+              <span className="font-semibold text-gray-900">社内チャット</span>
             </div>
-          )}
-        </div>
-
-        {/* ルーム一覧 */}
-        {!showSearch && (
-          <div className="flex-1 overflow-y-auto">
-            {rooms.length === 0 && (
-              <div className="p-4 text-center text-gray-400 text-sm">
-                グループがありません<br />
-                <button onClick={() => setShowCreateRoom(true)} className="mt-2 text-green-600 font-medium">作成する</button>
-              </div>
-            )}
-            {rooms.map((room) => {
-              const lastMsg = room.messages?.[0]
-              const isActive = room.id === roomId
-              return (
-                <button
-                  key={room.id}
-                  onClick={() => router.push(`/chat/${room.id}`)}
-                  className={`w-full flex items-center gap-3 px-3 py-3 hover:bg-gray-50 transition-colors ${isActive ? 'bg-green-50 border-l-2 border-green-500' : ''}`}
-                >
-                  <div className="w-11 h-11 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-lg">{room.isGroup ? '👥' : '👤'}</span>
-                  </div>
-                  <div className="flex-1 text-left min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-900 truncate">{room.name}</span>
-                      {lastMsg && <span className="text-xs text-gray-400 flex-shrink-0 ml-1">{formatTime(lastMsg.createdAt)}</span>}
-                    </div>
-                    {lastMsg && (
-                      <p className="text-xs text-gray-500 truncate">
-                        {lastMsg.user?.displayName}: {lastMsg.content}
-                      </p>
-                    )}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        )}
-
-        {/* ユーザー情報 */}
-        {!showSearch && (
-          <div className="p-3 border-t border-gray-200 flex items-center gap-2">
-            <Avatar displayName={user.displayName} avatarColor={user.avatarColor} size="sm" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-gray-900 truncate">{user.displayName}</p>
-              <p className="text-xs text-gray-500 truncate">{user.email}</p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowSearch(true)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                aria-label="検索"
+              >
+                🔍
+              </button>
+              <button
+                onClick={() => setShowCreateRoom(true)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                aria-label="グループ作成"
+              >
+                ✏️
+              </button>
             </div>
-            <button
-              onClick={async () => {
-                await fetch('/api/auth/logout', { method: 'POST' })
-                localStorage.removeItem('auth_token')
-                router.replace('/login')
-              }}
-              className="text-xs text-gray-400 hover:text-red-500"
-            >
-              ログアウト
-            </button>
           </div>
         )}
       </div>
 
-      {/* メインチャット */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {currentRoom ? (
-          <>
-            {/* チャットヘッダー */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center">
-                  <span>{currentRoom.isGroup ? '👥' : '👤'}</span>
+      {/* ルーム一覧 */}
+      {!showSearch && (
+        <div className="flex-1 overflow-y-auto">
+          {rooms.length === 0 && (
+            <div className="p-6 text-center text-gray-400 text-sm">
+              グループがありません<br />
+              <button onClick={() => setShowCreateRoom(true)} className="mt-2 text-green-600 font-medium">作成する</button>
+            </div>
+          )}
+          {rooms.map((room) => {
+            const lastMsg = room.messages?.[0]
+            const isActive = room.id === roomId
+            return (
+              <button
+                key={room.id}
+                onClick={() => navigateToRoom(room.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 active:bg-gray-100 transition-colors ${isActive ? 'bg-green-50 border-l-4 border-green-500' : 'hover:bg-gray-50'}`}
+              >
+                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-xl">{room.isGroup ? '👥' : '👤'}</span>
                 </div>
-                <div>
-                  <h2 className="font-semibold text-gray-900">{currentRoom.name}</h2>
-                  <p className="text-xs text-gray-500">{currentRoom.members?.length}人のメンバー</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1 relative">
-                <button onClick={() => setShowAI(true)} className="px-3 py-1.5 text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-full font-medium" title="AI分析">
-                  ✨ AI分析
-                </button>
-                <div className="relative">
-                  <button onClick={() => setShowMenu(!showMenu)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
-                    ⋮
-                  </button>
-                  {showMenu && (
-                    <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1 min-w-[160px]">
-                      <button onClick={() => exportChat('csv')} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">📊 CSVエクスポート</button>
-                      <button onClick={() => exportChat('json')} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">📄 JSONエクスポート</button>
-                    </div>
+                <div className="flex-1 text-left min-w-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-sm font-medium text-gray-900 truncate">{room.name}</span>
+                    {lastMsg && <span className="text-xs text-gray-400 flex-shrink-0">{formatTime(lastMsg.createdAt)}</span>}
+                  </div>
+                  {lastMsg && (
+                    <p className="text-xs text-gray-500 truncate mt-0.5">
+                      {lastMsg.user?.displayName}: {lastMsg.content}
+                    </p>
                   )}
                 </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ユーザー情報 */}
+      {!showSearch && (
+        <div className="p-3 border-t border-gray-200 flex items-center gap-2 safe-bottom">
+          <Avatar displayName={user.displayName} avatarColor={user.avatarColor} size="sm" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-gray-900 truncate">{user.displayName}</p>
+            <p className="text-xs text-gray-500 truncate">{user.email}</p>
+          </div>
+          <button
+            onClick={async () => {
+              await fetch('/api/auth/logout', { method: 'POST' })
+              localStorage.removeItem('auth_token')
+              router.replace('/login')
+            }}
+            className="text-xs text-gray-400 hover:text-red-500 px-2 py-1"
+          >
+            ログアウト
+          </button>
+        </div>
+      )}
+    </div>
+  )
+
+  // チャットコンテンツ
+  const chatContent = (
+    <div className="flex flex-col h-full bg-white">
+      {currentRoom ? (
+        <>
+          {/* チャットヘッダー */}
+          <div className="flex items-center gap-2 px-3 py-3 border-b border-gray-200 bg-white safe-top">
+            {/* モバイル: 戻るボタン */}
+            <button
+              onClick={() => setShowSidebar(true)}
+              className="md:hidden p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg flex-shrink-0"
+              aria-label="戻る"
+            >
+              ‹
+            </button>
+            <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <span>{currentRoom.isGroup ? '👥' : '👤'}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold text-gray-900 truncate">{currentRoom.name}</h2>
+              <p className="text-xs text-gray-500">{currentRoom.members?.length}人のメンバー</p>
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                onClick={() => setShowAI(true)}
+                className="hidden sm:flex px-2.5 py-1.5 text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-full font-medium items-center gap-1"
+              >
+                ✨ AI分析
+              </button>
+              {/* モバイルではAIボタンをアイコンのみに */}
+              <button
+                onClick={() => setShowAI(true)}
+                className="sm:hidden p-2 text-purple-600 hover:bg-purple-50 rounded-lg"
+                aria-label="AI分析"
+              >
+                ✨
+              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowMenu(!showMenu)}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg text-lg leading-none"
+                >
+                  ⋮
+                </button>
+                {showMenu && (
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-10 py-1 min-w-[170px]">
+                    <button onClick={() => exportChat('csv')} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">📊 CSVエクスポート</button>
+                    <button onClick={() => exportChat('json')} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">📄 JSONエクスポート</button>
+                  </div>
+                )}
               </div>
             </div>
+          </div>
 
-            {/* メッセージエリア */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 bg-gray-50">
-              {groupedMessages.map(({ date, messages: msgs }) => (
-                <div key={date}>
-                  <div className="flex items-center justify-center my-3">
-                    <span className="text-xs text-gray-400 bg-white px-2 py-0.5 rounded-full border border-gray-200">{date}</span>
-                  </div>
-                  {msgs.map((msg) => {
-                    const isOwn = msg.userId === user.id
-                    return (
-                      <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} gap-2 mb-1`}>
-                        {!isOwn && <Avatar displayName={msg.user?.displayName || '?'} avatarColor={msg.user?.avatarColor || '#999'} size="sm" />}
-                        <div className={`max-w-[70%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
-                          {!isOwn && <span className="text-xs text-gray-500 mb-0.5 ml-1">{msg.user?.displayName}</span>}
-                          {msg.replyTo && (
-                            <div className={`text-xs bg-gray-100 border-l-2 border-green-500 px-2 py-1 rounded mb-1 text-gray-500 ${isOwn ? 'self-end' : ''}`}>
-                              {msg.replyTo.user?.displayName}: {msg.replyTo.content.slice(0, 50)}
-                            </div>
-                          )}
-                          <div
-                            className={`relative group px-3 py-2 rounded-2xl text-sm ${
-                              isOwn
-                                ? 'bg-green-500 text-white rounded-br-sm'
-                                : 'bg-white text-gray-900 shadow-sm border border-gray-100 rounded-bl-sm'
-                            }`}
-                          >
-                            {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
-                            {msg.attachments?.map((att) => (
-                              <div key={att.id} className="mt-1">
-                                {att.mimeType?.startsWith('image/') ? (
-                                  <img src={att.fileUrl} alt={att.fileName} className="max-w-xs rounded-lg cursor-pointer" onClick={() => window.open(att.fileUrl)} />
-                                ) : (
-                                  <a href={att.fileUrl} download={att.fileName} className={`flex items-center gap-2 text-xs ${isOwn ? 'text-green-100' : 'text-blue-600'} hover:underline`}>
-                                    📎 {att.fileName} ({formatFileSize(att.fileSize)})
-                                  </a>
-                                )}
-                              </div>
-                            ))}
-                            <div className="absolute hidden group-hover:flex items-center gap-1 -top-6 right-0 bg-white border border-gray-200 rounded-full px-1.5 py-0.5 shadow-sm">
-                              {['👍', '❤️', '😂', '🙏'].map((emoji) => (
-                                <button key={emoji} onClick={() => {}} className="text-xs hover:scale-125 transition-transform">{emoji}</button>
-                              ))}
-                              <button onClick={() => setReplyTo(msg)} className="text-xs text-gray-500 hover:text-gray-700 px-1">返信</button>
-                            </div>
+          {/* メッセージエリア */}
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 bg-gray-50">
+            {groupedMessages.map(({ date, messages: msgs }) => (
+              <div key={date}>
+                <div className="flex items-center justify-center my-4">
+                  <span className="text-xs text-gray-400 bg-white px-3 py-1 rounded-full border border-gray-200 shadow-sm">{date}</span>
+                </div>
+                {msgs.map((msg) => {
+                  const isOwn = msg.userId === user.id
+                  return (
+                    <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} gap-2 mb-1`}>
+                      {!isOwn && (
+                        <Avatar
+                          displayName={msg.user?.displayName || '?'}
+                          avatarColor={msg.user?.avatarColor || '#999'}
+                          size="sm"
+                        />
+                      )}
+                      <div className={`max-w-[75%] sm:max-w-[65%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
+                        {!isOwn && (
+                          <span className="text-xs text-gray-500 mb-0.5 ml-1">{msg.user?.displayName}</span>
+                        )}
+                        {msg.replyTo && (
+                          <div className={`text-xs bg-white border-l-2 border-green-500 px-2 py-1.5 rounded-lg mb-1 text-gray-500 max-w-full ${isOwn ? 'self-end' : ''}`}>
+                            <span className="font-medium">{msg.replyTo.user?.displayName}</span>: {msg.replyTo.content.slice(0, 50)}
                           </div>
-                          <span className={`text-xs text-gray-400 mt-0.5 ${isOwn ? 'text-right' : ''}`}>
+                        )}
+                        <div
+                          className={`relative px-3 py-2 rounded-2xl text-sm break-words ${
+                            isOwn
+                              ? 'bg-green-500 text-white rounded-br-sm'
+                              : 'bg-white text-gray-900 shadow-sm border border-gray-100 rounded-bl-sm'
+                          }`}
+                        >
+                          {msg.content && <p className="whitespace-pre-wrap">{msg.content}</p>}
+                          {msg.attachments?.map((att) => (
+                            <div key={att.id} className="mt-1">
+                              {att.mimeType?.startsWith('image/') ? (
+                                <img
+                                  src={att.fileUrl}
+                                  alt={att.fileName}
+                                  className="max-w-full rounded-xl cursor-pointer"
+                                  style={{ maxHeight: '240px', objectFit: 'cover' }}
+                                  onClick={() => window.open(att.fileUrl)}
+                                />
+                              ) : (
+                                <a
+                                  href={att.fileUrl}
+                                  download={att.fileName}
+                                  className={`flex items-center gap-2 text-xs ${isOwn ? 'text-green-100' : 'text-blue-600'} hover:underline`}
+                                >
+                                  📎 {att.fileName} ({formatFileSize(att.fileSize)})
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                          {/* 長押し/スワイプ代わりに返信ボタン（タップ可能） */}
+                          <button
+                            onClick={() => setReplyTo(msg)}
+                            className={`absolute -top-2 ${isOwn ? 'left-0 -translate-x-full pl-0 pr-1' : 'right-0 translate-x-full pl-1'} opacity-0 group-hover:opacity-100 bg-white border border-gray-200 rounded-full px-2 py-0.5 text-xs text-gray-500 shadow-sm`}
+                          >
+                            返信
+                          </button>
+                        </div>
+                        <div className={`flex items-center gap-2 mt-0.5 ${isOwn ? 'flex-row-reverse' : ''}`}>
+                          <span className="text-xs text-gray-400">
                             {new Date(msg.createdAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
                           </span>
+                          {/* タップで返信 */}
+                          <button
+                            onClick={() => setReplyTo(msg)}
+                            className="text-xs text-gray-300 hover:text-gray-500 active:text-gray-500"
+                            aria-label="返信"
+                          >
+                            ↩
+                          </button>
                         </div>
-                        {isOwn && <Avatar displayName={user.displayName} avatarColor={user.avatarColor} size="sm" />}
                       </div>
-                    )
-                  })}
-                </div>
-              ))}
-              {typingUsers.size > 0 && (
-                <div className="flex items-center gap-2 pl-2">
-                  <span className="text-xs text-gray-500">{[...typingUsers].join(', ')} が入力中...</span>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
+                      {isOwn && (
+                        <Avatar displayName={user.displayName} avatarColor={user.avatarColor} size="sm" />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+            {typingUsers.size > 0 && (
+              <div className="flex items-center gap-1 pl-2 py-1">
+                <span className="text-xs text-gray-500">{[...typingUsers].join(', ')} が入力中...</span>
+                <span className="flex gap-0.5">
+                  {[0, 1, 2].map((i) => (
+                    <span key={i} className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                  ))}
+                </span>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
 
-            {/* 入力エリア */}
-            <div className="bg-white border-t border-gray-200 px-3 py-2">
-              {replyTo && (
-                <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 mb-2 text-xs text-gray-600 border-l-2 border-green-500">
-                  <span className="font-medium">返信: {replyTo.user?.displayName}</span>
-                  <span className="truncate">{replyTo.content.slice(0, 60)}</span>
-                  <button onClick={() => setReplyTo(null)} className="ml-auto text-gray-400 hover:text-gray-600">✕</button>
+          {/* 入力エリア */}
+          <div className="bg-white border-t border-gray-200 px-2 py-2 safe-bottom">
+            {replyTo && (
+              <div className="flex items-center gap-2 bg-green-50 rounded-xl px-3 py-2 mb-2 border-l-2 border-green-500">
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-medium text-green-700">{replyTo.user?.displayName} へ返信</span>
+                  <p className="text-xs text-gray-600 truncate">{replyTo.content.slice(0, 60)}</p>
                 </div>
-              )}
-              <div className="flex items-end gap-2">
-                <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => e.target.files?.[0] && uploadFile(e.target.files[0])} />
-                <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2 text-gray-400 hover:text-gray-600 flex-shrink-0">
-                  {uploading ? '⏳' : '📎'}
-                </button>
-                <textarea
-                  value={input}
-                  onChange={handleInputChange}
-                  onKeyDown={handleKeyDown}
-                  placeholder="メッセージを入力... (Shift+Enterで改行)"
-                  rows={1}
-                  className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5 text-sm resize-none outline-none max-h-32 overflow-y-auto"
-                  style={{ minHeight: '40px' }}
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!input.trim()}
-                  className="w-9 h-9 bg-green-500 text-white rounded-full flex items-center justify-center hover:bg-green-600 disabled:opacity-40 flex-shrink-0"
-                >
-                  ➤
-                </button>
+                <button onClick={() => setReplyTo(null)} className="text-gray-400 hover:text-gray-600 p-1 flex-shrink-0">✕</button>
               </div>
+            )}
+            <div className="flex items-end gap-1.5">
+              <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => e.target.files?.[0] && uploadFile(e.target.files[0])} />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="p-2.5 text-gray-400 hover:text-gray-600 active:text-gray-600 flex-shrink-0 rounded-full hover:bg-gray-100"
+                aria-label="ファイル添付"
+              >
+                {uploading ? '⏳' : '📎'}
+              </button>
+              <textarea
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder="メッセージを入力..."
+                rows={1}
+                className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5 text-sm resize-none outline-none max-h-32 overflow-y-auto leading-5"
+                style={{ minHeight: '42px' }}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!input.trim()}
+                className="w-10 h-10 bg-green-500 text-white rounded-full flex items-center justify-center hover:bg-green-600 active:bg-green-700 disabled:opacity-40 flex-shrink-0 transition-colors"
+                aria-label="送信"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
+              </button>
             </div>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-50">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">💬</span>
-              </div>
-              <p className="text-gray-500">チャットを選択してください</p>
-              <button onClick={() => setShowCreateRoom(true)} className="mt-3 text-green-600 font-medium text-sm hover:underline">グループを作成する</button>
+          </div>
+        </>
+      ) : (
+        <div className="flex-1 flex items-center justify-center bg-gray-50">
+          <div className="text-center px-4">
+            <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl">💬</span>
             </div>
+            <p className="text-gray-500">チャットを選択してください</p>
+            <button
+              onClick={() => { setShowCreateRoom(true) }}
+              className="mt-3 text-green-600 font-medium text-sm"
+            >
+              グループを作成する
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <>
+      {/* デスクトップレイアウト: サイドバー + チャットを横並び */}
+      <div className="hidden md:flex h-screen bg-white overflow-hidden">
+        <div className="w-72 flex-shrink-0 border-r border-gray-200">
+          {sidebarContent}
+        </div>
+        <div className="flex-1 min-w-0">
+          {chatContent}
+        </div>
+      </div>
+
+      {/* モバイルレイアウト: サイドバーかチャットを1画面に切り替え */}
+      <div className="md:hidden h-screen overflow-hidden">
+        <div className={`h-full transition-transform duration-300 ${showSidebar || !currentRoom ? 'translate-x-0' : '-translate-x-full'} absolute inset-0 z-10`}
+          style={{ display: showSidebar || !currentRoom ? 'block' : 'none' }}
+        >
+          {sidebarContent}
+        </div>
+        <div className={`h-full`}
+          style={{ display: !showSidebar && currentRoom ? 'block' : (currentRoom ? 'none' : 'none') }}
+        >
+          {chatContent}
+        </div>
+        {!currentRoom && (
+          <div className="h-full">
+            {sidebarContent}
           </div>
         )}
       </div>
@@ -442,10 +573,14 @@ export default function ChatRoomPage() {
         />
       )}
       {showAI && currentRoom && (
-        <AiAnalysisModal roomId={roomId} roomName={currentRoom.name} token={token} onClose={() => setShowAI(false)} />
+        <AiAnalysisModal
+          roomId={roomId}
+          roomName={currentRoom.name}
+          token={token}
+          onClose={() => setShowAI(false)}
+        />
       )}
-
       {showMenu && <div className="fixed inset-0 z-0" onClick={() => setShowMenu(false)} />}
-    </div>
+    </>
   )
 }
