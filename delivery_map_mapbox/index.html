@@ -1110,6 +1110,7 @@ const PICKUP_DELIVERY_MODE_VALUE = '__delivery__';
 const PICKUP_LIST_TAB_REGULAR = 'regular';
 const PICKUP_LIST_TAB_SPOT = 'spot';
 const PICKUP_SYNC_INTERVAL_MS = 20000;
+const PICKUP_SPOT_TOUCH_RETRY_MS = 60 * 1000;
 let pushRegistrationPromise = null;
 let deferredInstallPrompt = null;
 
@@ -1145,6 +1146,7 @@ let pickupSyncTimer = null;
 let pickupSyncInFlight = false;
 let pickupPendingRetryInFlight = false;
 let pickupLastSyncedAt = null;
+let pickupLastSpotTouchAt = 0;
 let pendingPhotoFile = null;
 let pendingPhotoUrl = '';
 let pendingPhotoRotation = 0;
@@ -1444,6 +1446,39 @@ function currentStorageKey() {
   return appMode === 'pickup' ? PICKUP_STORAGE_KEY : STORAGE_KEY;
 }
 
+function loadStoredDeliveries(key) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(stored) ? stored : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function storedPickupIdentity(d) {
+  if (isSpotPickupDelivery(d)) {
+    return `spot:${spotPickupNaturalKey(d) || String(d.spotPickupId || d.pickupId || d.id || '')}`;
+  }
+  if (isPickupBackedDelivery(d)) return `pickup:${pickupProgressKey(d) || d.id || ''}`;
+  return '';
+}
+
+function migrateMisfiledPickupDeliveries() {
+  const deliveryItems = loadStoredDeliveries(STORAGE_KEY);
+  const misplaced = deliveryItems.filter(d => isPickupBackedDelivery(d) || isSpotPickupDelivery(d));
+  if (misplaced.length === 0) return;
+
+  const keptDeliveries = deliveryItems.filter(d => !(isPickupBackedDelivery(d) || isSpotPickupDelivery(d)));
+  const pickupItems = loadStoredDeliveries(PICKUP_STORAGE_KEY);
+  const merged = new Map();
+  [...misplaced, ...pickupItems].forEach(d => {
+    const key = storedPickupIdentity(d) || `id:${d.id || ''}`;
+    merged.set(key, d);
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(keptDeliveries));
+  localStorage.setItem(PICKUP_STORAGE_KEY, JSON.stringify([...merged.values()]));
+}
+
 function saveDeliveries() {
   localStorage.setItem(currentStorageKey(), JSON.stringify(deliveries));
   if (appMode === 'pickup') {
@@ -1452,8 +1487,15 @@ function saveDeliveries() {
   }
 }
 function loadDeliveries() {
-  try { deliveries = JSON.parse(localStorage.getItem(currentStorageKey()) || '[]'); }
-  catch { deliveries = []; }
+  migrateMisfiledPickupDeliveries();
+  deliveries = loadStoredDeliveries(currentStorageKey());
+  if (appMode === 'pickup') {
+    const deduped = dedupeStoredSpotPickups(deliveries);
+    if (deduped.length !== deliveries.length) {
+      deliveries = deduped;
+      localStorage.setItem(PICKUP_STORAGE_KEY, JSON.stringify(deliveries));
+    }
+  }
   if (appMode === 'pickup' && deliveries.length === 0) {
     try {
       const legacy = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -1505,11 +1547,11 @@ function showCachedRegularPickupCourse(sheetName) {
   if (cached.length === 0) return false;
   const todayDigits = localDateKey().replace(/\D/g, '');
   const spotSheet = spotSheetForPickupCourse(sheetName);
-  const knownTodaySpots = deliveries.filter(item =>
+  const knownTodaySpots = dedupeStoredSpotPickups(deliveries.filter(item =>
     isSpotPickupDelivery(item) &&
     item.pickupSheet === spotSheet &&
     String(item.spotPickupDate || '').replace(/\D/g, '').slice(0, 8) === todayDigits
-  );
+  ));
   deliveries = [...cached, ...knownTodaySpots];
   activeDeliveryId = null;
   saveDeliveries();
@@ -3338,6 +3380,58 @@ function isSpotPickupItem(item) {
   return !!(item && ((item.source || '') === 'ecohai-spot' || isSpotPickupSheet(item.sheet || '')));
 }
 
+function spotPickupNaturalKey(item) {
+  const date = String(item && (item.date || item.spotPickupDate) || '').replace(/\D/g, '').slice(0, 8);
+  const company = normalizeAddress(item && (item.company || item.spotPickupCompany || item.pickupCompany) || '').replace(/\s+/g, '');
+  const address = normalizeAddress(item && item.address || '').replace(/\s+/g, '');
+  const time = normalizeAddress(item && (item.time || item.spotPickupTime) || '').replace(/\s+/g, '');
+  const phone = String(item && (item.phone || item.spotPickupPhone) || '').replace(/\D/g, '');
+  if (!company || !address) return '';
+  return [date, company, address, time, phone].join('|');
+}
+
+function dedupeSpotPickupItems(items) {
+  const unique = [];
+  const spotIndexes = new Map();
+  (Array.isArray(items) ? items : []).forEach(item => {
+    if (!isSpotPickupItem(item)) {
+      unique.push(item);
+      return;
+    }
+    const key = spotPickupNaturalKey(item) || `id:${String(item.id || '')}`;
+    if (!spotIndexes.has(key)) {
+      spotIndexes.set(key, unique.length);
+      unique.push(item);
+      return;
+    }
+    const index = spotIndexes.get(key);
+    if (!isTruthyValue(unique[index].collected) && isTruthyValue(item.collected)) {
+      unique[index] = item;
+    }
+  });
+  return unique;
+}
+
+function dedupeStoredSpotPickups(items) {
+  const unique = [];
+  const spotIndexes = new Map();
+  (Array.isArray(items) ? items : []).forEach(item => {
+    if (!isSpotPickupDelivery(item)) {
+      unique.push(item);
+      return;
+    }
+    const key = spotPickupNaturalKey(item) || `id:${String(item.spotPickupId || item.pickupId || item.id || '')}`;
+    if (!spotIndexes.has(key)) {
+      spotIndexes.set(key, unique.length);
+      unique.push(item);
+      return;
+    }
+    const index = spotIndexes.get(key);
+    if (!unique[index].completed && item.completed) unique[index] = item;
+  });
+  return unique;
+}
+
 function pickupNote(item) {
   if (isSpotPickupItem(item)) {
     const time = normalizePickupTime(item.time);
@@ -3629,6 +3723,7 @@ async function fetchPickupItems(sheetName) {
 }
 
 async function triggerSpotPickupTouch(options = {}) {
+  pickupLastSpotTouchAt = Date.now();
   try {
     const res = await fetch('api/spot_pickups_touch.php', { method: 'POST' });
     let data = null;
@@ -3643,6 +3738,11 @@ async function triggerSpotPickupTouch(options = {}) {
     if (!options.silent) showToast(e.message || 'スポット集荷チェックに失敗しました', true);
     return null;
   }
+}
+
+async function triggerSpotPickupTouchIfDue(options = {}) {
+  if (Date.now() - pickupLastSpotTouchAt < PICKUP_SPOT_TOUCH_RETRY_MS) return null;
+  return triggerSpotPickupTouch(options);
 }
 
 function applyPickupProgressFromItems(items) {
@@ -3689,21 +3789,30 @@ function applyPickupProgressFromItems(items) {
 
 async function mergePickupSheetSpotItems(items, options = {}) {
   if (!Array.isArray(items)) items = [];
-  const spotItems = items.filter(isSpotPickupItem).filter(item => item.id && item.address);
+  const spotItems = dedupeSpotPickupItems(items).filter(isSpotPickupItem).filter(item => item.id && item.address);
   const incomingIds = new Set(spotItems.map(item => String(item.id)));
+  const incomingKeys = new Set(spotItems.map(spotPickupNaturalKey).filter(Boolean));
   let changed = false;
 
+  const deduped = dedupeStoredSpotPickups(deliveries);
+  if (deduped.length !== deliveries.length) {
+    deliveries = deduped;
+    changed = true;
+  }
   const beforeLength = deliveries.length;
   deliveries = deliveries.filter(d => {
     if (!isSpotPickupDelivery(d) || !isSpotPickupSheet(d.pickupSheet || '')) return true;
-    return incomingIds.has(String(d.spotPickupId || d.pickupId || ''));
+    return incomingIds.has(String(d.spotPickupId || d.pickupId || '')) ||
+      incomingKeys.has(spotPickupNaturalKey(d));
   });
   if (deliveries.length !== beforeLength) changed = true;
 
   for (let i = 0; i < spotItems.length; i++) {
     const item = spotItems[i];
     const spotId = String(item.id);
-    const existing = deliveries.find(d => isSpotPickupDelivery(d) && String(d.spotPickupId || '') === spotId);
+    const spotKey = spotPickupNaturalKey(item);
+    const existing = deliveries.find(d => isSpotPickupDelivery(d) &&
+      (String(d.spotPickupId || '') === spotId || (spotKey && spotPickupNaturalKey(d) === spotKey)));
     const note = pickupNote(item);
     const completed = isTruthyValue(item.collected);
     const completedAt = completed && item.collected_at ? Date.parse(item.collected_at) || Date.now() : null;
@@ -3793,7 +3902,10 @@ async function syncPickupProgressFromSheets(silent = true) {
   await retryPendingPickupProgress({ silent: true });
   const sheetSet = new Set(deliveries.filter(isPickupBackedDelivery).map(d => d.pickupSheet));
   const selectedSpotSheet = spotSheetForPickupCourse(getSelectedPickupSheet());
-  if (selectedSpotSheet) sheetSet.add(selectedSpotSheet);
+  if (selectedSpotSheet) {
+    await triggerSpotPickupTouchIfDue({ silent: true });
+    sheetSet.add(selectedSpotSheet);
+  }
   const sheets = [...sheetSet].filter(Boolean);
   if (sheets.length === 0) {
     pickupLastSyncedAt = null;
@@ -3840,6 +3952,7 @@ function restartPickupAutoSync() {
 }
 
 async function importPickupItems(items, replaceList, options = {}) {
+  items = dedupeSpotPickupItems(items);
   const courseName = options.courseName || getSelectedPickupSheet();
   const cachedRegular = new Map(
     loadRegularPickupCache(courseName).map(item => [regularPickupIdentity(item), item])
@@ -4607,7 +4720,7 @@ document.addEventListener('visibilitychange', () => {
     ensurePushServiceWorker().catch(e => console.warn('push service worker registration failed', e));
     const openedFromNotification = await openPickupCourseFromNotification();
     if (!openedFromNotification) {
-      triggerSpotPickupTouch({ silent: true }).then(() => {
+      triggerSpotPickupTouchIfDue({ silent: true }).then(() => {
         if (appMode === 'pickup') refreshSelectedPickupCourseInBackground();
       });
     }
