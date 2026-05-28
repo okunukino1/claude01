@@ -836,7 +836,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.05.28-4</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.05.28-5</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -879,7 +879,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.05.28-4</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.05.28-5</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.05.28-4';
+const APP_VERSION = 'v2026.05.28-5';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -1097,6 +1097,9 @@ const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-pickup-location-admin-pin-v1';
 const PICKUP_LIST_TAB_KEY = 'rys-mapbox-pickup-list-tab-v1';
 const PUSH_SELECTED_COURSES_KEY = 'rys-mapbox-push-selected-courses-v1';
 const TEXT_SIZE_KEY = 'rys-mapbox-text-size-v1';
+const GEOCODE_CACHE_KEY = 'rys-mapbox-geocode-cache-v1';
+const GEOCODE_CACHE_MAX_ITEMS = 500;
+const PICKUP_GEOCODE_CONCURRENCY = 3;
 const TEXT_SIZE_OPTIONS = {
   small: 0.9,
   normal: 1,
@@ -2595,6 +2598,10 @@ function cleanAddressForGeocoding(addr) {
 }
 
 async function geocodeAddress(rawAddress) {
+  const cacheKey = geocodeCacheKey(rawAddress);
+  const cached = getCachedGeocode(cacheKey);
+  if (cached) return cached;
+
   const candidates = [
     cleanAddressForGeocoding(rawAddress),
     normalizeAddress(rawAddress)
@@ -2610,18 +2617,69 @@ async function geocodeAddress(rawAddress) {
       });
       const data = await res.json();
       if (data && data.lat && data.lng) {
-        return {
+        const result = {
           lat: data.lat,
           lng: data.lng,
           approx: !!data.approx,
           formatted: data.formatted || q
         };
+        if (!result.approx) setCachedGeocode(cacheKey, result);
+        return result;
       }
     } catch (e) {
       console.warn('geocode failed for', q, e);
     }
   }
   return null;
+}
+
+function geocodeCacheKey(rawAddress) {
+  return normalizeAddress(cleanAddressForGeocoding(rawAddress || '')).replace(/\s+/g, '');
+}
+
+function loadGeocodeCache() {
+  try {
+    const cache = JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY) || '{}');
+    return cache && typeof cache === 'object' && !Array.isArray(cache) ? cache : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function getCachedGeocode(key) {
+  if (!key) return null;
+  const cache = loadGeocodeCache();
+  const item = cache[key];
+  if (!item || !Number.isFinite(Number(item.lat)) || !Number.isFinite(Number(item.lng))) return null;
+  item.lastUsedAt = Date.now();
+  localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
+  return {
+    lat: Number(item.lat),
+    lng: Number(item.lng),
+    approx: !!item.approx,
+    formatted: item.formatted || ''
+  };
+}
+
+function setCachedGeocode(key, result) {
+  if (!key || !result) return;
+  const cache = loadGeocodeCache();
+  cache[key] = {
+    lat: Number(result.lat),
+    lng: Number(result.lng),
+    approx: !!result.approx,
+    formatted: result.formatted || '',
+    savedAt: Date.now(),
+    lastUsedAt: Date.now()
+  };
+  const entries = Object.entries(cache);
+  if (entries.length > GEOCODE_CACHE_MAX_ITEMS) {
+    entries
+      .sort((a, b) => Number(a[1].lastUsedAt || a[1].savedAt || 0) - Number(b[1].lastUsedAt || b[1].savedAt || 0))
+      .slice(0, entries.length - GEOCODE_CACHE_MAX_ITEMS)
+      .forEach(([oldKey]) => delete cache[oldKey]);
+  }
+  localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
 }
 
 async function addDelivery({ address, note }) {
@@ -4004,6 +4062,38 @@ function restartPickupAutoSync() {
   pickupSyncTimer = setInterval(() => syncPickupProgressFromSheets(true), PICKUP_SYNC_INTERVAL_MS);
 }
 
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await worker(items[index], index);
+    }
+  }));
+  return results;
+}
+
+async function resolvePickupImportItem(item, index, total, cachedRegular, options) {
+  const spotItem = isSpotPickupItem(item);
+  const cachedItem = !spotItem ? cachedRegular.get(regularPickupIdentity(item)) : null;
+  const cachedLocation = cachedItem && cachedItem.address === item.address
+    ? pickupLocationFromItem(cachedItem)
+    : null;
+  const savedLocation = pickupLocationFromItem(item) || cachedLocation;
+  let result = savedLocation;
+  if (result) {
+    if (!options.background && !options.cacheVisible) {
+      showLoading(`${cachedLocation ? '保存済み位置' : '固定位置'}を読み込み中... ${index + 1}/${total}`);
+    }
+  } else {
+    if (!options.background) showLoading(`住所を検索中... ${index + 1}/${total}`);
+    result = await geocodeAddress(item.address);
+  }
+  return { item, spotItem, cachedItem, savedLocation, result };
+}
+
 async function importPickupItems(items, replaceList, options = {}) {
   items = dedupeSpotPickupItems(items);
   const courseName = options.courseName || getSelectedPickupSheet();
@@ -4017,23 +4107,14 @@ async function importPickupItems(items, replaceList, options = {}) {
   const imported = [];
   const failed = [];
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const spotItem = isSpotPickupItem(item);
-    const cachedItem = !spotItem ? cachedRegular.get(regularPickupIdentity(item)) : null;
-    const cachedLocation = cachedItem && cachedItem.address === item.address
-      ? pickupLocationFromItem(cachedItem)
-      : null;
-    const savedLocation = pickupLocationFromItem(item) || cachedLocation;
-    let result = savedLocation;
-    if (result) {
-      if (!options.background && !options.cacheVisible) {
-        showLoading(`${cachedLocation ? '保存済み位置' : '固定位置'}を読み込み中... ${i + 1}/${items.length}`);
-      }
-    } else {
-      if (!options.background) showLoading(`住所を検索中... ${i + 1}/${items.length}`);
-      result = await geocodeAddress(item.address);
-    }
+  const resolvedItems = await mapWithConcurrency(
+    items,
+    PICKUP_GEOCODE_CONCURRENCY,
+    (item, index) => resolvePickupImportItem(item, index, items.length, cachedRegular, options)
+  );
+
+  for (const resolved of resolvedItems) {
+    const { item, spotItem, cachedItem, savedLocation, result } = resolved;
     if (!result) {
       failed.push(item);
       continue;
