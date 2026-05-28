@@ -1456,30 +1456,53 @@ function loadStoredDeliveries(key) {
 }
 
 function storedPickupIdentity(d) {
-  if (isSpotPickupDelivery(d)) {
+  if (isPickupListSpotDelivery(d)) {
     return `spot:${spotPickupNaturalKey(d) || String(d.spotPickupId || d.pickupId || d.id || '')}`;
   }
   if (isPickupBackedDelivery(d)) return `pickup:${pickupProgressKey(d) || d.id || ''}`;
   return '';
 }
 
-function migrateMisfiledPickupDeliveries() {
-  const deliveryItems = loadStoredDeliveries(STORAGE_KEY);
-  const misplaced = deliveryItems.filter(d => isPickupBackedDelivery(d) || isSpotPickupDelivery(d));
-  if (misplaced.length === 0) return;
+function isPickupStorageRecord(d) {
+  return isPickupBackedDelivery(d) || isPickupListSpotDelivery(d);
+}
 
-  const keptDeliveries = deliveryItems.filter(d => !(isPickupBackedDelivery(d) || isSpotPickupDelivery(d)));
+function movePickupRecordsToPickupStorage(items) {
+  const pickupRecords = items.filter(isPickupStorageRecord);
+  if (pickupRecords.length === 0) return items;
+
   const pickupItems = loadStoredDeliveries(PICKUP_STORAGE_KEY);
   const merged = new Map();
-  [...misplaced, ...pickupItems].forEach(d => {
+  [...pickupItems, ...pickupRecords].forEach(d => {
     const key = storedPickupIdentity(d) || `id:${d.id || ''}`;
     merged.set(key, d);
   });
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(keptDeliveries));
   localStorage.setItem(PICKUP_STORAGE_KEY, JSON.stringify([...merged.values()]));
+  return items.filter(d => !isPickupStorageRecord(d));
+}
+
+function removePickupRecordsFromDeliveryState() {
+  if (appMode !== 'delivery') return false;
+  const keptDeliveries = movePickupRecordsToPickupStorage(deliveries);
+  if (keptDeliveries.length === deliveries.length) return false;
+
+  const activeWasPickup = activeDeliveryId && !keptDeliveries.some(d => d.id === activeDeliveryId);
+  deliveries = keptDeliveries;
+  if (activeWasPickup) activeDeliveryId = null;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(deliveries));
+  return true;
+}
+
+function migrateMisfiledPickupDeliveries() {
+  const deliveryItems = loadStoredDeliveries(STORAGE_KEY);
+  const keptDeliveries = movePickupRecordsToPickupStorage(deliveryItems);
+  if (keptDeliveries.length === deliveryItems.length) return;
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(keptDeliveries));
 }
 
 function saveDeliveries() {
+  removePickupRecordsFromDeliveryState();
   localStorage.setItem(currentStorageKey(), JSON.stringify(deliveries));
   if (appMode === 'pickup') {
     const sheetName = getSelectedPickupSheet();
@@ -1489,6 +1512,7 @@ function saveDeliveries() {
 function loadDeliveries() {
   migrateMisfiledPickupDeliveries();
   deliveries = loadStoredDeliveries(currentStorageKey());
+  removePickupRecordsFromDeliveryState();
   if (appMode === 'pickup') {
     const deduped = dedupeStoredSpotPickups(deliveries);
     if (deduped.length !== deliveries.length) {
@@ -2445,6 +2469,7 @@ function buildMarkerOverlapInfo() {
 
 function renderMarkers() {
   if (!map) return;
+  removePickupRecordsFromDeliveryState();
   clearAllMarkers();
   const modeKey = LABEL_MODES[labelModeIndex].key;
   const overlapInfo = buildMarkerOverlapInfo();
@@ -2616,6 +2641,7 @@ function pickupListDisplay(d) {
 }
 
 function renderList() {
+  removePickupRecordsFromDeliveryState();
   const body = $('list-body');
   const stat = $('list-stat');
   updatePickupListTabs();
