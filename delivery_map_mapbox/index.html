@@ -836,7 +836,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.05.28-5</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.05.28-6</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -879,7 +879,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.05.28-5</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.05.28-6</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.05.28-5';
+const APP_VERSION = 'v2026.05.28-6';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -1100,6 +1100,8 @@ const TEXT_SIZE_KEY = 'rys-mapbox-text-size-v1';
 const GEOCODE_CACHE_KEY = 'rys-mapbox-geocode-cache-v1';
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const PICKUP_GEOCODE_CONCURRENCY = 3;
+const PHOTO_OCR_MAX_SIZE = 1120;
+const PHOTO_OCR_QUALITY = 0.8;
 const TEXT_SIZE_OPTIONS = {
   small: 0.9,
   normal: 1,
@@ -1117,6 +1119,7 @@ const LABEL_MODES = [
   { key: 'bldg', label: '建物' }
 ];
 let labelModeIndex = 1;
+const geocodeInFlight = new Map();
 
 const PICKUP_SHEETS = [
   '小舟町店',
@@ -2601,7 +2604,18 @@ async function geocodeAddress(rawAddress) {
   const cacheKey = geocodeCacheKey(rawAddress);
   const cached = getCachedGeocode(cacheKey);
   if (cached) return cached;
+  if (cacheKey && geocodeInFlight.has(cacheKey)) return geocodeInFlight.get(cacheKey);
 
+  const lookup = geocodeAddressUncached(rawAddress, cacheKey);
+  if (cacheKey) geocodeInFlight.set(cacheKey, lookup);
+  try {
+    return await lookup;
+  } finally {
+    if (cacheKey) geocodeInFlight.delete(cacheKey);
+  }
+}
+
+async function geocodeAddressUncached(rawAddress, cacheKey) {
   const candidates = [
     cleanAddressForGeocoding(rawAddress),
     normalizeAddress(rawAddress)
@@ -2623,7 +2637,7 @@ async function geocodeAddress(rawAddress) {
           approx: !!data.approx,
           formatted: data.formatted || q
         };
-        if (!result.approx) setCachedGeocode(cacheKey, result);
+        if (cacheKey && !result.approx) setCachedGeocode(cacheKey, result);
         return result;
       }
     } catch (e) {
@@ -2631,6 +2645,12 @@ async function geocodeAddress(rawAddress) {
     }
   }
   return null;
+}
+
+function prefetchGeocodeAddress(rawAddress) {
+  const cacheKey = geocodeCacheKey(rawAddress);
+  if (!cacheKey || getCachedGeocode(cacheKey) || geocodeInFlight.has(cacheKey)) return;
+  geocodeAddress(rawAddress).catch(e => console.warn('geocode prefetch failed', e));
 }
 
 function geocodeCacheKey(rawAddress) {
@@ -3196,7 +3216,7 @@ async function readPendingPhoto() {
   closeModal('modal-photo-preview');
   showLoading('画像を圧縮中...');
   try {
-    const compressed = await compressImage(file, 1280, 0.85, rotation);
+    const compressed = await compressImage(file, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, rotation);
     showLoading('画像を変換中...');
     const base64 = await blobToBase64(compressed);
     showLoading('AI で住所を読み取り中...');
@@ -3215,6 +3235,7 @@ async function readPendingPhoto() {
     $('add-address').value = data.address || '';
     $('add-note').value = data.note || data.building || '';
     openModal('modal-add');
+    prefetchGeocodeAddress(data.address || '');
   } catch (e) {
     hideLoading();
     showToast('画像処理に失敗しました: ' + e.message, true);

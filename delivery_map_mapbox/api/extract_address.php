@@ -79,7 +79,7 @@ $requestBody = [
   ]],
   'generationConfig' => [
     'temperature' => 0,
-    'maxOutputTokens' => 512,
+    'maxOutputTokens' => 256,
     'responseMimeType' => 'application/json'
   ]
 ];
