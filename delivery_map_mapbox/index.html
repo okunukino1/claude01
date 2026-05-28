@@ -61,6 +61,13 @@
     background: var(--accent); color: white;
     border-radius: 3px; margin-left: 6px; vertical-align: middle;
   }
+  .topbar h1 .app-version {
+    font-size: 9px;
+    font-weight: 700;
+    color: #d8d3c2;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
   .topbar button {
     background: transparent; color: var(--paper);
     border: 1px solid var(--paper); border-radius: 6px;
@@ -129,8 +136,8 @@
     z-index: 2;
   }
   .delivery-marker.spot .delivery-pin .pin-num {
-    font-size: 11px;
-    top: 9px;
+    font-size: 16px;
+    top: 7px;
   }
   .delivery-marker.approx .delivery-pin .pin-num { color: var(--ink); }
 
@@ -719,6 +726,16 @@
   }
   .text-size-choice.size-small { font-size: calc(12px * var(--text-scale)); }
   .text-size-choice.size-large { font-size: calc(17px * var(--text-scale)); }
+  .app-version-info {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border: 1px solid #d8d0b7;
+    border-radius: 6px;
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    font-weight: 700;
+    font-size: calc(12px * var(--text-scale));
+  }
 
   /* Text sizing is intentionally separate from map and marker dimensions. */
   .topbar h1,
@@ -731,6 +748,7 @@
   .confirm-msg,
   .loading-overlay .msg { font-size: calc(14px * var(--text-scale)); }
   .topbar h1 .badge-test,
+  .topbar h1 .app-version,
   .map-control .gps-status { font-size: calc(10px * var(--text-scale)); }
   .topbar button,
   .delivery-pin .pin-num,
@@ -744,7 +762,6 @@
   .notification-install,
   .toast { font-size: calc(13px * var(--text-scale)); }
   .item-info .pickup-company { font-size: calc(13px * var(--text-scale)); }
-  .delivery-marker.spot .delivery-pin .pin-num,
   .delivery-label,
   .overlap-count-label,
   .list-header .stat,
@@ -819,7 +836,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.05.28-4</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -862,6 +879,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.05.28-4</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1060,6 +1078,7 @@
 <script>
 'use strict';
 
+const APP_VERSION = 'v2026.05.28-4';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -1440,6 +1459,13 @@ async function disablePushNotifications() {
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function updateAppVersionLabels() {
+  ['app-version-label', 'menu-app-version'].forEach(id => {
+    const el = $(id);
+    if (el) el.textContent = APP_VERSION;
+  });
 }
 
 function currentStorageKey() {
@@ -3382,11 +3408,11 @@ function spotPickupTimeCode(value) {
     .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
     .replace(/[〜～－ー−]/g, '-')
     .replace(/[　\s]/g, '');
-  if (/9時-?13時|09時-?13時/.test(s)) return 'S09';
-  if (/14時-?16時/.test(s)) return 'S14';
-  if (/16時-?18時/.test(s)) return 'S16';
+  if (/9時-?13時|09時-?13時/.test(s)) return '09';
+  if (/14時-?16時/.test(s)) return '14';
+  if (/16時-?18時/.test(s)) return '16';
   const hour = s.match(/(\d{1,2})時/);
-  return hour ? `S${hour[1].padStart(2, '0')}` : 'S';
+  return hour ? hour[1].padStart(2, '0') : '?';
 }
 
 function isTruthyValue(value) {
@@ -4718,6 +4744,7 @@ document.addEventListener('visibilitychange', () => {
 
 (async function init() {
   try {
+    updateAppVersionLabels();
     applyTextSize(currentTextSize(), false);
     if (localStorage.getItem(LIST_COLLAPSED_KEY) === '1') {
       document.body.classList.add('list-collapsed');
