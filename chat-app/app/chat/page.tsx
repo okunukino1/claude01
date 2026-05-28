@@ -10,9 +10,13 @@ export default function ChatPage() {
     fetch('/api/rooms', { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
       .then((d) => {
-        if (d.rooms?.length > 0) router.replace(`/chat/${d.rooms[0].id}`)
+        if (d.rooms?.length > 0) {
+          router.replace(`/chat/${d.rooms[0].id}`)
+        } else {
+          router.replace('/chat/welcome')
+        }
       })
-      .catch(() => {})
+      .catch(() => router.replace('/chat/welcome'))
   }, [router])
 
   return (
