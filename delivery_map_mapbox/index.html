@@ -836,7 +836,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.05.28-6</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.05.28-7</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -879,7 +879,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.05.28-6</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.05.28-7</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.05.28-6';
+const APP_VERSION = 'v2026.05.28-7';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -1120,6 +1120,7 @@ const LABEL_MODES = [
 ];
 let labelModeIndex = 1;
 const geocodeInFlight = new Map();
+let geocodeCacheObj = null;
 
 const PICKUP_SHEETS = [
   '小舟町店',
@@ -1464,6 +1465,9 @@ async function disablePushNotifications() {
 }
 
 function uid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
@@ -2657,22 +2661,32 @@ function geocodeCacheKey(rawAddress) {
   return normalizeAddress(cleanAddressForGeocoding(rawAddress || '')).replace(/\s+/g, '');
 }
 
-function loadGeocodeCache() {
+function getGeocodeCacheObject() {
+  if (geocodeCacheObj !== null) return geocodeCacheObj;
   try {
-    const cache = JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY) || '{}');
-    return cache && typeof cache === 'object' && !Array.isArray(cache) ? cache : {};
+    const parsed = JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY) || '{}');
+    geocodeCacheObj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch (e) {
-    return {};
+    geocodeCacheObj = {};
   }
+  return geocodeCacheObj;
+}
+
+function persistGeocodeCache() {
+  if (geocodeCacheObj === null) return;
+  localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(geocodeCacheObj));
+}
+
+function loadGeocodeCache() {
+  return getGeocodeCacheObject();
 }
 
 function getCachedGeocode(key) {
   if (!key) return null;
-  const cache = loadGeocodeCache();
+  const cache = getGeocodeCacheObject();
   const item = cache[key];
   if (!item || !Number.isFinite(Number(item.lat)) || !Number.isFinite(Number(item.lng))) return null;
   item.lastUsedAt = Date.now();
-  localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
   return {
     lat: Number(item.lat),
     lng: Number(item.lng),
@@ -2683,7 +2697,7 @@ function getCachedGeocode(key) {
 
 function setCachedGeocode(key, result) {
   if (!key || !result) return;
-  const cache = loadGeocodeCache();
+  const cache = getGeocodeCacheObject();
   cache[key] = {
     lat: Number(result.lat),
     lng: Number(result.lng),
@@ -2699,7 +2713,7 @@ function setCachedGeocode(key, result) {
       .slice(0, entries.length - GEOCODE_CACHE_MAX_ITEMS)
       .forEach(([oldKey]) => delete cache[oldKey]);
   }
-  localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
+  persistGeocodeCache();
 }
 
 async function addDelivery({ address, note }) {
@@ -4031,22 +4045,22 @@ async function mergePickupSheetSpotItems(items, options = {}) {
 
 async function syncPickupProgressFromSheets(silent = true) {
   if (appMode !== 'pickup' || pickupSyncInFlight) return;
-  await retryPendingPickupProgress({ silent: true });
-  const sheetSet = new Set(deliveries.filter(isPickupBackedDelivery).map(d => d.pickupSheet));
-  const selectedSpotSheet = spotSheetForPickupCourse(getSelectedPickupSheet());
-  if (selectedSpotSheet) {
-    await triggerSpotPickupTouchIfDue({ silent: true });
-    sheetSet.add(selectedSpotSheet);
-  }
-  const sheets = [...sheetSet].filter(Boolean);
-  if (sheets.length === 0) {
-    pickupLastSyncedAt = null;
-    renderList();
-    return;
-  }
-
   pickupSyncInFlight = true;
   try {
+    await retryPendingPickupProgress({ silent: true });
+    const sheetSet = new Set(deliveries.filter(isPickupBackedDelivery).map(d => d.pickupSheet));
+    const selectedSpotSheet = spotSheetForPickupCourse(getSelectedPickupSheet());
+    if (selectedSpotSheet) {
+      await triggerSpotPickupTouchIfDue({ silent: true });
+      sheetSet.add(selectedSpotSheet);
+    }
+    const sheets = [...sheetSet].filter(Boolean);
+    if (sheets.length === 0) {
+      pickupLastSyncedAt = null;
+      renderList();
+      return;
+    }
+
     let changed = false;
     for (const sheet of sheets) {
       const data = await fetchPickupItems(sheet, false);

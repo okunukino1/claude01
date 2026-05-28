@@ -32,6 +32,10 @@ if (!is_array($input)) {
 
 $image = $input['image'] ?? '';
 $mimeType = $input['mimeType'] ?? 'image/jpeg';
+$allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+if (!in_array($mimeType, $allowedMimeTypes, true)) {
+  $mimeType = 'image/jpeg';
+}
 if (!$image || !preg_match('/^[A-Za-z0-9+\/\r\n=]+$/', $image)) {
   http_response_code(400);
   echo json_encode(['error' => '画像データが不正です'], JSON_UNESCAPED_UNICODE);
