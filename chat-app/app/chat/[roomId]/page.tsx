@@ -7,6 +7,7 @@ import { CreateRoomModal } from '@/components/CreateRoomModal'
 import { SearchPanel } from '@/components/SearchPanel'
 import { AiAnalysisModal } from '@/components/AiAnalysisModal'
 import { ManageMembersModal } from '@/components/ManageMembersModal'
+import { ProfileModal } from '@/components/ProfileModal'
 import { useNotifications } from '@/hooks/useNotifications'
 
 interface User { id: string; email: string; displayName: string; avatarColor: string }
@@ -17,9 +18,10 @@ interface Message {
   createdAt: string; user: User; attachments: Attachment[]; reactions: Reaction[]
   replyTo?: { content: string; user: { displayName: string } } | null
 }
+interface RoomMember { userId: string; lastReadAt?: string | null; user: User }
 interface Room {
   id: string; name: string; description?: string; isGroup: boolean
-  members: { userId: string; user: User }[]
+  members: RoomMember[]
   messages: Message[]
   updatedAt: string
 }
@@ -37,6 +39,12 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes}B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
+
+function getRoomDisplayName(room: Room, currentUserId: string): string {
+  if (room.isGroup) return room.name
+  const other = room.members.find((m) => m.userId !== currentUserId)
+  return other?.user?.displayName || room.name
 }
 
 export default function ChatRoomPage() {
@@ -59,12 +67,19 @@ export default function ChatRoomPage() {
   const [uploading, setUploading] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showMembers, setShowMembers] = useState(false)
-  // モバイル: true=サイドバー表示, false=チャット表示
+  const [showProfile, setShowProfile] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null)
   const [showSidebar, setShowSidebar] = useState(false)
   const { requestPermission, notify, permission } = useNotifications(roomId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const currentRoomIdRef = useRef(roomId)
+  const tokenRef = useRef(token)
+
+  useEffect(() => { currentRoomIdRef.current = roomId }, [roomId])
+  useEffect(() => { tokenRef.current = token }, [token])
 
   const authFetch = useCallback((url: string, opts?: RequestInit) => {
     const t = localStorage.getItem('auth_token') || token
@@ -75,6 +90,7 @@ export default function ChatRoomPage() {
     const t = localStorage.getItem('auth_token') || ''
     if (!t) { router.replace('/login'); return }
     setToken(t)
+    tokenRef.current = t
 
     fetch('/api/auth/me', { headers: { Authorization: `Bearer ${t}` } })
       .then((r) => { if (!r.ok) throw new Error(); return r.json() })
@@ -90,6 +106,7 @@ export default function ChatRoomPage() {
     if (!token) return
     const sock = io({ auth: { token } })
     setSocket(sock)
+
     sock.on('new_message', (msg: Message) => {
       setMessages((prev) => {
         if (prev.find((m) => m.id === msg.id)) return prev
@@ -99,20 +116,41 @@ export default function ChatRoomPage() {
         const updated = prev
           .map((r) => r.id === msg.roomId ? { ...r, messages: [msg], updatedAt: msg.createdAt } : r)
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-        // 自分のメッセージ以外は通知
         if (msg.userId !== (sock as any).data?.userId) {
-          const room = updated.find(r => r.id === msg.roomId)
+          const room = updated.find((r) => r.id === msg.roomId)
           notify(msg.user?.displayName || '誰か', msg.content || 'ファイルを送信しました', msg.roomId, room?.name || 'チャット')
         }
         return updated
       })
+      if (msg.roomId === currentRoomIdRef.current) {
+        const t = localStorage.getItem('auth_token') || tokenRef.current
+        fetch(`/api/rooms/${msg.roomId}/read`, { method: 'PUT', headers: { Authorization: `Bearer ${t}` } })
+      }
     })
+
+    sock.on('message_deleted', ({ messageId }: { messageId: string }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, content: 'このメッセージは削除されました', type: 'deleted' } : m
+        )
+      )
+    })
+
+    sock.on('room_read', ({ userId: readerId, roomId: rId, lastReadAt }: { userId: string; roomId: string; lastReadAt: string }) => {
+      setRooms((prev) =>
+        prev.map((r) => {
+          if (r.id !== rId) return r
+          return { ...r, members: r.members.map((m) => m.userId === readerId ? { ...m, lastReadAt } : m) }
+        })
+      )
+    })
+
     sock.on('user_typing', ({ displayName }: { userId: string; displayName: string }) => {
       setTypingUsers((prev) => new Set([...prev, displayName]))
     })
     sock.on('user_stop_typing', () => setTypingUsers(new Set()))
     return () => { sock.disconnect() }
-  }, [token])
+  }, [token, notify])
 
   useEffect(() => {
     if (!socket || !roomId) return
@@ -128,11 +166,20 @@ export default function ChatRoomPage() {
       .catch(() => {})
     const room = rooms.find((r) => r.id === roomId)
     if (room) setCurrentRoom(room)
-    // モバイルでルームを選択したらチャット画面へ
     setShowSidebar(false)
+
+    authFetch(`/api/rooms/${roomId}/read`, { method: 'PUT' }).then(() => {
+      const now = new Date().toISOString()
+      if (socket && user) socket.emit('mark_read', { roomId, userId: user.id, lastReadAt: now })
+      setRooms((prev) =>
+        prev.map((r) => {
+          if (r.id !== roomId || !user) return r
+          return { ...r, members: r.members.map((m) => m.userId === user.id ? { ...m, lastReadAt: now } : m) }
+        })
+      )
+    })
   }, [roomId, token])
 
-  // roomsが読み込まれた後にcurrentRoomを設定
   useEffect(() => {
     const room = rooms.find((r) => r.id === roomId)
     if (room) setCurrentRoom(room)
@@ -156,8 +203,43 @@ export default function ChatRoomPage() {
       body: JSON.stringify({ content, replyToId }),
     })
     const data = await res.json()
-    if (data.message && socket) {
-      socket.emit('send_message', { ...data.message, roomId })
+    if (data.message && socket) socket.emit('send_message', { ...data.message, roomId })
+  }
+
+  async function deleteMessage(messageId: string) {
+    setContextMenu(null)
+    const res = await authFetch(`/api/messages/${messageId}`, { method: 'DELETE' })
+    if (res.ok && socket) {
+      socket.emit('delete_message', { roomId, messageId })
+      setMessages((prev) =>
+        prev.map((m) => m.id === messageId ? { ...m, content: 'このメッセージは削除されました', type: 'deleted' } : m)
+      )
+    }
+  }
+
+  async function leaveRoom() {
+    if (!confirm('このグループを退出しますか？')) return
+    setShowMenu(false)
+    const res = await authFetch(`/api/rooms/${roomId}/leave`, { method: 'DELETE' })
+    if (res.ok) {
+      setRooms((prev) => prev.filter((r) => r.id !== roomId))
+      router.replace('/chat/welcome')
+    }
+  }
+
+  async function startDM(otherUser: User) {
+    setShowMembers(false)
+    const existing = rooms.find((r) => !r.isGroup && r.members.some((m) => m.userId === otherUser.id))
+    if (existing) { router.push(`/chat/${existing.id}`); return }
+    const res = await authFetch('/api/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: otherUser.displayName, memberIds: [otherUser.id] }),
+    })
+    const data = await res.json()
+    if (data.room) {
+      setRooms((prev) => [data.room, ...prev])
+      router.push(`/chat/${data.room.id}`)
     }
   }
 
@@ -169,7 +251,6 @@ export default function ChatRoomPage() {
       const upRes = await authFetch('/api/upload', { method: 'POST', body: formData })
       const upData = await upRes.json()
       if (!upRes.ok) return
-
       const isImage = file.type.startsWith('image/')
       const res = await authFetch(`/api/rooms/${roomId}/messages`, {
         method: 'POST',
@@ -217,6 +298,31 @@ export default function ChatRoomPage() {
     setShowSidebar(false)
   }
 
+  function getReadCount(msg: Message): number {
+    if (!currentRoom || !user) return 0
+    return currentRoom.members.filter(
+      (m) => m.userId !== user.id && m.lastReadAt && new Date(m.lastReadAt) >= new Date(msg.createdAt)
+    ).length
+  }
+
+  function handleTouchStart(e: React.TouchEvent, msg: Message) {
+    if (msg.userId !== user?.id || msg.type === 'deleted') return
+    const touch = e.touches[0]
+    longPressTimerRef.current = setTimeout(() => {
+      setContextMenu({ messageId: msg.id, x: touch.clientX, y: touch.clientY })
+    }, 500)
+  }
+
+  function handleTouchEnd() {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
+  }
+
+  function handleContextMenu(e: React.MouseEvent, msg: Message) {
+    if (msg.userId !== user?.id || msg.type === 'deleted') return
+    e.preventDefault()
+    setContextMenu({ messageId: msg.id, x: e.clientX, y: e.clientY })
+  }
+
   if (!user) return null
 
   const groupedMessages: { date: string; messages: Message[] }[] = []
@@ -227,10 +333,8 @@ export default function ChatRoomPage() {
     else groupedMessages.push({ date, messages: [msg] })
   })
 
-  // サイドバーコンテンツ
   const sidebarContent = (
     <div className="flex flex-col h-full bg-white">
-      {/* サイドバーヘッダー */}
       <div className="p-3 border-b border-gray-200 safe-top">
         {showSearch ? (
           <SearchPanel token={token} onClose={() => setShowSearch(false)} />
@@ -243,37 +347,25 @@ export default function ChatRoomPage() {
               <span className="font-semibold text-gray-900">社内チャット</span>
             </div>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => setShowSearch(true)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
-                aria-label="検索"
-              >
-                🔍
-              </button>
-              <button
-                onClick={() => setShowCreateRoom(true)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
-                aria-label="グループ作成"
-              >
-                ✏️
-              </button>
+              <button onClick={() => setShowSearch(true)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" aria-label="検索">🔍</button>
+              <button onClick={() => setShowCreateRoom(true)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" aria-label="グループ作成">✏️</button>
             </div>
           </div>
         )}
       </div>
 
-      {/* ルーム一覧 */}
       {!showSearch && (
         <div className="flex-1 overflow-y-auto">
           {rooms.length === 0 && (
             <div className="p-6 text-center text-gray-400 text-sm">
-              グループがありません<br />
+              チャットがありません<br />
               <button onClick={() => setShowCreateRoom(true)} className="mt-2 text-green-600 font-medium">作成する</button>
             </div>
           )}
           {rooms.map((room) => {
             const lastMsg = room.messages?.[0]
             const isActive = room.id === roomId
+            const displayName = getRoomDisplayName(room, user.id)
             return (
               <button
                 key={room.id}
@@ -285,7 +377,7 @@ export default function ChatRoomPage() {
                 </div>
                 <div className="flex-1 text-left min-w-0">
                   <div className="flex items-center justify-between gap-1">
-                    <span className="text-sm font-medium text-gray-900 truncate">{room.name}</span>
+                    <span className="text-sm font-medium text-gray-900 truncate">{displayName}</span>
                     {lastMsg && <span className="text-xs text-gray-400 flex-shrink-0">{formatTime(lastMsg.createdAt)}</span>}
                   </div>
                   {lastMsg && (
@@ -300,14 +392,18 @@ export default function ChatRoomPage() {
         </div>
       )}
 
-      {/* ユーザー情報 */}
       {!showSearch && (
         <div className="p-3 border-t border-gray-200 flex items-center gap-2 safe-bottom">
-          <Avatar displayName={user.displayName} avatarColor={user.avatarColor} size="sm" />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-gray-900 truncate">{user.displayName}</p>
-            <p className="text-xs text-gray-500 truncate">{user.email}</p>
-          </div>
+          <button
+            onClick={() => setShowProfile(true)}
+            className="flex items-center gap-2 flex-1 min-w-0 hover:bg-gray-50 rounded-lg p-1 -ml-1 text-left"
+          >
+            <Avatar displayName={user.displayName} avatarColor={user.avatarColor} size="sm" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-900 truncate">{user.displayName}</p>
+              <p className="text-xs text-gray-400 truncate">タップして編集</p>
+            </div>
+          </button>
           <div className="flex items-center gap-1">
             <button
               onClick={async () => {
@@ -335,64 +431,45 @@ export default function ChatRoomPage() {
     </div>
   )
 
-  // チャットコンテンツ
   const chatContent = (
     <div className="flex flex-col h-full bg-white">
       {currentRoom ? (
         <>
-          {/* チャットヘッダー */}
           <div className="flex items-center gap-2 px-3 py-3 border-b border-gray-200 bg-white safe-top">
-            {/* モバイル: 戻るボタン */}
-            <button
-              onClick={() => setShowSidebar(true)}
-              className="md:hidden p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg flex-shrink-0"
-              aria-label="戻る"
-            >
-              ‹
-            </button>
+            <button onClick={() => setShowSidebar(true)} className="md:hidden p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg flex-shrink-0" aria-label="戻る">‹</button>
             <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
               <span>{currentRoom.isGroup ? '👥' : '👤'}</span>
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="font-semibold text-gray-900 truncate">{currentRoom.name}</h2>
-              <button onClick={() => setShowMembers(true)} className="text-xs text-green-600 hover:underline active:underline">
-                    {currentRoom.members?.length}人のメンバー
-                  </button>
+              <h2 className="font-semibold text-gray-900 truncate">{getRoomDisplayName(currentRoom, user.id)}</h2>
+              {currentRoom.isGroup && (
+                <button onClick={() => setShowMembers(true)} className="text-xs text-green-600 hover:underline active:underline">
+                  {currentRoom.members?.length}人のメンバー
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
-              <button
-                onClick={() => setShowAI(true)}
-                className="hidden sm:flex px-2.5 py-1.5 text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-full font-medium items-center gap-1"
-              >
-                ✨ AI分析
-              </button>
-              {/* モバイルではAIボタンをアイコンのみに */}
-              <button
-                onClick={() => setShowAI(true)}
-                className="sm:hidden p-2 text-purple-600 hover:bg-purple-50 rounded-lg"
-                aria-label="AI分析"
-              >
-                ✨
-              </button>
+              <button onClick={() => setShowAI(true)} className="hidden sm:flex px-2.5 py-1.5 text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-full font-medium items-center gap-1">✨ AI分析</button>
+              <button onClick={() => setShowAI(true)} className="sm:hidden p-2 text-purple-600 hover:bg-purple-50 rounded-lg" aria-label="AI分析">✨</button>
               <div className="relative">
-                <button
-                  onClick={() => setShowMenu(!showMenu)}
-                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg text-lg leading-none"
-                >
-                  ⋮
-                </button>
+                <button onClick={() => setShowMenu(!showMenu)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg text-lg leading-none">⋮</button>
                 {showMenu && (
                   <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-10 py-1 min-w-[170px]">
                     <button onClick={() => exportChat('csv')} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">📊 CSVエクスポート</button>
                     <button onClick={() => exportChat('json')} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">📄 JSONエクスポート</button>
+                    {currentRoom.isGroup && (
+                      <button onClick={leaveRoom} className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 active:bg-red-100">🚪 グループを退出</button>
+                    )}
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* メッセージエリア */}
-          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 bg-gray-50">
+          <div
+            className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 bg-gray-50"
+            onClick={() => { setContextMenu(null); setShowMenu(false) }}
+          >
             {groupedMessages.map(({ date, messages: msgs }) => (
               <div key={date}>
                 <div className="flex items-center justify-center my-4">
@@ -400,14 +477,19 @@ export default function ChatRoomPage() {
                 </div>
                 {msgs.map((msg) => {
                   const isOwn = msg.userId === user.id
+                  const isDeleted = msg.type === 'deleted'
+                  const readCount = isOwn ? getReadCount(msg) : 0
                   return (
-                    <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} gap-2 mb-1`}>
+                    <div
+                      key={msg.id}
+                      className={`flex ${isOwn ? 'justify-end' : 'justify-start'} gap-2 mb-1`}
+                      onTouchStart={(e) => handleTouchStart(e, msg)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchMove={handleTouchEnd}
+                      onContextMenu={(e) => handleContextMenu(e, msg)}
+                    >
                       {!isOwn && (
-                        <Avatar
-                          displayName={msg.user?.displayName || '?'}
-                          avatarColor={msg.user?.avatarColor || '#999'}
-                          size="sm"
-                        />
+                        <Avatar displayName={msg.user?.displayName || '?'} avatarColor={msg.user?.avatarColor || '#999'} size="sm" />
                       )}
                       <div className={`max-w-[75%] sm:max-w-[65%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
                         {!isOwn && (
@@ -419,54 +501,53 @@ export default function ChatRoomPage() {
                           </div>
                         )}
                         <div
-                          className={`relative px-3 py-2 rounded-2xl text-sm break-words ${
-                            isOwn
-                              ? 'bg-green-500 text-white rounded-br-sm'
-                              : 'bg-white text-gray-900 shadow-sm border border-gray-100 rounded-bl-sm'
+                          className={`relative px-3 py-2 rounded-2xl text-sm break-words group ${
+                            isDeleted
+                              ? 'bg-gray-100 text-gray-400 italic border border-gray-200'
+                              : isOwn
+                                ? 'bg-green-500 text-white rounded-br-sm'
+                                : 'bg-white text-gray-900 shadow-sm border border-gray-100 rounded-bl-sm'
                           }`}
                         >
-                          {msg.content && <p className="whitespace-pre-wrap">{msg.content}</p>}
-                          {msg.attachments?.map((att) => (
-                            <div key={att.id} className="mt-1">
-                              {att.mimeType?.startsWith('image/') ? (
-                                <img
-                                  src={att.fileUrl}
-                                  alt={att.fileName}
-                                  className="max-w-full rounded-xl cursor-pointer"
-                                  style={{ maxHeight: '240px', objectFit: 'cover' }}
-                                  onClick={() => window.open(att.fileUrl)}
-                                />
-                              ) : (
-                                <a
-                                  href={att.fileUrl}
-                                  download={att.fileName}
-                                  className={`flex items-center gap-2 text-xs ${isOwn ? 'text-green-100' : 'text-blue-600'} hover:underline`}
+                          {isDeleted ? (
+                            <p className="text-xs">このメッセージは削除されました</p>
+                          ) : (
+                            <>
+                              {msg.content && <p className="whitespace-pre-wrap">{msg.content}</p>}
+                              {msg.attachments?.map((att) => (
+                                <div key={att.id} className="mt-1">
+                                  {att.mimeType?.startsWith('image/') ? (
+                                    <img src={att.fileUrl} alt={att.fileName} className="max-w-full rounded-xl cursor-pointer" style={{ maxHeight: '240px', objectFit: 'cover' }} onClick={() => window.open(att.fileUrl)} />
+                                  ) : (
+                                    <a href={att.fileUrl} download={att.fileName} className={`flex items-center gap-2 text-xs ${isOwn ? 'text-green-100' : 'text-blue-600'} hover:underline`}>
+                                      📎 {att.fileName} ({formatFileSize(att.fileSize)})
+                                    </a>
+                                  )}
+                                </div>
+                              ))}
+                              {isOwn && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setContextMenu({ messageId: msg.id, x: e.clientX, y: e.clientY }) }}
+                                  className="absolute -top-2 left-0 -translate-x-full pr-1 opacity-0 group-hover:opacity-100 bg-white border border-gray-200 rounded-full px-1.5 py-0.5 text-xs text-gray-400 shadow-sm hidden sm:block"
                                 >
-                                  📎 {att.fileName} ({formatFileSize(att.fileSize)})
-                                </a>
+                                  ⋮
+                                </button>
                               )}
-                            </div>
-                          ))}
-                          {/* 長押し/スワイプ代わりに返信ボタン（タップ可能） */}
-                          <button
-                            onClick={() => setReplyTo(msg)}
-                            className={`absolute -top-2 ${isOwn ? 'left-0 -translate-x-full pl-0 pr-1' : 'right-0 translate-x-full pl-1'} opacity-0 group-hover:opacity-100 bg-white border border-gray-200 rounded-full px-2 py-0.5 text-xs text-gray-500 shadow-sm`}
-                          >
-                            返信
-                          </button>
+                            </>
+                          )}
                         </div>
-                        <div className={`flex items-center gap-2 mt-0.5 ${isOwn ? 'flex-row-reverse' : ''}`}>
+                        <div className={`flex items-center gap-1.5 mt-0.5 ${isOwn ? 'flex-row-reverse' : ''}`}>
                           <span className="text-xs text-gray-400">
                             {new Date(msg.createdAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
                           </span>
-                          {/* タップで返信 */}
-                          <button
-                            onClick={() => setReplyTo(msg)}
-                            className="text-xs text-gray-300 hover:text-gray-500 active:text-gray-500"
-                            aria-label="返信"
-                          >
-                            ↩
-                          </button>
+                          {!isDeleted && (
+                            <button onClick={() => setReplyTo(msg)} className="text-xs text-gray-300 hover:text-gray-500 active:text-gray-500" aria-label="返信">↩</button>
+                          )}
+                          {isOwn && readCount > 0 && (
+                            <span className="text-xs text-blue-400 font-medium">
+                              既読{currentRoom.members.length > 2 ? readCount : ''}
+                            </span>
+                          )}
                         </div>
                       </div>
                       {isOwn && (
@@ -490,7 +571,6 @@ export default function ChatRoomPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* 入力エリア */}
           <div className="bg-white border-t border-gray-200 px-2 py-2 safe-bottom">
             {replyTo && (
               <div className="flex items-center gap-2 bg-green-50 rounded-xl px-3 py-2 mb-2 border-l-2 border-green-500">
@@ -503,12 +583,7 @@ export default function ChatRoomPage() {
             )}
             <div className="flex items-end gap-1.5">
               <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => e.target.files?.[0] && uploadFile(e.target.files[0])} />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="p-2.5 text-gray-400 hover:text-gray-600 active:text-gray-600 flex-shrink-0 rounded-full hover:bg-gray-100"
-                aria-label="ファイル添付"
-              >
+              <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2.5 text-gray-400 hover:text-gray-600 active:text-gray-600 flex-shrink-0 rounded-full hover:bg-gray-100" aria-label="ファイル添付">
                 {uploading ? '⏳' : '📎'}
               </button>
               <textarea
@@ -520,12 +595,7 @@ export default function ChatRoomPage() {
                 className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5 text-sm resize-none outline-none max-h-32 overflow-y-auto leading-5"
                 style={{ minHeight: '42px' }}
               />
-              <button
-                onClick={sendMessage}
-                disabled={!input.trim()}
-                className="w-10 h-10 bg-green-500 text-white rounded-full flex items-center justify-center hover:bg-green-600 active:bg-green-700 disabled:opacity-40 flex-shrink-0 transition-colors"
-                aria-label="送信"
-              >
+              <button onClick={sendMessage} disabled={!input.trim()} className="w-10 h-10 bg-green-500 text-white rounded-full flex items-center justify-center hover:bg-green-600 active:bg-green-700 disabled:opacity-40 flex-shrink-0 transition-colors" aria-label="送信">
                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                   <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                 </svg>
@@ -540,12 +610,7 @@ export default function ChatRoomPage() {
               <span className="text-3xl">💬</span>
             </div>
             <p className="text-gray-500">チャットを選択してください</p>
-            <button
-              onClick={() => { setShowCreateRoom(true) }}
-              className="mt-3 text-green-600 font-medium text-sm"
-            >
-              グループを作成する
-            </button>
+            <button onClick={() => setShowCreateRoom(true)} className="mt-3 text-green-600 font-medium text-sm">グループを作成する</button>
           </div>
         </div>
       )}
@@ -554,36 +619,42 @@ export default function ChatRoomPage() {
 
   return (
     <>
-      {/* デスクトップレイアウト: サイドバー + チャットを横並び */}
       <div className="hidden md:flex h-screen bg-white overflow-hidden">
-        <div className="w-72 flex-shrink-0 border-r border-gray-200">
-          {sidebarContent}
-        </div>
-        <div className="flex-1 min-w-0">
-          {chatContent}
-        </div>
+        <div className="w-72 flex-shrink-0 border-r border-gray-200">{sidebarContent}</div>
+        <div className="flex-1 min-w-0">{chatContent}</div>
       </div>
 
-      {/* モバイルレイアウト: サイドバーかチャットを1画面に切り替え */}
       <div className="md:hidden h-screen overflow-hidden">
-        <div className={`h-full transition-transform duration-300 ${showSidebar || !currentRoom ? 'translate-x-0' : '-translate-x-full'} absolute inset-0 z-10`}
-          style={{ display: showSidebar || !currentRoom ? 'block' : 'none' }}
-        >
+        <div style={{ display: showSidebar || !currentRoom ? 'block' : 'none' }} className="h-full absolute inset-0 z-10">
           {sidebarContent}
         </div>
-        <div className={`h-full`}
-          style={{ display: !showSidebar && currentRoom ? 'block' : (currentRoom ? 'none' : 'none') }}
-        >
+        <div style={{ display: !showSidebar && currentRoom ? 'block' : 'none' }} className="h-full">
           {chatContent}
         </div>
-        {!currentRoom && (
-          <div className="h-full">
-            {sidebarContent}
-          </div>
-        )}
+        {!currentRoom && <div className="h-full">{sidebarContent}</div>}
       </div>
 
-      {/* モーダル */}
+      {contextMenu && (
+        <div
+          className="fixed bg-white border border-gray-200 rounded-xl shadow-lg z-50 py-1 min-w-[140px]"
+          style={{ top: contextMenu.y, left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 400) - 160) }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => { const msg = messages.find((m) => m.id === contextMenu.messageId); if (msg) setReplyTo(msg); setContextMenu(null) }}
+            className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            ↩ 返信
+          </button>
+          <button
+            onClick={() => deleteMessage(contextMenu.messageId)}
+            className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50"
+          >
+            🗑 削除
+          </button>
+        </div>
+      )}
+
       {showCreateRoom && (
         <CreateRoomModal
           token={token}
@@ -599,10 +670,11 @@ export default function ChatRoomPage() {
       {showMembers && currentRoom && (
         <ManageMembersModal
           roomId={roomId}
-          roomName={currentRoom.name}
+          roomName={getRoomDisplayName(currentRoom, user.id)}
           token={token}
           currentUserId={user.id}
           onClose={() => setShowMembers(false)}
+          onStartDM={startDM}
         />
       )}
       {showAI && currentRoom && (
@@ -613,7 +685,20 @@ export default function ChatRoomPage() {
           onClose={() => setShowAI(false)}
         />
       )}
-      {showMenu && <div className="fixed inset-0 z-0" onClick={() => setShowMenu(false)} />}
+      {showProfile && (
+        <ProfileModal
+          user={user}
+          token={token}
+          onClose={() => setShowProfile(false)}
+          onUpdated={(updatedUser) => {
+            setUser(updatedUser)
+            setShowProfile(false)
+          }}
+        />
+      )}
+      {(showMenu || contextMenu) && (
+        <div className="fixed inset-0 z-0" onClick={() => { setShowMenu(false); setContextMenu(null) }} />
+      )}
     </>
   )
 }

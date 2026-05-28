@@ -11,9 +11,10 @@ interface Props {
   token: string
   currentUserId: string
   onClose: () => void
+  onStartDM?: (user: User) => void
 }
 
-export function ManageMembersModal({ roomId, roomName, token, currentUserId, onClose }: Props) {
+export function ManageMembersModal({ roomId, roomName, token, currentUserId, onClose, onStartDM }: Props) {
   const [members, setMembers] = useState<Member[]>([])
   const [allUsers, setAllUsers] = useState<User[]>([])
   const [search, setSearch] = useState('')
@@ -83,6 +84,14 @@ export function ManageMembersModal({ roomId, roomName, token, currentUserId, onC
                   </div>
                   {m.role === 'admin' && (
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex-shrink-0">管理者</span>
+                  )}
+                  {m.userId !== currentUserId && onStartDM && (
+                    <button
+                      onClick={() => onStartDM(m.user)}
+                      className="text-xs bg-blue-500 text-white px-2.5 py-1 rounded-full hover:bg-blue-600 flex-shrink-0"
+                    >
+                      DM
+                    </button>
                   )}
                 </div>
               ))}

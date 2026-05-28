@@ -33,11 +33,12 @@ model Room {
 }
 
 model RoomMember {
-  id       String   @id @default(uuid())
-  userId   String
-  roomId   String
-  role     String   @default("member")
-  joinedAt DateTime @default(now())
+  id         String    @id @default(uuid())
+  userId     String
+  roomId     String
+  role       String    @default("member")
+  joinedAt   DateTime  @default(now())
+  lastReadAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)

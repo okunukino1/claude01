@@ -54,6 +54,14 @@ app.prepare().then(() => {
       io.to(`room:${data.roomId}`).emit('reaction_updated', data)
     })
 
+    socket.on('delete_message', (data: { roomId: string; messageId: string }) => {
+      io.to(`room:${data.roomId}`).emit('message_deleted', { messageId: data.messageId, roomId: data.roomId })
+    })
+
+    socket.on('mark_read', (data: { roomId: string; userId: string; lastReadAt: string }) => {
+      socket.to(`room:${data.roomId}`).emit('room_read', data)
+    })
+
     socket.on('typing', (data: { roomId: string; displayName: string }) => {
       socket.to(`room:${data.roomId}`).emit('user_typing', { userId, displayName: data.displayName })
     })
