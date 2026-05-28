@@ -7,6 +7,7 @@ import { CreateRoomModal } from '@/components/CreateRoomModal'
 import { SearchPanel } from '@/components/SearchPanel'
 import { AiAnalysisModal } from '@/components/AiAnalysisModal'
 import { ManageMembersModal } from '@/components/ManageMembersModal'
+import { useNotifications } from '@/hooks/useNotifications'
 
 interface User { id: string; email: string; displayName: string; avatarColor: string }
 interface Attachment { id: string; fileName: string; fileUrl: string; fileSize: number; mimeType: string }
@@ -60,6 +61,7 @@ export default function ChatRoomPage() {
   const [showMembers, setShowMembers] = useState(false)
   // モバイル: true=サイドバー表示, false=チャット表示
   const [showSidebar, setShowSidebar] = useState(false)
+  const { requestPermission, notify, permission } = useNotifications(roomId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -93,11 +95,17 @@ export default function ChatRoomPage() {
         if (prev.find((m) => m.id === msg.id)) return prev
         return [...prev, msg]
       })
-      setRooms((prev) =>
-        prev
+      setRooms((prev) => {
+        const updated = prev
           .map((r) => r.id === msg.roomId ? { ...r, messages: [msg], updatedAt: msg.createdAt } : r)
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      )
+        // 自分のメッセージ以外は通知
+        if (msg.userId !== (sock as any).data?.userId) {
+          const room = updated.find(r => r.id === msg.roomId)
+          notify(msg.user?.displayName || '誰か', msg.content || 'ファイルを送信しました', msg.roomId, room?.name || 'チャット')
+        }
+        return updated
+      })
     })
     sock.on('user_typing', ({ displayName }: { userId: string; displayName: string }) => {
       setTypingUsers((prev) => new Set([...prev, displayName]))
@@ -300,16 +308,28 @@ export default function ChatRoomPage() {
             <p className="text-xs font-medium text-gray-900 truncate">{user.displayName}</p>
             <p className="text-xs text-gray-500 truncate">{user.email}</p>
           </div>
-          <button
-            onClick={async () => {
-              await fetch('/api/auth/logout', { method: 'POST' })
-              localStorage.removeItem('auth_token')
-              router.replace('/login')
-            }}
-            className="text-xs text-gray-400 hover:text-red-500 px-2 py-1"
-          >
-            ログアウト
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={async () => {
+                const granted = await requestPermission()
+                if (!granted) alert('ブラウザの設定から通知を許可してください')
+              }}
+              title={permission.current === 'granted' ? '通知ON' : '通知をONにする'}
+              className={`text-lg px-1 ${permission.current === 'granted' ? 'opacity-100' : 'opacity-40 hover:opacity-70'}`}
+            >
+              🔔
+            </button>
+            <button
+              onClick={async () => {
+                await fetch('/api/auth/logout', { method: 'POST' })
+                localStorage.removeItem('auth_token')
+                router.replace('/login')
+              }}
+              className="text-xs text-gray-400 hover:text-red-500 px-1 py-1"
+            >
+              ログアウト
+            </button>
+          </div>
         </div>
       )}
     </div>
