@@ -3,7 +3,7 @@ services:
     name: company-chat
     runtime: node
     plan: free
-    buildCommand: cd chat-app && npm install && npx prisma generate && npx prisma migrate deploy && npm run build
+    buildCommand: cd chat-app && npm install --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build
     startCommand: cd chat-app && npm run start
     envVars:
       - key: DATABASE_URL
