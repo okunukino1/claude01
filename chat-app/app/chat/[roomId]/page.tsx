@@ -6,6 +6,7 @@ import { Avatar } from '@/components/Avatar'
 import { CreateRoomModal } from '@/components/CreateRoomModal'
 import { SearchPanel } from '@/components/SearchPanel'
 import { AiAnalysisModal } from '@/components/AiAnalysisModal'
+import { ManageMembersModal } from '@/components/ManageMembersModal'
 
 interface User { id: string; email: string; displayName: string; avatarColor: string }
 interface Attachment { id: string; fileName: string; fileUrl: string; fileSize: number; mimeType: string }
@@ -56,6 +57,7 @@ export default function ChatRoomPage() {
   const [showAI, setShowAI] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
+  const [showMembers, setShowMembers] = useState(false)
   // モバイル: true=サイドバー表示, false=チャット表示
   const [showSidebar, setShowSidebar] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -333,7 +335,9 @@ export default function ChatRoomPage() {
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="font-semibold text-gray-900 truncate">{currentRoom.name}</h2>
-              <p className="text-xs text-gray-500">{currentRoom.members?.length}人のメンバー</p>
+              <button onClick={() => setShowMembers(true)} className="text-xs text-green-600 hover:underline active:underline">
+                    {currentRoom.members?.length}人のメンバー
+                  </button>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
               <button
@@ -570,6 +574,15 @@ export default function ChatRoomPage() {
             setShowCreateRoom(false)
             router.push(`/chat/${room.id}`)
           }}
+        />
+      )}
+      {showMembers && currentRoom && (
+        <ManageMembersModal
+          roomId={roomId}
+          roomName={currentRoom.name}
+          token={token}
+          currentUserId={user.id}
+          onClose={() => setShowMembers(false)}
         />
       )}
       {showAI && currentRoom && (

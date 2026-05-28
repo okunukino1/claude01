@@ -23,8 +23,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { userId } = await request.json()
 
   const requester = await prisma.roomMember.findUnique({ where: { userId_roomId: { userId: auth.userId, roomId } } })
-  if (!requester || requester.role !== 'admin') {
-    return Response.json({ error: '管理者権限が必要です' }, { status: 403 })
+  if (!requester) {
+    return Response.json({ error: 'このグループのメンバーではありません' }, { status: 403 })
   }
 
   const member = await prisma.roomMember.create({
