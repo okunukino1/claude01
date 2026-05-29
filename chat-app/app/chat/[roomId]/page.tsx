@@ -74,7 +74,7 @@ export default function ChatRoomPage() {
   const [contextMenu, setContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null)
   const [showSidebar, setShowSidebar] = useState(false)
   const [toasts, setToasts] = useState<ToastData[]>([])
-  const { requestPermission, notify, permission } = useNotifications(roomId)
+  const { requestPermission, notify, unlockAudio, permission } = useNotifications(roomId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -683,12 +683,14 @@ export default function ChatRoomPage() {
     <>
       <ToastNotification toasts={toasts} onDismiss={dismissToast} onNavigate={navigateFromToast} />
 
-      <div className="hidden md:flex h-screen bg-white overflow-hidden">
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events */}
+      <div className="hidden md:flex h-screen bg-white overflow-hidden" onClick={unlockAudio}>
         <div className="w-72 flex-shrink-0 border-r border-gray-200">{sidebarContent}</div>
         <div className="flex-1 min-w-0">{chatContent}</div>
       </div>
 
-      <div className="md:hidden h-screen overflow-hidden">
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events */}
+      <div className="md:hidden h-screen overflow-hidden" onClick={unlockAudio}>
         <div style={{ display: showSidebar || !currentRoom ? 'block' : 'none' }} className="h-full absolute inset-0 z-10">
           {sidebarContent}
         </div>

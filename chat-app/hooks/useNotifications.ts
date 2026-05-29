@@ -24,7 +24,6 @@ export async function sendNotification(title: string, options: NotificationOptio
       return 'sw'
     } catch {}
   }
-  // PC fallback
   try {
     const n = new Notification(title, options)
     n.onclick = () => { window.focus(); n.close() }
@@ -38,11 +37,35 @@ export function useNotifications(currentRoomId: string) {
   const permissionRef = useRef<NotificationPermission>('default')
   const unreadRef = useRef(0)
   const originalTitleRef = useRef('社内チャット')
+  // ユーザー操作後に解放されたAudioContext を保持する
+  const audioCtxRef = useRef<AudioContext | null>(null)
 
   useEffect(() => {
     if ('Notification' in window) {
       permissionRef.current = Notification.permission
     }
+  }, [])
+
+  // ユーザー操作時に呼び出してAudioContextを事前に解放する
+  // Android Chromeはユーザー操作なしに音を鳴らせないため必須
+  const unlockAudio = useCallback(() => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      if (!AudioCtx) return
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioCtx()
+      }
+      // suspended状態なら resume（ユーザー操作コンテキストで呼ぶ必要がある）
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume()
+      }
+      // 無音を再生してブラウザの自動再生ブロックを解除
+      const buf = audioCtxRef.current.createBuffer(1, 1, 22050)
+      const src = audioCtxRef.current.createBufferSource()
+      src.buffer = buf
+      src.connect(audioCtxRef.current.destination)
+      src.start(0)
+    } catch {}
   }, [])
 
   const requestPermission = useCallback(async () => {
@@ -70,9 +93,15 @@ export function useNotifications(currentRoomId: string) {
       })
     }
 
-    // 通知音
+    // 通知音：解放済みのAudioContextがあれば使う
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const ctx = audioCtxRef.current
+      if (!ctx) return
+      if (ctx.state === 'suspended') {
+        // resumeはユーザー操作コンテキスト外では失敗することがあるが試みる
+        await ctx.resume()
+      }
+      if (ctx.state !== 'running') return
       const osc = ctx.createOscillator()
       const gain = ctx.createGain()
       osc.connect(gain)
@@ -96,5 +125,5 @@ export function useNotifications(currentRoomId: string) {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [])
 
-  return { requestPermission, notify, permission: permissionRef }
+  return { requestPermission, notify, unlockAudio, permission: permissionRef }
 }
