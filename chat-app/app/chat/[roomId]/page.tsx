@@ -190,11 +190,12 @@ export default function ChatRoomPage() {
     return () => { sock.disconnect() }
   }, [token, notify])
 
+  // 全ルームに参加してクロスルーム通知を受け取る
+  // （現在表示中のルームだけに参加すると他ルームのメッセージが届かない）
   useEffect(() => {
-    if (!socket || !roomId) return
-    socket.emit('join_room', roomId)
-    return () => { socket.emit('leave_room', roomId) }
-  }, [socket, roomId])
+    if (!socket || rooms.length === 0) return
+    rooms.forEach((room) => socket.emit('join_room', room.id))
+  }, [socket, rooms])
 
   useEffect(() => {
     if (!token || !roomId) return
@@ -456,12 +457,23 @@ export default function ChatRoomPage() {
               <button
                 onClick={async () => {
                   const granted = await requestPermission()
-                  if (!granted) alert('ブラウザの設定から通知を許可してください')
+                  if (!granted) alert('ブラウザの設定から通知を許可してください。\n\nAndroidの場合: ブラウザのアドレスバー横の🔒→「通知」→「許可」')
                 }}
-                title={permission.current === 'granted' ? '通知ON' : '通知をONにする'}
-                className={`text-lg px-1 ${permission.current === 'granted' ? 'opacity-100' : 'opacity-40 hover:opacity-70'}`}
+                title={
+                  permission.current === 'granted' ? '通知ON ✓' :
+                  permission.current === 'denied' ? '通知がブロックされています' :
+                  '通知をONにする（タップ）'
+                }
+                className={`text-lg px-1 relative ${
+                  permission.current === 'granted' ? 'opacity-100' :
+                  permission.current === 'denied' ? 'opacity-30' :
+                  'opacity-50 hover:opacity-80 animate-pulse'
+                }`}
               >
                 🔔
+                {permission.current !== 'granted' && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" />
+                )}
               </button>
               <button
                 onClick={async () => {

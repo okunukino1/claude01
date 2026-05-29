@@ -19,31 +19,39 @@ export function useNotifications(currentRoomId: string) {
     return permission === 'granted'
   }, [])
 
-  const notify = useCallback((senderName: string, content: string, roomId: string, roomName: string) => {
-    // 同じルームを見ているかつタブがアクティブなら通知しない
+  const notify = useCallback(async (senderName: string, content: string, roomId: string, roomName: string) => {
     const isCurrentRoom = roomId === currentRoomId
     const isVisible = document.visibilityState === 'visible'
     if (isCurrentRoom && isVisible) return
 
-    // 未読カウントを増やしてタイトルに表示
     unreadRef.current += 1
     document.title = `(${unreadRef.current}) 社内チャット`
 
-    // ブラウザ通知
     if (permissionRef.current === 'granted') {
       const body = content.length > 60 ? content.slice(0, 60) + '...' : content
-      const notification = new Notification(`${senderName} — ${roomName}`, {
+      const options: NotificationOptions = {
         body,
         icon: '/icon-192.png',
         tag: roomId,
-      })
-      notification.onclick = () => {
-        window.focus()
-        notification.close()
+        badge: '/icon-192.png',
+      }
+      const title = `${senderName} — ${roomName}`
+
+      // Android Chrome は new Notification() が使えないため
+      // ServiceWorkerRegistration.showNotification() を優先して使う
+      if ('serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.ready
+          await registration.showNotification(title, options)
+        } catch {
+          try { const n = new Notification(title, options); n.onclick = () => { window.focus(); n.close() } } catch {}
+        }
+      } else {
+        try { const n = new Notification(title, options); n.onclick = () => { window.focus(); n.close() } } catch {}
       }
     }
 
-    // 通知音（短いビープ）
+    // 通知音
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
       const osc = ctx.createOscillator()
@@ -55,12 +63,9 @@ export function useNotifications(currentRoomId: string) {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
       osc.start(ctx.currentTime)
       osc.stop(ctx.currentTime + 0.3)
-    } catch {
-      // 音声API非対応の場合は無視
-    }
+    } catch {}
   }, [currentRoomId])
 
-  // タブがアクティブになったら未読リセット
   useEffect(() => {
     function handleVisibilityChange() {
       if (document.visibilityState === 'visible') {
