@@ -1,6 +1,39 @@
 'use client'
 import { useEffect, useRef, useCallback } from 'react'
 
+async function getSwRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (!('serviceWorker' in navigator)) return null
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('SW timeout')), 4000)),
+    ])
+  } catch {
+    return null
+  }
+}
+
+export async function sendNotification(title: string, options: NotificationOptions): Promise<'sw' | 'api' | 'denied' | 'unsupported' | 'error'> {
+  if (!('Notification' in window)) return 'unsupported'
+  if (Notification.permission !== 'granted') return 'denied'
+
+  const reg = await getSwRegistration()
+  if (reg) {
+    try {
+      await reg.showNotification(title, options)
+      return 'sw'
+    } catch {}
+  }
+  // PC fallback
+  try {
+    const n = new Notification(title, options)
+    n.onclick = () => { window.focus(); n.close() }
+    return 'api'
+  } catch {
+    return 'error'
+  }
+}
+
 export function useNotifications(currentRoomId: string) {
   const permissionRef = useRef<NotificationPermission>('default')
   const unreadRef = useRef(0)
@@ -29,26 +62,12 @@ export function useNotifications(currentRoomId: string) {
 
     if (permissionRef.current === 'granted') {
       const body = content.length > 60 ? content.slice(0, 60) + '...' : content
-      const options: NotificationOptions = {
+      await sendNotification(`${senderName} — ${roomName}`, {
         body,
         icon: '/icon-192.png',
         tag: roomId,
         badge: '/icon-192.png',
-      }
-      const title = `${senderName} — ${roomName}`
-
-      // Android Chrome は new Notification() が使えないため
-      // ServiceWorkerRegistration.showNotification() を優先して使う
-      if ('serviceWorker' in navigator) {
-        try {
-          const registration = await navigator.serviceWorker.ready
-          await registration.showNotification(title, options)
-        } catch {
-          try { const n = new Notification(title, options); n.onclick = () => { window.focus(); n.close() } } catch {}
-        }
-      } else {
-        try { const n = new Notification(title, options); n.onclick = () => { window.focus(); n.close() } } catch {}
-      }
+      })
     }
 
     // 通知音

@@ -17,12 +17,26 @@ self.addEventListener('activate', (event) => {
   self.clients.claim()
 })
 
+// 通知タップ時にアプリを開く（Androidで必須）
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) return client.focus()
+      }
+      return clients.openWindow('/')
+    })
+  )
+})
+
 self.addEventListener('fetch', (event) => {
-  // Only cache GET requests for same-origin navigation
   if (event.request.method !== 'GET') return
   if (event.request.url.includes('/api/') || event.request.url.includes('/socket.io/')) return
 
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request).catch(() =>
+      caches.match(event.request).then((r) => r || Response.error())
+    )
   )
 })

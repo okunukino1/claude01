@@ -9,6 +9,7 @@ import { AiAnalysisModal } from '@/components/AiAnalysisModal'
 import { ManageMembersModal } from '@/components/ManageMembersModal'
 import { ProfileModal } from '@/components/ProfileModal'
 import { ToastNotification, type ToastData } from '@/components/ToastNotification'
+import { NotificationPanel } from '@/components/NotificationPanel'
 import { useNotifications } from '@/hooks/useNotifications'
 
 interface User { id: string; email: string; displayName: string; avatarColor: string }
@@ -69,6 +70,7 @@ export default function ChatRoomPage() {
   const [showMenu, setShowMenu] = useState(false)
   const [showMembers, setShowMembers] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
+  const [showNotifPanel, setShowNotifPanel] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null)
   const [showSidebar, setShowSidebar] = useState(false)
   const [toasts, setToasts] = useState<ToastData[]>([])
@@ -455,24 +457,13 @@ export default function ChatRoomPage() {
             </button>
             <div className="flex items-center gap-1">
               <button
-                onClick={async () => {
-                  const granted = await requestPermission()
-                  if (!granted) alert('ブラウザの設定から通知を許可してください。\n\nAndroidの場合: ブラウザのアドレスバー横の🔒→「通知」→「許可」')
-                }}
-                title={
-                  permission.current === 'granted' ? '通知ON ✓' :
-                  permission.current === 'denied' ? '通知がブロックされています' :
-                  '通知をONにする（タップ）'
-                }
-                className={`text-lg px-1 relative ${
-                  permission.current === 'granted' ? 'opacity-100' :
-                  permission.current === 'denied' ? 'opacity-30' :
-                  'opacity-50 hover:opacity-80 animate-pulse'
-                }`}
+                onClick={() => setShowNotifPanel(true)}
+                title="通知の設定・診断"
+                className="relative text-lg px-1"
               >
                 🔔
                 {permission.current !== 'granted' && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                 )}
               </button>
               <button
@@ -756,6 +747,12 @@ export default function ChatRoomPage() {
           roomName={currentRoom.name}
           token={token}
           onClose={() => setShowAI(false)}
+        />
+      )}
+      {showNotifPanel && (
+        <NotificationPanel
+          onClose={() => setShowNotifPanel(false)}
+          onPermissionGranted={() => { permission.current = 'granted' }}
         />
       )}
       {showProfile && (
