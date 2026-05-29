@@ -75,6 +75,8 @@ export default function ChatRoomPage() {
   const [showSidebar, setShowSidebar] = useState(false)
   const [toasts, setToasts] = useState<ToastData[]>([])
   const { requestPermission, notify, unlockAudio, permission } = useNotifications(roomId)
+  const notifyRef = useRef(notify)
+  useEffect(() => { notifyRef.current = notify }, [notify])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -112,8 +114,12 @@ export default function ChatRoomPage() {
 
   useEffect(() => {
     if (!token) return
-    const sock = io({ auth: { token } })
+    const sock = io({ auth: { token }, reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 1000, reconnectionDelayMax: 5000 })
     setSocket(sock)
+
+    sock.on('connect', () => {
+      roomsRef.current.forEach((room) => sock.emit('join_room', room.id))
+    })
 
     sock.on('new_message', (msg: Message) => {
       // ① メッセージリスト更新
@@ -136,7 +142,7 @@ export default function ChatRoomPage() {
         const roomName = room ? getRoomDisplayName(room, userRef.current?.id || '') : 'チャット'
 
         // ブラウザ通知（Android Chrome でバックグラウンド時に機能）
-        notify(msg.user?.displayName || '誰か', msg.content || 'ファイルを送信しました', msg.roomId, roomName)
+        notifyRef.current(msg.user?.displayName || '誰か', msg.content || 'ファイルを送信しました', msg.roomId, roomName)
 
         // インアプリ トースト通知（iOS含む全プラットフォーム対応）
         const isCurrentRoom = msg.roomId === currentRoomIdRef.current
@@ -190,7 +196,7 @@ export default function ChatRoomPage() {
     })
     sock.on('user_stop_typing', () => setTypingUsers(new Set()))
     return () => { sock.disconnect() }
-  }, [token, notify])
+  }, [token])
 
   // 全ルームに参加してクロスルーム通知を受け取る
   // （現在表示中のルームだけに参加すると他ルームのメッセージが届かない）
@@ -238,13 +244,11 @@ export default function ChatRoomPage() {
     setReplyTo(null)
     if (typingTimerRef.current) { clearTimeout(typingTimerRef.current); socket?.emit('stop_typing', { roomId }) }
 
-    const res = await authFetch(`/api/rooms/${roomId}/messages`, {
+    await authFetch(`/api/rooms/${roomId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content, replyToId }),
     })
-    const data = await res.json()
-    if (data.message && socket) socket.emit('send_message', { ...data.message, roomId })
   }
 
   async function deleteMessage(messageId: string) {
@@ -302,8 +306,7 @@ export default function ChatRoomPage() {
           attachments: [upData],
         }),
       })
-      const data = await res.json()
-      if (data.message && socket) socket.emit('send_message', { ...data.message, roomId })
+      await res.json()
     } finally {
       setUploading(false)
     }

@@ -21,6 +21,7 @@ app.prepare().then(() => {
   const io = new SocketIOServer(httpServer, {
     cors: { origin: '*', methods: ['GET', 'POST'] },
   })
+  ;(global as any).__io = io
 
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token

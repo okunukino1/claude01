@@ -66,5 +66,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   await prisma.room.update({ where: { id: roomId }, data: { updatedAt: new Date() } })
 
+  const io = (global as any).__io
+  if (io) {
+    io.to(`room:${roomId}`).emit('new_message', message)
+  }
+
   return Response.json({ message }, { status: 201 })
 }
