@@ -19,7 +19,22 @@ export async function GET(request: NextRequest) {
     orderBy: { updatedAt: 'desc' },
   })
 
-  return Response.json({ rooms })
+  // 各ルームの未読メッセージ数を1クエリで取得
+  type UnreadRow = { roomId: string; count: bigint }
+  const unreadRows = await prisma.$queryRaw<UnreadRow[]>`
+    SELECT m."roomId", COUNT(*) as count
+    FROM "Message" m
+    JOIN "RoomMember" rm ON rm."roomId" = m."roomId" AND rm."userId" = ${auth.userId}
+    WHERE m."userId" != ${auth.userId}
+      AND (rm."lastReadAt" IS NULL OR m."createdAt" > rm."lastReadAt")
+    GROUP BY m."roomId"
+  `
+  const unreadMap: Record<string, number> = {}
+  for (const row of unreadRows) unreadMap[row.roomId] = Number(row.count)
+
+  const roomsWithUnread = rooms.map((r) => ({ ...r, unreadCount: unreadMap[r.id] || 0 }))
+
+  return Response.json({ rooms: roomsWithUnread })
 }
 
 export async function POST(request: NextRequest) {

@@ -17,7 +17,7 @@ interface Attachment { id: string; fileName: string; fileUrl: string; fileSize: 
 interface Reaction { id: string; userId: string; emoji: string }
 interface Message {
   id: string; content: string; type: string; userId: string; roomId: string
-  createdAt: string; user: User; attachments: Attachment[]; reactions: Reaction[]
+  createdAt: string; updatedAt?: string; user: User; attachments: Attachment[]; reactions: Reaction[]
   replyTo?: { content: string; user: { displayName: string } } | null
 }
 interface RoomMember { userId: string; lastReadAt?: string | null; user: User }
@@ -26,6 +26,7 @@ interface Room {
   members: RoomMember[]
   messages: Message[]
   updatedAt: string
+  unreadCount?: number
 }
 
 function formatTime(dateStr: string) {
@@ -76,6 +77,10 @@ export default function ChatRoomPage() {
   const [contextMenu, setContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null)
   const [showSidebar, setShowSidebar] = useState(false)
   const [toasts, setToasts] = useState<ToastData[]>([])
+  const [imageViewer, setImageViewer] = useState<string | null>(null)
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const [editingContent, setEditingContent] = useState('')
+  const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null)
   const { requestPermission, notify, unlockAudio, permission } = useNotifications(roomId)
   const notifyRef = useRef(notify)
   useEffect(() => { notifyRef.current = notify }, [notify])
@@ -145,7 +150,17 @@ export default function ChatRoomPage() {
       // ② ルーム一覧更新（pure updater — 副作用なし）
       setRooms((prev) =>
         prev
-          .map((r) => r.id === msg.roomId ? { ...r, messages: [msg], updatedAt: msg.createdAt } : r)
+          .map((r) => {
+            if (r.id !== msg.roomId) return r
+            const isActiveRoom = msg.roomId === currentRoomIdRef.current
+            const isOwnMsg = msg.userId === userRef.current?.id
+            return {
+              ...r,
+              messages: [msg],
+              updatedAt: msg.createdAt,
+              unreadCount: (!isActiveRoom && !isOwnMsg) ? (r.unreadCount || 0) + 1 : r.unreadCount,
+            }
+          })
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       )
 
@@ -198,6 +213,14 @@ export default function ChatRoomPage() {
       )
     })
 
+    sock.on('reaction_updated', ({ messageId, reactions }: { messageId: string; reactions: Reaction[] }) => {
+      setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, reactions } : m))
+    })
+
+    sock.on('message_edited', ({ messageId, content, updatedAt }: { messageId: string; content: string; updatedAt: string }) => {
+      setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, content, updatedAt } : m))
+    })
+
     sock.on('room_read', ({ userId: readerId, roomId: rId, lastReadAt }: { userId: string; roomId: string; lastReadAt: string }) => {
       setRooms((prev) =>
         prev.map((r) => {
@@ -230,6 +253,7 @@ export default function ChatRoomPage() {
     const room = rooms.find((r) => r.id === roomId)
     if (room) setCurrentRoom(room)
     setShowSidebar(false)
+    setRooms((prev) => prev.map((r) => r.id === roomId ? { ...r, unreadCount: 0 } : r))
 
     authFetch(`/api/rooms/${roomId}/read`, { method: 'PUT' }).then(() => {
       const now = new Date().toISOString()
@@ -275,6 +299,48 @@ export default function ChatRoomPage() {
         prev.map((m) => m.id === messageId ? { ...m, content: 'このメッセージは削除されました', type: 'deleted' } : m)
       )
     }
+  }
+
+  async function addReaction(messageId: string, emoji: string) {
+    setShowReactionPicker(null)
+    const res = await authFetch(`/api/messages/${messageId}/reactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, reactions: data.reactions } : m))
+    }
+  }
+
+  function startEditMessage(msg: Message) {
+    setContextMenu(null)
+    setEditingMessageId(msg.id)
+    setEditingContent(msg.content)
+  }
+
+  async function saveEditMessage() {
+    if (!editingMessageId) return
+    const content = editingContent.trim()
+    if (!content) return
+    const res = await authFetch(`/api/messages/${editingMessageId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    })
+    if (res.ok) {
+      setMessages((prev) => prev.map((m) =>
+        m.id === editingMessageId ? { ...m, content, updatedAt: new Date().toISOString() } : m
+      ))
+      setEditingMessageId(null)
+      setEditingContent('')
+    }
+  }
+
+  function copyMessage(content: string) {
+    setContextMenu(null)
+    navigator.clipboard.writeText(content).catch(() => {})
   }
 
   async function leaveRoom() {
@@ -445,8 +511,15 @@ export default function ChatRoomPage() {
                 </div>
                 <div className="flex-1 text-left min-w-0">
                   <div className="flex items-center justify-between gap-1">
-                    <span className="text-sm font-medium text-gray-900 truncate">{displayName}</span>
-                    {lastMsg && <span className="text-xs text-gray-400 flex-shrink-0">{formatTime(lastMsg.createdAt)}</span>}
+                    <span className={`text-sm font-medium truncate ${(room.unreadCount || 0) > 0 && room.id !== roomId ? 'text-gray-900 font-semibold' : 'text-gray-900'}`}>{displayName}</span>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {lastMsg && <span className="text-xs text-gray-400">{formatTime(lastMsg.createdAt)}</span>}
+                      {(room.unreadCount || 0) > 0 && room.id !== roomId && (
+                        <span className="bg-green-500 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold leading-none">
+                          {(room.unreadCount || 0) > 99 ? '99+' : room.unreadCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {lastMsg && (
                     <p className="text-xs text-gray-500 truncate mt-0.5">
@@ -551,7 +624,7 @@ export default function ChatRoomPage() {
 
           <div
             className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 bg-gray-50"
-            onClick={() => { setContextMenu(null); setShowMenu(false) }}
+            onClick={() => { setContextMenu(null); setShowMenu(false); setShowReactionPicker(null) }}
           >
             {groupedMessages.map(({ date, messages: msgs }) => (
               <div key={date}>
@@ -561,7 +634,15 @@ export default function ChatRoomPage() {
                 {msgs.map((msg) => {
                   const isOwn = msg.userId === user.id
                   const isDeleted = msg.type === 'deleted'
+                  const isEditing = editingMessageId === msg.id
+                  const isEdited = !isDeleted && msg.updatedAt && Math.abs(new Date(msg.updatedAt).getTime() - new Date(msg.createdAt).getTime()) > 2000
                   const readCount = isOwn ? getReadCount(msg) : 0
+                  // リアクションを絵文字ごとにまとめる
+                  const reactionGroups = msg.reactions?.reduce((acc, r) => {
+                    if (!acc[r.emoji]) acc[r.emoji] = []
+                    acc[r.emoji].push(r.userId)
+                    return acc
+                  }, {} as Record<string, string[]>) || {}
                   return (
                     <div
                       key={msg.id}
@@ -592,15 +673,53 @@ export default function ChatRoomPage() {
                                 : 'bg-white text-gray-900 shadow-sm border border-gray-100 rounded-bl-sm'
                           }`}
                         >
+                          {/* リアクションピッカー */}
+                          {showReactionPicker === msg.id && (
+                            <div
+                              className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-11 bg-white border border-gray-200 rounded-2xl shadow-lg flex gap-1 px-2 py-1.5 z-20`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {['👍','❤️','😂','😮','😢','🙏'].map((emoji) => (
+                                <button key={emoji} onClick={() => addReaction(msg.id, emoji)} className="text-xl hover:scale-125 transition-transform active:scale-110">
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                           {isDeleted ? (
                             <p className="text-xs">このメッセージは削除されました</p>
+                          ) : isEditing ? (
+                            <div className="flex flex-col gap-1 min-w-[180px]">
+                              <textarea
+                                value={editingContent}
+                                onChange={(e) => setEditingContent(e.target.value)}
+                                className={`text-sm rounded-lg px-2 py-1 resize-none outline-none border ${isOwn ? 'bg-green-400 text-white border-green-300 placeholder-green-200' : 'bg-gray-50 text-gray-900 border-gray-300'}`}
+                                rows={2}
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditMessage() }
+                                  if (e.key === 'Escape') { setEditingMessageId(null); setEditingContent('') }
+                                }}
+                              />
+                              <div className="flex gap-1 justify-end">
+                                <button onClick={() => { setEditingMessageId(null); setEditingContent('') }} className={`text-xs px-2 py-0.5 rounded ${isOwn ? 'text-green-100 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`}>キャンセル</button>
+                                <button onClick={saveEditMessage} className={`text-xs px-2 py-0.5 rounded-lg font-medium ${isOwn ? 'bg-white text-green-700' : 'bg-green-500 text-white'}`}>保存</button>
+                              </div>
+                            </div>
                           ) : (
                             <>
                               {msg.content && <p className="whitespace-pre-wrap">{msg.content}</p>}
+                              {isEdited && <span className={`text-[10px] ${isOwn ? 'text-green-200' : 'text-gray-400'}`}> 編集済み</span>}
                               {msg.attachments?.map((att) => (
                                 <div key={att.id} className="mt-1">
                                   {att.mimeType?.startsWith('image/') ? (
-                                    <img src={att.fileUrl} alt={att.fileName} className="max-w-full rounded-xl cursor-pointer" style={{ maxHeight: '240px', objectFit: 'cover' }} onClick={() => window.open(att.fileUrl)} />
+                                    <img
+                                      src={att.fileUrl}
+                                      alt={att.fileName}
+                                      className="max-w-full rounded-xl cursor-pointer"
+                                      style={{ maxHeight: '240px', objectFit: 'cover' }}
+                                      onClick={(e) => { e.stopPropagation(); setImageViewer(att.fileUrl) }}
+                                    />
                                   ) : (
                                     <a href={att.fileUrl} download={att.fileName} className={`flex items-center gap-2 text-xs ${isOwn ? 'text-green-100' : 'text-blue-600'} hover:underline`}>
                                       📎 {att.fileName} ({formatFileSize(att.fileSize)})
@@ -608,23 +727,48 @@ export default function ChatRoomPage() {
                                   )}
                                 </div>
                               ))}
-                              {isOwn && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setContextMenu({ messageId: msg.id, x: e.clientX, y: e.clientY }) }}
-                                  className="absolute -top-2 left-0 -translate-x-full pr-1 opacity-0 group-hover:opacity-100 bg-white border border-gray-200 rounded-full px-1.5 py-0.5 text-xs text-gray-400 shadow-sm hidden sm:block"
-                                >
-                                  ⋮
-                                </button>
-                              )}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setContextMenu({ messageId: msg.id, x: e.clientX, y: e.clientY }) }}
+                                className={`absolute -top-2 opacity-0 group-hover:opacity-100 bg-white border border-gray-200 rounded-full px-1.5 py-0.5 text-xs text-gray-400 shadow-sm hidden sm:block ${isOwn ? 'left-0 -translate-x-full pr-1' : 'right-0 translate-x-full pl-1'}`}
+                              >
+                                ⋮
+                              </button>
                             </>
                           )}
                         </div>
+                        {/* リアクション表示 */}
+                        {Object.keys(reactionGroups).length > 0 && (
+                          <div className={`flex flex-wrap gap-1 mt-1 ${isOwn ? 'justify-end' : ''}`}>
+                            {Object.entries(reactionGroups).map(([emoji, userIds]) => (
+                              <button
+                                key={emoji}
+                                onClick={() => addReaction(msg.id, emoji)}
+                                className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs border transition-colors ${
+                                  userIds.includes(user.id)
+                                    ? 'bg-blue-50 border-blue-300 text-blue-700'
+                                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                }`}
+                              >
+                                {emoji} <span className="font-medium">{userIds.length}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <div className={`flex items-center gap-1.5 mt-0.5 ${isOwn ? 'flex-row-reverse' : ''}`}>
                           <span className="text-xs text-gray-400">
                             {new Date(msg.createdAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                           {!isDeleted && (
-                            <button onClick={() => setReplyTo(msg)} className="text-xs text-gray-300 hover:text-gray-500 active:text-gray-500" aria-label="返信">↩</button>
+                            <>
+                              <button onClick={() => setReplyTo(msg)} className="text-xs text-gray-300 hover:text-gray-500 active:text-gray-500" aria-label="返信">↩</button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setShowReactionPicker(showReactionPicker === msg.id ? null : msg.id) }}
+                                className="text-xs text-gray-300 hover:text-gray-500 active:text-gray-500"
+                                aria-label="リアクション"
+                              >
+                                😊
+                              </button>
+                            </>
                           )}
                           {isOwn && readCount > 0 && (
                             <span className="text-xs text-blue-400 font-medium">
@@ -721,26 +865,48 @@ export default function ChatRoomPage() {
         {!currentRoom && <div className="h-full">{sidebarContent}</div>}
       </div>
 
-      {contextMenu && (
-        <div
-          className="fixed bg-white border border-gray-200 rounded-xl shadow-lg z-50 py-1 min-w-[140px]"
-          style={{ top: contextMenu.y, left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 400) - 160) }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => { const msg = messages.find((m) => m.id === contextMenu.messageId); if (msg) setReplyTo(msg); setContextMenu(null) }}
-            className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+      {contextMenu && (() => {
+        const ctxMsg = messages.find((m) => m.id === contextMenu.messageId)
+        const isOwnMsg = ctxMsg?.userId === user.id
+        return (
+          <div
+            className="fixed bg-white border border-gray-200 rounded-xl shadow-lg z-50 py-1 min-w-[150px]"
+            style={{ top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 600) - 200), left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 400) - 170) }}
+            onClick={(e) => e.stopPropagation()}
           >
-            ↩ 返信
-          </button>
-          <button
-            onClick={() => deleteMessage(contextMenu.messageId)}
-            className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50"
-          >
-            🗑 削除
-          </button>
-        </div>
-      )}
+            <button
+              onClick={() => { if (ctxMsg) setReplyTo(ctxMsg); setContextMenu(null) }}
+              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              ↩ 返信
+            </button>
+            {ctxMsg && ctxMsg.type !== 'deleted' && ctxMsg.content && (
+              <button
+                onClick={() => copyMessage(ctxMsg.content)}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                📋 コピー
+              </button>
+            )}
+            {isOwnMsg && ctxMsg?.type !== 'deleted' && (
+              <button
+                onClick={() => { if (ctxMsg) startEditMessage(ctxMsg) }}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                ✏️ 編集
+              </button>
+            )}
+            {isOwnMsg && (
+              <button
+                onClick={() => deleteMessage(contextMenu.messageId)}
+                className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50"
+              >
+                🗑 削除
+              </button>
+            )}
+          </div>
+        )
+      })()}
 
       {showCreateRoom && (
         <CreateRoomModal
@@ -793,8 +959,37 @@ export default function ChatRoomPage() {
           }}
         />
       )}
-      {(showMenu || contextMenu) && (
-        <div className="fixed inset-0 z-0" onClick={() => { setShowMenu(false); setContextMenu(null) }} />
+      {(showMenu || contextMenu || showReactionPicker) && (
+        <div className="fixed inset-0 z-0" onClick={() => { setShowMenu(false); setContextMenu(null); setShowReactionPicker(null) }} />
+      )}
+
+      {/* 画像ライトボックス */}
+      {imageViewer && (
+        <div
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          onClick={() => setImageViewer(null)}
+        >
+          <img
+            src={imageViewer}
+            alt="拡大表示"
+            className="max-w-full max-h-full object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            className="absolute top-4 right-4 text-white/80 hover:text-white text-3xl leading-none"
+            onClick={() => setImageViewer(null)}
+          >
+            ✕
+          </button>
+          <a
+            href={imageViewer}
+            download
+            className="absolute bottom-4 right-4 bg-white/20 hover:bg-white/30 text-white text-sm px-3 py-1.5 rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            ⬇ ダウンロード
+          </a>
+        </div>
       )}
     </>
   )
