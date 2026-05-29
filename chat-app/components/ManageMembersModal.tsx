@@ -10,11 +10,12 @@ interface Props {
   roomName: string
   token: string
   currentUserId: string
+  onlineUserIds?: Set<string>
   onClose: () => void
   onStartDM?: (user: User) => void
 }
 
-export function ManageMembersModal({ roomId, roomName, token, currentUserId, onClose, onStartDM }: Props) {
+export function ManageMembersModal({ roomId, roomName, token, currentUserId, onlineUserIds, onClose, onStartDM }: Props) {
   const [members, setMembers] = useState<Member[]>([])
   const [allUsers, setAllUsers] = useState<User[]>([])
   const [search, setSearch] = useState('')
@@ -77,9 +78,17 @@ export function ManageMembersModal({ roomId, roomName, token, currentUserId, onC
             <div className="space-y-2">
               {members.map(m => (
                 <div key={m.id} className="flex items-center gap-3">
-                  <Avatar displayName={m.user.displayName} avatarColor={m.user.avatarColor} size="sm" />
+                  <div className="relative flex-shrink-0">
+                    <Avatar displayName={m.user.displayName} avatarColor={m.user.avatarColor} size="sm" />
+                    {onlineUserIds?.has(m.userId) && (
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full" />
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{m.user.displayName}</p>
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {m.user.displayName}
+                      {onlineUserIds?.has(m.userId) && <span className="text-[10px] text-green-600 ml-1">●オンライン</span>}
+                    </p>
                     <p className="text-xs text-gray-500 truncate">{m.user.email}</p>
                   </div>
                   {m.role === 'admin' && (

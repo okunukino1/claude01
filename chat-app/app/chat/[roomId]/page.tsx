@@ -7,6 +7,8 @@ import { CreateRoomModal } from '@/components/CreateRoomModal'
 import { SearchPanel } from '@/components/SearchPanel'
 import { AiAnalysisModal } from '@/components/AiAnalysisModal'
 import { ManageMembersModal } from '@/components/ManageMembersModal'
+import { RoomSettingsModal } from '@/components/RoomSettingsModal'
+import { EmojiPicker } from '@/components/EmojiPicker'
 import { ProfileModal } from '@/components/ProfileModal'
 import { ToastNotification, type ToastData } from '@/components/ToastNotification'
 import { NotificationPanel } from '@/components/NotificationPanel'
@@ -17,10 +19,10 @@ interface Attachment { id: string; fileName: string; fileUrl: string; fileSize: 
 interface Reaction { id: string; userId: string; emoji: string }
 interface Message {
   id: string; content: string; type: string; userId: string; roomId: string
-  createdAt: string; updatedAt?: string; user: User; attachments: Attachment[]; reactions: Reaction[]
+  createdAt: string; updatedAt?: string; pinned?: boolean; user: User; attachments: Attachment[]; reactions: Reaction[]
   replyTo?: { content: string; user: { displayName: string } } | null
 }
-interface RoomMember { userId: string; lastReadAt?: string | null; user: User }
+interface RoomMember { userId: string; role?: string; lastReadAt?: string | null; user: User }
 interface Room {
   id: string; name: string; description?: string; isGroup: boolean
   members: RoomMember[]
@@ -81,6 +83,16 @@ export default function ChatRoomPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editingContent, setEditingContent] = useState('')
   const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null)
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set())
+  const [pinnedMessages, setPinnedMessages] = useState<Message[]>([])
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showRoomSettings, setShowRoomSettings] = useState(false)
+  const [hasMoreOlder, setHasMoreOlder] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const oldestCursorRef = useRef<string | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const prependingRef = useRef(false)
+  const prevScrollHeightRef = useRef(0)
   const { requestPermission, notify, unlockAudio, permission } = useNotifications(roomId)
   const notifyRef = useRef(notify)
   useEffect(() => { notifyRef.current = notify }, [notify])
@@ -234,6 +246,40 @@ export default function ChatRoomPage() {
       setTypingUsers((prev) => new Set([...prev, displayName]))
     })
     sock.on('user_stop_typing', () => setTypingUsers(new Set()))
+
+    sock.on('presence_update', (userIds: string[]) => {
+      setOnlineUsers(new Set(userIds))
+    })
+
+    sock.on('message_pinned', ({ messageId, pinned, message }: { messageId: string; pinned: boolean; message: Message }) => {
+      setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, pinned } : m))
+      setPinnedMessages((prev) => {
+        if (pinned) {
+          if (prev.find((m) => m.id === messageId)) return prev
+          return [message, ...prev]
+        }
+        return prev.filter((m) => m.id !== messageId)
+      })
+    })
+
+    sock.on('room_updated', ({ roomId: rId, name, description }: { roomId: string; name: string; description: string }) => {
+      setRooms((prev) => prev.map((r) => r.id === rId ? { ...r, name, description } : r))
+      setCurrentRoom((prev) => prev && prev.id === rId ? { ...prev, name, description } : prev)
+    })
+
+    sock.on('member_joined', ({ roomId: rId, member }: { roomId: string; member: RoomMember }) => {
+      setRooms((prev) => prev.map((r) => {
+        if (r.id !== rId) return r
+        if (r.members.find((m) => m.userId === member.userId)) return r
+        return { ...r, members: [...r.members, member] }
+      }))
+      setCurrentRoom((prev) => {
+        if (!prev || prev.id !== rId) return prev
+        if (prev.members.find((m) => m.userId === member.userId)) return prev
+        return { ...prev, members: [...prev.members, member] }
+      })
+    })
+
     return () => { sock.disconnect() }
   }, [token])
 
@@ -248,7 +294,12 @@ export default function ChatRoomPage() {
     if (!token || !roomId) return
     authFetch(`/api/rooms/${roomId}/messages`)
       .then((r) => r.json())
-      .then((d) => setMessages(d.messages || []))
+      .then((d) => {
+        setMessages(d.messages || [])
+        setPinnedMessages(d.pinned || [])
+        oldestCursorRef.current = d.nextCursor || null
+        setHasMoreOlder(!!d.hasMore)
+      })
       .catch(() => {})
     const room = rooms.find((r) => r.id === roomId)
     if (room) setCurrentRoom(room)
@@ -272,8 +323,46 @@ export default function ChatRoomPage() {
   }, [rooms, roomId])
 
   useEffect(() => {
+    // 過去ログを先頭に追加したときはスクロール位置を維持（下端に飛ばさない）
+    if (prependingRef.current) {
+      const c = messagesContainerRef.current
+      if (c) c.scrollTop = c.scrollHeight - prevScrollHeightRef.current
+      prependingRef.current = false
+      return
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  async function loadOlderMessages() {
+    if (loadingOlder || !hasMoreOlder || !oldestCursorRef.current) return
+    setLoadingOlder(true)
+    const c = messagesContainerRef.current
+    prevScrollHeightRef.current = c?.scrollHeight || 0
+    try {
+      const res = await authFetch(`/api/rooms/${roomId}/messages?cursor=${oldestCursorRef.current}`)
+      const data = await res.json()
+      if (data.messages?.length) {
+        prependingRef.current = true
+        setMessages((prev) => {
+          const ids = new Set(prev.map((m) => m.id))
+          const older = data.messages.filter((m: Message) => !ids.has(m.id))
+          return [...older, ...prev]
+        })
+        oldestCursorRef.current = data.nextCursor || null
+        setHasMoreOlder(!!data.hasMore)
+      } else {
+        setHasMoreOlder(false)
+      }
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
+
+  function handleMessagesScroll(e: React.UIEvent<HTMLDivElement>) {
+    if (e.currentTarget.scrollTop < 80 && hasMoreOlder && !loadingOlder) {
+      loadOlderMessages()
+    }
+  }
 
   async function sendMessage() {
     if (!input.trim() && !replyTo) return
@@ -341,6 +430,35 @@ export default function ChatRoomPage() {
   function copyMessage(content: string) {
     setContextMenu(null)
     navigator.clipboard.writeText(content).catch(() => {})
+  }
+
+  async function togglePin(messageId: string) {
+    setContextMenu(null)
+    const res = await authFetch(`/api/messages/${messageId}/pin`, { method: 'POST' })
+    if (res.ok) {
+      const data = await res.json()
+      setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, pinned: data.pinned } : m))
+      setPinnedMessages((prev) => {
+        if (data.pinned) {
+          if (prev.find((m) => m.id === messageId)) return prev
+          return [data.message, ...prev]
+        }
+        return prev.filter((m) => m.id !== messageId)
+      })
+    }
+  }
+
+  function insertEmoji(emoji: string) {
+    setInput((prev) => prev + emoji)
+  }
+
+  function scrollToMessage(messageId: string) {
+    const el = document.getElementById(`msg-${messageId}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('ring-2', 'ring-yellow-300', 'rounded-2xl')
+      setTimeout(() => el.classList.remove('ring-2', 'ring-yellow-300', 'rounded-2xl'), 1500)
+    }
   }
 
   async function leaveRoom() {
@@ -440,7 +558,7 @@ export default function ChatRoomPage() {
   }
 
   function handleTouchStart(e: React.TouchEvent, msg: Message) {
-    if (msg.userId !== user?.id || msg.type === 'deleted') return
+    if (msg.type === 'deleted') return
     const touch = e.touches[0]
     longPressTimerRef.current = setTimeout(() => {
       setContextMenu({ messageId: msg.id, x: touch.clientX, y: touch.clientY })
@@ -452,7 +570,7 @@ export default function ChatRoomPage() {
   }
 
   function handleContextMenu(e: React.MouseEvent, msg: Message) {
-    if (msg.userId !== user?.id || msg.type === 'deleted') return
+    if (msg.type === 'deleted') return
     e.preventDefault()
     setContextMenu({ messageId: msg.id, x: e.clientX, y: e.clientY })
   }
@@ -500,14 +618,21 @@ export default function ChatRoomPage() {
             const lastMsg = room.messages?.[0]
             const isActive = room.id === roomId
             const displayName = getRoomDisplayName(room, user.id)
+            const dmOther = !room.isGroup ? room.members.find((m) => m.userId !== user.id) : null
+            const dmOnline = dmOther ? onlineUsers.has(dmOther.userId) : false
             return (
               <button
                 key={room.id}
                 onClick={() => navigateToRoom(room.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3.5 active:bg-gray-100 transition-colors ${isActive ? 'bg-green-50 border-l-4 border-green-500' : 'hover:bg-gray-50'}`}
               >
-                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-xl">{room.isGroup ? '👥' : '👤'}</span>
+                <div className="relative flex-shrink-0">
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                    <span className="text-xl">{room.isGroup ? '👥' : '👤'}</span>
+                  </div>
+                  {!room.isGroup && dmOnline && (
+                    <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full" />
+                  )}
                 </div>
                 <div className="flex-1 text-left min-w-0">
                   <div className="flex items-center justify-between gap-1">
@@ -584,24 +709,37 @@ export default function ChatRoomPage() {
     </div>
   )
 
+  const otherMember = currentRoom && !currentRoom.isGroup ? currentRoom.members.find((m) => m.userId !== user.id) : null
+  const otherOnline = otherMember ? onlineUsers.has(otherMember.userId) : false
+  const groupOnlineCount = currentRoom ? currentRoom.members.filter((m) => m.userId !== user.id && onlineUsers.has(m.userId)).length : 0
+
   const chatContent = (
     <div className="flex flex-col h-full bg-white">
       {currentRoom ? (
         <>
           <div className="flex items-center gap-2 px-3 py-3 border-b border-gray-200 bg-white safe-top">
             <button onClick={() => setShowSidebar(true)} className="md:hidden p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg flex-shrink-0" aria-label="戻る">‹</button>
-            <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-              <span>{currentRoom.isGroup ? '👥' : '👤'}</span>
+            <div className="relative flex-shrink-0">
+              <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center">
+                <span>{currentRoom.isGroup ? '👥' : '👤'}</span>
+              </div>
+              {!currentRoom.isGroup && otherOnline && (
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full" />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
                 <h2 className="font-semibold text-gray-900 truncate">{getRoomDisplayName(currentRoom, user.id)}</h2>
                 <span title={connected ? '接続中' : '接続待機中'} className={`w-2 h-2 rounded-full flex-shrink-0 ${connected ? 'bg-green-400' : 'bg-red-400 animate-pulse'}`} />
               </div>
-              {currentRoom.isGroup && (
+              {currentRoom.isGroup ? (
                 <button onClick={() => setShowMembers(true)} className="text-xs text-green-600 hover:underline active:underline">
-                  {currentRoom.members?.length}人のメンバー
+                  {currentRoom.members?.length}人{groupOnlineCount > 0 && ` ・ ${groupOnlineCount}人オンライン`}
                 </button>
+              ) : (
+                <span className={`text-xs ${otherOnline ? 'text-green-600' : 'text-gray-400'}`}>
+                  {otherOnline ? 'オンライン' : 'オフライン'}
+                </span>
               )}
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
@@ -610,7 +748,10 @@ export default function ChatRoomPage() {
               <div className="relative">
                 <button onClick={() => setShowMenu(!showMenu)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg text-lg leading-none">⋮</button>
                 {showMenu && (
-                  <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-10 py-1 min-w-[170px]">
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-10 py-1 min-w-[180px]">
+                    {currentRoom.isGroup && (
+                      <button onClick={() => { setShowRoomSettings(true); setShowMenu(false) }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">⚙️ グループ設定・招待</button>
+                    )}
                     <button onClick={() => exportChat('csv')} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">📊 CSVエクスポート</button>
                     <button onClick={() => exportChat('json')} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">📄 JSONエクスポート</button>
                     {currentRoom.isGroup && (
@@ -622,10 +763,45 @@ export default function ChatRoomPage() {
             </div>
           </div>
 
+          {pinnedMessages.length > 0 && (
+            <div className="bg-amber-50 border-b border-amber-100 px-3 py-2">
+              {pinnedMessages.slice(0, 1).map((pm) => (
+                <button
+                  key={pm.id}
+                  onClick={() => scrollToMessage(pm.id)}
+                  className="w-full flex items-center gap-2 text-left"
+                >
+                  <span className="text-amber-500 flex-shrink-0">📌</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-amber-700 font-medium truncate">
+                      {pm.user?.displayName}: {pm.content || (pm.attachments?.length ? '添付ファイル' : '')}
+                    </p>
+                  </div>
+                  {pinnedMessages.length > 1 && (
+                    <span className="text-xs text-amber-500 flex-shrink-0">他{pinnedMessages.length - 1}件</span>
+                  )}
+                  <span className="text-xs text-amber-400 flex-shrink-0">タップで表示</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div
+            ref={messagesContainerRef}
+            onScroll={handleMessagesScroll}
             className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 bg-gray-50"
             onClick={() => { setContextMenu(null); setShowMenu(false); setShowReactionPicker(null) }}
           >
+            {loadingOlder && (
+              <div className="flex justify-center py-2">
+                <span className="text-xs text-gray-400">過去のメッセージを読み込み中...</span>
+              </div>
+            )}
+            {!hasMoreOlder && messages.length > 0 && (
+              <div className="flex justify-center py-2">
+                <span className="text-xs text-gray-300">これより前のメッセージはありません</span>
+              </div>
+            )}
             {groupedMessages.map(({ date, messages: msgs }) => (
               <div key={date}>
                 <div className="flex items-center justify-center my-4">
@@ -646,6 +822,7 @@ export default function ChatRoomPage() {
                   return (
                     <div
                       key={msg.id}
+                      id={`msg-${msg.id}`}
                       className={`flex ${isOwn ? 'justify-end' : 'justify-start'} gap-2 mb-1`}
                       onTouchStart={(e) => handleTouchStart(e, msg)}
                       onTouchEnd={handleTouchEnd}
@@ -708,7 +885,8 @@ export default function ChatRoomPage() {
                             </div>
                           ) : (
                             <>
-                              {msg.content && <p className="whitespace-pre-wrap">{msg.content}</p>}
+                              {msg.pinned && <span className="text-[10px] mr-1" title="ピン留め">📌</span>}
+                              {msg.content && <p className="whitespace-pre-wrap inline">{msg.content}</p>}
                               {isEdited && <span className={`text-[10px] ${isOwn ? 'text-green-200' : 'text-gray-400'}`}> 編集済み</span>}
                               {msg.attachments?.map((att) => (
                                 <div key={att.id} className="mt-1">
@@ -808,10 +986,19 @@ export default function ChatRoomPage() {
                 <button onClick={() => setReplyTo(null)} className="text-gray-400 hover:text-gray-600 p-1 flex-shrink-0">✕</button>
               </div>
             )}
-            <div className="flex items-end gap-1.5">
+            <div className="flex items-end gap-1.5 relative">
+              {showEmojiPicker && (
+                <EmojiPicker
+                  onSelect={insertEmoji}
+                  onClose={() => setShowEmojiPicker(false)}
+                />
+              )}
               <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => e.target.files?.[0] && uploadFile(e.target.files[0])} />
               <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2.5 text-gray-400 hover:text-gray-600 active:text-gray-600 flex-shrink-0 rounded-full hover:bg-gray-100" aria-label="ファイル添付">
                 {uploading ? '⏳' : '📎'}
+              </button>
+              <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="p-2.5 text-gray-400 hover:text-gray-600 active:text-gray-600 flex-shrink-0 rounded-full hover:bg-gray-100" aria-label="絵文字">
+                😊
               </button>
               <textarea
                 value={input}
@@ -888,6 +1075,14 @@ export default function ChatRoomPage() {
                 📋 コピー
               </button>
             )}
+            {ctxMsg && ctxMsg.type !== 'deleted' && (
+              <button
+                onClick={() => togglePin(ctxMsg.id)}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                {ctxMsg.pinned ? '📌 ピン留めを解除' : '📌 ピン留め'}
+              </button>
+            )}
             {isOwnMsg && ctxMsg?.type !== 'deleted' && (
               <button
                 onClick={() => { if (ctxMsg) startEditMessage(ctxMsg) }}
@@ -926,8 +1121,21 @@ export default function ChatRoomPage() {
           roomName={getRoomDisplayName(currentRoom, user.id)}
           token={token}
           currentUserId={user.id}
+          onlineUserIds={onlineUsers}
           onClose={() => setShowMembers(false)}
           onStartDM={startDM}
+        />
+      )}
+      {showRoomSettings && currentRoom && (
+        <RoomSettingsModal
+          room={{ id: currentRoom.id, name: currentRoom.name, description: currentRoom.description, isGroup: currentRoom.isGroup }}
+          token={token}
+          isAdmin={currentRoom.members.find((m) => m.userId === user.id)?.role === 'admin'}
+          onClose={() => setShowRoomSettings(false)}
+          onUpdated={(name, description) => {
+            setRooms((prev) => prev.map((r) => r.id === currentRoom.id ? { ...r, name, description } : r))
+            setCurrentRoom((prev) => prev ? { ...prev, name, description } : prev)
+          }}
         />
       )}
       {showAI && currentRoom && (

@@ -23,7 +23,14 @@ export default function LoginPage() {
       const data = await res.json()
       if (!res.ok) { setError(data.error); return }
       if (data.token) localStorage.setItem('auth_token', data.token)
-      router.push('/chat')
+      // 招待リンク経由でログインした場合はそのまま招待ページへ戻す
+      const inviteRedirect = sessionStorage.getItem('invite_redirect')
+      if (inviteRedirect) {
+        sessionStorage.removeItem('invite_redirect')
+        router.push(inviteRedirect)
+      } else {
+        router.push('/chat')
+      }
     } catch {
       setError('ネットワークエラーが発生しました')
     } finally {

@@ -31,7 +31,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const hasMore = messages.length > limit
   const result = hasMore ? messages.slice(0, limit) : messages
 
-  return Response.json({ messages: result.reverse(), hasMore, nextCursor: hasMore ? result[0].id : null })
+  // ピン留めメッセージ（最初のページ取得時のみ返す）
+  const pinned = cursor ? [] : await prisma.message.findMany({
+    where: { roomId, pinned: true },
+    include: {
+      user: { select: { id: true, displayName: true, avatarColor: true } },
+      attachments: true,
+      reactions: true,
+      replyTo: { include: { user: { select: { displayName: true } } } },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  return Response.json({ messages: result.reverse(), hasMore, nextCursor: hasMore ? result[0].id : null, pinned })
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ roomId: string }> }) {

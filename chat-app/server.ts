@@ -36,8 +36,15 @@ app.prepare().then(() => {
     }
   })
 
+  // オンライン状態の管理（userId -> 接続数）。複数タブ・端末対応のためカウント方式。
+  const onlineUsers = new Map<string, number>()
+
   io.on('connection', (socket) => {
     const userId = socket.data.userId
+
+    // オンライン登録
+    onlineUsers.set(userId, (onlineUsers.get(userId) || 0) + 1)
+    io.emit('presence_update', Array.from(onlineUsers.keys()))
 
     socket.on('join_room', (roomId: string) => {
       socket.join(`room:${roomId}`)
@@ -69,6 +76,13 @@ app.prepare().then(() => {
 
     socket.on('stop_typing', (data: { roomId: string }) => {
       socket.to(`room:${data.roomId}`).emit('user_stop_typing', { userId })
+    })
+
+    socket.on('disconnect', () => {
+      const remaining = (onlineUsers.get(userId) || 1) - 1
+      if (remaining <= 0) onlineUsers.delete(userId)
+      else onlineUsers.set(userId, remaining)
+      io.emit('presence_update', Array.from(onlineUsers.keys()))
     })
   })
 
