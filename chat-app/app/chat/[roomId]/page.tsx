@@ -12,6 +12,7 @@ import { EmojiPicker } from '@/components/EmojiPicker'
 import { ProfileModal } from '@/components/ProfileModal'
 import { ToastNotification, type ToastData } from '@/components/ToastNotification'
 import { NotificationPanel } from '@/components/NotificationPanel'
+import { InstallPrompt } from '@/components/InstallPrompt'
 import { useNotifications, subscribeToPush } from '@/hooks/useNotifications'
 
 interface User { id: string; email: string; displayName: string; avatarColor: string }
@@ -93,6 +94,12 @@ export default function ChatRoomPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const prependingRef = useRef(false)
   const prevScrollHeightRef = useRef(0)
+  const [isStandalone, setIsStandalone] = useState(true)
+
+  useEffect(() => {
+    const sa = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true
+    setIsStandalone(sa)
+  }, [])
   const { requestPermission, notify, unlockAudio, permission } = useNotifications(roomId)
   const notifyRef = useRef(notify)
   useEffect(() => { notifyRef.current = notify }, [notify])
@@ -672,6 +679,15 @@ export default function ChatRoomPage() {
               </div>
             </button>
             <div className="flex items-center gap-1">
+              {!isStandalone && (
+                <button
+                  onClick={() => window.dispatchEvent(new Event('open-install-guide'))}
+                  title="アプリをインストール"
+                  className="text-lg px-1"
+                >
+                  📲
+                </button>
+              )}
               <button
                 onClick={() => setShowNotifPanel(true)}
                 title="通知の設定・診断"
@@ -1033,6 +1049,7 @@ export default function ChatRoomPage() {
 
   return (
     <>
+      <InstallPrompt />
       <ToastNotification toasts={toasts} onDismiss={dismissToast} onNavigate={navigateFromToast} />
 
       {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events */}
