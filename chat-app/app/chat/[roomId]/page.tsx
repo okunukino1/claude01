@@ -8,6 +8,7 @@ import { SearchPanel } from '@/components/SearchPanel'
 import { AiAnalysisModal } from '@/components/AiAnalysisModal'
 import { ManageMembersModal } from '@/components/ManageMembersModal'
 import { ProfileModal } from '@/components/ProfileModal'
+import { ToastNotification, type ToastData } from '@/components/ToastNotification'
 import { useNotifications } from '@/hooks/useNotifications'
 
 interface User { id: string; email: string; displayName: string; avatarColor: string }
@@ -70,6 +71,7 @@ export default function ChatRoomPage() {
   const [showProfile, setShowProfile] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null)
   const [showSidebar, setShowSidebar] = useState(false)
+  const [toasts, setToasts] = useState<ToastData[]>([])
   const { requestPermission, notify, permission } = useNotifications(roomId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -77,9 +79,11 @@ export default function ChatRoomPage() {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentRoomIdRef = useRef(roomId)
   const tokenRef = useRef(token)
+  const userRef = useRef<User | null>(null)
 
   useEffect(() => { currentRoomIdRef.current = roomId }, [roomId])
   useEffect(() => { tokenRef.current = token }, [token])
+  useEffect(() => { userRef.current = user }, [user])
 
   const authFetch = useCallback((url: string, opts?: RequestInit) => {
     const t = localStorage.getItem('auth_token') || token
@@ -116,9 +120,39 @@ export default function ChatRoomPage() {
         const updated = prev
           .map((r) => r.id === msg.roomId ? { ...r, messages: [msg], updatedAt: msg.createdAt } : r)
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-        if (msg.userId !== (sock as any).data?.userId) {
+
+        // 自分のメッセージは通知しない（userRef で正確に比較）
+        const isOwnMessage = msg.userId === userRef.current?.id
+        if (!isOwnMessage) {
           const room = updated.find((r) => r.id === msg.roomId)
-          notify(msg.user?.displayName || '誰か', msg.content || 'ファイルを送信しました', msg.roomId, room?.name || 'チャット')
+          const roomName = room ? getRoomDisplayName(room, userRef.current?.id || '') : 'チャット'
+
+          // ① ブラウザ通知（Android Chrome等でバックグラウンド時に機能）
+          notify(msg.user?.displayName || '誰か', msg.content || 'ファイルを送信しました', msg.roomId, roomName)
+
+          // ② インアプリ トースト通知（iOS含む全プラットフォーム対応）
+          //    別ルームのメッセージ、またはタブが非表示の場合に表示
+          const isCurrentRoom = msg.roomId === currentRoomIdRef.current
+          const isVisible = typeof document !== 'undefined' && document.visibilityState === 'visible'
+          if (!isCurrentRoom || !isVisible) {
+            const toastId = `${msg.id}-${Date.now()}`
+            setToasts((prev) => [
+              ...prev.slice(-2), // 最大3件まで積む
+              {
+                id: toastId,
+                senderName: msg.user?.displayName || '誰か',
+                content: msg.content || 'ファイルを送信しました',
+                roomId: msg.roomId,
+                roomName,
+                avatarColor: msg.user?.avatarColor || '#16a34a',
+              },
+            ])
+          }
+
+          // ③ 初回メッセージ受信時にブラウザ通知権限を自動リクエスト（iOS以外）
+          if ('Notification' in window && Notification.permission === 'default') {
+            requestPermission()
+          }
         }
         return updated
       })
@@ -303,6 +337,15 @@ export default function ChatRoomPage() {
     return currentRoom.members.filter(
       (m) => m.userId !== user.id && m.lastReadAt && new Date(m.lastReadAt) >= new Date(msg.createdAt)
     ).length
+  }
+
+  function dismissToast(id: string) {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }
+
+  function navigateFromToast(targetRoomId: string) {
+    router.push(`/chat/${targetRoomId}`)
+    setShowSidebar(false)
   }
 
   function handleTouchStart(e: React.TouchEvent, msg: Message) {
@@ -619,6 +662,8 @@ export default function ChatRoomPage() {
 
   return (
     <>
+      <ToastNotification toasts={toasts} onDismiss={dismissToast} onNavigate={navigateFromToast} />
+
       <div className="hidden md:flex h-screen bg-white overflow-hidden">
         <div className="w-72 flex-shrink-0 border-r border-gray-200">{sidebarContent}</div>
         <div className="flex-1 min-w-0">{chatContent}</div>
