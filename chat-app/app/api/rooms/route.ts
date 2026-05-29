@@ -26,16 +26,18 @@ export async function POST(request: NextRequest) {
   const auth = getUserFromRequest(request)
   if (!auth) return Response.json({ error: '認証が必要です' }, { status: 401 })
 
-  const { name, description, memberIds } = await request.json()
+  const { name, description, memberIds, isGroup: explicitIsGroup } = await request.json()
   if (!name) return Response.json({ error: 'グループ名を入力してください' }, { status: 400 })
 
   const allMemberIds = Array.from(new Set([auth.userId, ...(memberIds || [])]))
+  // 明示的に指定がある場合はそれを使う。なければ「2人ちょうど」のみDM扱い
+  const isGroup = explicitIsGroup !== undefined ? Boolean(explicitIsGroup) : allMemberIds.length !== 2
 
   const room = await prisma.room.create({
     data: {
       name,
       description,
-      isGroup: allMemberIds.length > 2,
+      isGroup,
       members: {
         create: allMemberIds.map((uid: string) => ({
           userId: uid,

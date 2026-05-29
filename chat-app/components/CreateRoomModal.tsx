@@ -39,7 +39,7 @@ export function CreateRoomModal({ onClose, onCreated, currentUserId, token }: Pr
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, description, memberIds: selectedIds }),
+        body: JSON.stringify({ name, description, memberIds: selectedIds, isGroup: true }),
       })
       const data = await res.json()
       if (res.ok) onCreated(data.room)
