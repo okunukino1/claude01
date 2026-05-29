@@ -62,6 +62,8 @@ export default function ChatRoomPage() {
   const [input, setInput] = useState('')
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const [socket, setSocket] = useState<Socket | null>(null)
+  const [connected, setConnected] = useState(false)
+  const socketRef = useRef<Socket | null>(null)
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set())
   const [showCreateRoom, setShowCreateRoom] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
@@ -116,10 +118,13 @@ export default function ChatRoomPage() {
     if (!token) return
     const sock = io({ auth: { token }, reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 1000, reconnectionDelayMax: 5000 })
     setSocket(sock)
+    socketRef.current = sock
 
     sock.on('connect', () => {
+      setConnected(true)
       roomsRef.current.forEach((room) => sock.emit('join_room', room.id))
     })
+    sock.on('disconnect', () => setConnected(false))
 
     sock.on('new_message', (msg: Message) => {
       // ① メッセージリスト更新
@@ -167,7 +172,7 @@ export default function ChatRoomPage() {
         }
       }
 
-      // ④ 既読マーク
+      // ④ 既読マーク（サーバー側で room_read をブロードキャスト）
       if (msg.roomId === currentRoomIdRef.current) {
         const t = localStorage.getItem('auth_token') || tokenRef.current
         fetch(`/api/rooms/${msg.roomId}/read`, { method: 'PUT', headers: { Authorization: `Bearer ${t}` } })
@@ -217,11 +222,10 @@ export default function ChatRoomPage() {
 
     authFetch(`/api/rooms/${roomId}/read`, { method: 'PUT' }).then(() => {
       const now = new Date().toISOString()
-      if (socket && user) socket.emit('mark_read', { roomId, userId: user.id, lastReadAt: now })
       setRooms((prev) =>
         prev.map((r) => {
-          if (r.id !== roomId || !user) return r
-          return { ...r, members: r.members.map((m) => m.userId === user.id ? { ...m, lastReadAt: now } : m) }
+          if (r.id !== roomId || !userRef.current) return r
+          return { ...r, members: r.members.map((m) => m.userId === userRef.current!.id ? { ...m, lastReadAt: now } : m) }
         })
       )
     })
@@ -506,7 +510,10 @@ export default function ChatRoomPage() {
               <span>{currentRoom.isGroup ? '👥' : '👤'}</span>
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="font-semibold text-gray-900 truncate">{getRoomDisplayName(currentRoom, user.id)}</h2>
+              <div className="flex items-center gap-1.5">
+                <h2 className="font-semibold text-gray-900 truncate">{getRoomDisplayName(currentRoom, user.id)}</h2>
+                <span title={connected ? '接続中' : '接続待機中'} className={`w-2 h-2 rounded-full flex-shrink-0 ${connected ? 'bg-green-400' : 'bg-red-400 animate-pulse'}`} />
+              </div>
               {currentRoom.isGroup && (
                 <button onClick={() => setShowMembers(true)} className="text-xs text-green-600 hover:underline active:underline">
                   {currentRoom.members?.length}人のメンバー

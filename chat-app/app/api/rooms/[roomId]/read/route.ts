@@ -7,10 +7,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!auth) return Response.json({ error: '認証が必要です' }, { status: 401 })
   const { roomId } = await params
 
+  const now = new Date()
   await prisma.roomMember.updateMany({
     where: { userId: auth.userId, roomId },
-    data: { lastReadAt: new Date() },
+    data: { lastReadAt: now },
   })
+
+  const io = (global as any).__io
+  if (io) {
+    io.to(`room:${roomId}`).emit('room_read', {
+      userId: auth.userId,
+      roomId,
+      lastReadAt: now.toISOString(),
+    })
+  }
 
   return Response.json({ ok: true })
 }
+

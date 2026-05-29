@@ -83,7 +83,7 @@ export function useNotifications(currentRoomId: string) {
     unreadRef.current += 1
     document.title = `(${unreadRef.current}) 社内チャット`
 
-    if (permissionRef.current === 'granted') {
+    if ('Notification' in window && Notification.permission === 'granted') {
       const body = content.length > 60 ? content.slice(0, 60) + '...' : content
       await sendNotification(`${senderName} — ${roomName}`, {
         body,
