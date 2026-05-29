@@ -696,9 +696,9 @@ export default function ChatRoomPage() {
           </div>
           <div className="px-4 pb-1 flex items-center justify-between border-t border-gray-100">
             <span className="text-[10px] text-gray-300">
-              {process.env.NEXT_PUBLIC_BUILD_TIME
+              v0.1.0 ・ {process.env.NEXT_PUBLIC_BUILD_TIME
                 ? new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-                : 'build: ---'}
+                : '---'}
             </span>
             <span className="text-[10px] text-gray-300 font-mono">
               {process.env.NEXT_PUBLIC_COMMIT?.slice(0, 7) || '-------'}

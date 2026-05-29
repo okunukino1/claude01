@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { VersionChecker } from "@/components/VersionChecker";
 
 export const metadata: Metadata = {
   title: "社内チャット",
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className="h-full bg-white">
+        <VersionChecker />
         {children}
         <script dangerouslySetInnerHTML={{
           __html: `
