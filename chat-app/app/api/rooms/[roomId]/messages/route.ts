@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { getUserFromRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { sendPushToUsers } from '@/lib/push'
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ roomId: string }> }) {
   const auth = getUserFromRequest(request)
@@ -70,6 +71,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (io) {
     io.to(`room:${roomId}`).emit('new_message', message)
   }
+
+  // バックグラウンド（アプリ最小化/終了時）でも通知が届くようWeb Pushを送信。
+  // 送信者以外のルームメンバー全員に送る。レスポンスはブロックしない。
+  ;(async () => {
+    try {
+      const room = await prisma.room.findUnique({
+        where: { id: roomId },
+        select: { name: true, isGroup: true, members: { select: { userId: true } } },
+      })
+      if (!room) return
+      const recipientIds = room.members.map((m) => m.userId).filter((id) => id !== auth.userId)
+      if (recipientIds.length === 0) return
+
+      const senderName = message.user?.displayName || '誰か'
+      const roomLabel = room.isGroup ? room.name : senderName
+      const bodyText = type === 'image' ? '画像を送信しました' : type === 'file' ? 'ファイルを送信しました' : (content || '')
+
+      await sendPushToUsers(recipientIds, {
+        title: room.isGroup ? `${senderName} — ${roomLabel}` : senderName,
+        body: bodyText.length > 80 ? bodyText.slice(0, 80) + '...' : bodyText,
+        roomId,
+        tag: roomId,
+      })
+    } catch {}
+  })()
 
   return Response.json({ message }, { status: 201 })
 }

@@ -10,7 +10,7 @@ import { ManageMembersModal } from '@/components/ManageMembersModal'
 import { ProfileModal } from '@/components/ProfileModal'
 import { ToastNotification, type ToastData } from '@/components/ToastNotification'
 import { NotificationPanel } from '@/components/NotificationPanel'
-import { useNotifications } from '@/hooks/useNotifications'
+import { useNotifications, subscribeToPush } from '@/hooks/useNotifications'
 
 interface User { id: string; email: string; displayName: string; avatarColor: string }
 interface Attachment { id: string; fileName: string; fileUrl: string; fileSize: number; mimeType: string }
@@ -79,6 +79,15 @@ export default function ChatRoomPage() {
   const { requestPermission, notify, unlockAudio, permission } = useNotifications(roomId)
   const notifyRef = useRef(notify)
   useEffect(() => { notifyRef.current = notify }, [notify])
+
+  // 通知許可済みなら起動時にWeb Push購読を登録（アプリ最小化中でも通知が届く）
+  useEffect(() => {
+    if (!token) return
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    if (Notification.permission === 'granted') {
+      subscribeToPush(token)
+    }
+  }, [token])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -168,7 +177,9 @@ export default function ChatRoomPage() {
 
         // 初回メッセージ受信時にブラウザ通知権限を自動リクエスト（iOS以外）
         if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-          requestPermission()
+          requestPermission().then((granted) => {
+            if (granted) subscribeToPush(localStorage.getItem('auth_token') || tokenRef.current)
+          })
         }
       }
 
@@ -763,8 +774,12 @@ export default function ChatRoomPage() {
       )}
       {showNotifPanel && (
         <NotificationPanel
+          token={localStorage.getItem('auth_token') || token}
           onClose={() => setShowNotifPanel(false)}
-          onPermissionGranted={() => { permission.current = 'granted' }}
+          onPermissionGranted={() => {
+            permission.current = 'granted'
+            subscribeToPush(localStorage.getItem('auth_token') || tokenRef.current)
+          }}
         />
       )}
       {showProfile && (
