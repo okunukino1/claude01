@@ -80,10 +80,12 @@ export default function ChatRoomPage() {
   const currentRoomIdRef = useRef(roomId)
   const tokenRef = useRef(token)
   const userRef = useRef<User | null>(null)
+  const roomsRef = useRef<Room[]>([])
 
   useEffect(() => { currentRoomIdRef.current = roomId }, [roomId])
   useEffect(() => { tokenRef.current = token }, [token])
   useEffect(() => { userRef.current = user }, [user])
+  useEffect(() => { roomsRef.current = rooms }, [rooms])
 
   const authFetch = useCallback((url: string, opts?: RequestInit) => {
     const t = localStorage.getItem('auth_token') || token
@@ -112,50 +114,52 @@ export default function ChatRoomPage() {
     setSocket(sock)
 
     sock.on('new_message', (msg: Message) => {
+      // ① メッセージリスト更新
       setMessages((prev) => {
         if (prev.find((m) => m.id === msg.id)) return prev
         return [...prev, msg]
       })
-      setRooms((prev) => {
-        const updated = prev
+
+      // ② ルーム一覧更新（pure updater — 副作用なし）
+      setRooms((prev) =>
+        prev
           .map((r) => r.id === msg.roomId ? { ...r, messages: [msg], updatedAt: msg.createdAt } : r)
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      )
 
-        // 自分のメッセージは通知しない（userRef で正確に比較）
-        const isOwnMessage = msg.userId === userRef.current?.id
-        if (!isOwnMessage) {
-          const room = updated.find((r) => r.id === msg.roomId)
-          const roomName = room ? getRoomDisplayName(room, userRef.current?.id || '') : 'チャット'
+      // ③ 通知処理（updater の外で実行 — 副作用OK）
+      const isOwnMessage = msg.userId === userRef.current?.id
+      if (!isOwnMessage) {
+        const room = roomsRef.current.find((r) => r.id === msg.roomId)
+        const roomName = room ? getRoomDisplayName(room, userRef.current?.id || '') : 'チャット'
 
-          // ① ブラウザ通知（Android Chrome等でバックグラウンド時に機能）
-          notify(msg.user?.displayName || '誰か', msg.content || 'ファイルを送信しました', msg.roomId, roomName)
+        // ブラウザ通知（Android Chrome でバックグラウンド時に機能）
+        notify(msg.user?.displayName || '誰か', msg.content || 'ファイルを送信しました', msg.roomId, roomName)
 
-          // ② インアプリ トースト通知（iOS含む全プラットフォーム対応）
-          //    別ルームのメッセージ、またはタブが非表示の場合に表示
-          const isCurrentRoom = msg.roomId === currentRoomIdRef.current
-          const isVisible = typeof document !== 'undefined' && document.visibilityState === 'visible'
-          if (!isCurrentRoom || !isVisible) {
-            const toastId = `${msg.id}-${Date.now()}`
-            setToasts((prev) => [
-              ...prev.slice(-2), // 最大3件まで積む
-              {
-                id: toastId,
-                senderName: msg.user?.displayName || '誰か',
-                content: msg.content || 'ファイルを送信しました',
-                roomId: msg.roomId,
-                roomName,
-                avatarColor: msg.user?.avatarColor || '#16a34a',
-              },
-            ])
-          }
-
-          // ③ 初回メッセージ受信時にブラウザ通知権限を自動リクエスト（iOS以外）
-          if ('Notification' in window && Notification.permission === 'default') {
-            requestPermission()
-          }
+        // インアプリ トースト通知（iOS含む全プラットフォーム対応）
+        const isCurrentRoom = msg.roomId === currentRoomIdRef.current
+        const isVisible = typeof document !== 'undefined' && document.visibilityState === 'visible'
+        if (!isCurrentRoom || !isVisible) {
+          setToasts((prev) => [
+            ...prev.slice(-2),
+            {
+              id: `${msg.id}-${Date.now()}`,
+              senderName: msg.user?.displayName || '誰か',
+              content: msg.content || 'ファイルを送信しました',
+              roomId: msg.roomId,
+              roomName,
+              avatarColor: msg.user?.avatarColor || '#16a34a',
+            },
+          ])
         }
-        return updated
-      })
+
+        // 初回メッセージ受信時にブラウザ通知権限を自動リクエスト（iOS以外）
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+          requestPermission()
+        }
+      }
+
+      // ④ 既読マーク
       if (msg.roomId === currentRoomIdRef.current) {
         const t = localStorage.getItem('auth_token') || tokenRef.current
         fetch(`/api/rooms/${msg.roomId}/read`, { method: 'PUT', headers: { Authorization: `Bearer ${t}` } })
@@ -436,40 +440,52 @@ export default function ChatRoomPage() {
       )}
 
       {!showSearch && (
-        <div className="p-3 border-t border-gray-200 flex items-center gap-2 safe-bottom">
-          <button
-            onClick={() => setShowProfile(true)}
-            className="flex items-center gap-2 flex-1 min-w-0 hover:bg-gray-50 rounded-lg p-1 -ml-1 text-left"
-          >
-            <Avatar displayName={user.displayName} avatarColor={user.avatarColor} size="sm" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-gray-900 truncate">{user.displayName}</p>
-              <p className="text-xs text-gray-400 truncate">タップして編集</p>
+        <>
+          <div className="p-3 border-t border-gray-200 flex items-center gap-2 safe-bottom">
+            <button
+              onClick={() => setShowProfile(true)}
+              className="flex items-center gap-2 flex-1 min-w-0 hover:bg-gray-50 rounded-lg p-1 -ml-1 text-left"
+            >
+              <Avatar displayName={user.displayName} avatarColor={user.avatarColor} size="sm" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-900 truncate">{user.displayName}</p>
+                <p className="text-xs text-gray-400 truncate">タップして編集</p>
+              </div>
+            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={async () => {
+                  const granted = await requestPermission()
+                  if (!granted) alert('ブラウザの設定から通知を許可してください')
+                }}
+                title={permission.current === 'granted' ? '通知ON' : '通知をONにする'}
+                className={`text-lg px-1 ${permission.current === 'granted' ? 'opacity-100' : 'opacity-40 hover:opacity-70'}`}
+              >
+                🔔
+              </button>
+              <button
+                onClick={async () => {
+                  await fetch('/api/auth/logout', { method: 'POST' })
+                  localStorage.removeItem('auth_token')
+                  router.replace('/login')
+                }}
+                className="text-xs text-gray-400 hover:text-red-500 px-1 py-1"
+              >
+                ログアウト
+              </button>
             </div>
-          </button>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={async () => {
-                const granted = await requestPermission()
-                if (!granted) alert('ブラウザの設定から通知を許可してください')
-              }}
-              title={permission.current === 'granted' ? '通知ON' : '通知をONにする'}
-              className={`text-lg px-1 ${permission.current === 'granted' ? 'opacity-100' : 'opacity-40 hover:opacity-70'}`}
-            >
-              🔔
-            </button>
-            <button
-              onClick={async () => {
-                await fetch('/api/auth/logout', { method: 'POST' })
-                localStorage.removeItem('auth_token')
-                router.replace('/login')
-              }}
-              className="text-xs text-gray-400 hover:text-red-500 px-1 py-1"
-            >
-              ログアウト
-            </button>
           </div>
-        </div>
+          <div className="px-4 pb-1 flex items-center justify-between border-t border-gray-100">
+            <span className="text-[10px] text-gray-300">
+              {process.env.NEXT_PUBLIC_BUILD_TIME
+                ? new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+                : 'build: ---'}
+            </span>
+            <span className="text-[10px] text-gray-300 font-mono">
+              {process.env.NEXT_PUBLIC_COMMIT?.slice(0, 7) || '-------'}
+            </span>
+          </div>
+        </>
       )}
     </div>
   )
