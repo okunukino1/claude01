@@ -19,11 +19,11 @@ interface User { id: string; email: string; displayName: string; avatarColor: st
 interface Attachment { id: string; fileName: string; fileUrl: string; fileSize: number; mimeType: string }
 interface Reaction { id: string; userId: string; emoji: string }
 interface Message {
-  id: string; content: string; type: string; userId: string; roomId: string
+  id: string; content: string; type: string; userId: string; roomId: string; replyToId?: string | null
   createdAt: string; updatedAt?: string; pinned?: boolean; user: User; attachments: Attachment[]; reactions: Reaction[]
-  replyTo?: { content: string; user: { displayName: string } } | null
+  replyTo?: { id?: string; content: string; user: { displayName: string } } | null
 }
-interface RoomMember { userId: string; role?: string; lastReadAt?: string | null; user: User }
+interface RoomMember { userId: string; role?: string; lastReadAt?: string | null; muteNotifications?: boolean; user: User }
 interface Room {
   id: string; name: string; description?: string; isGroup: boolean
   members: RoomMember[]
@@ -95,6 +95,10 @@ export default function ChatRoomPage() {
   const prependingRef = useRef(false)
   const prevScrollHeightRef = useRef(0)
   const [isStandalone, setIsStandalone] = useState(true)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false)
+  const mentionStartRef = useRef(-1)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     const sa = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true
@@ -188,25 +192,34 @@ export default function ChatRoomPage() {
       if (!isOwnMessage) {
         const room = roomsRef.current.find((r) => r.id === msg.roomId)
         const roomName = room ? getRoomDisplayName(room, userRef.current?.id || '') : 'チャット'
+        const myMembership = room?.members.find((m) => m.userId === userRef.current?.id)
+        const isMuted = myMembership?.muteNotifications ?? false
 
-        // ブラウザ通知（Android Chrome でバックグラウンド時に機能）
-        notifyRef.current(msg.user?.displayName || '誰か', msg.content || 'ファイルを送信しました', msg.roomId, roomName)
+        // メンションされているか確認
+        const myName = userRef.current?.displayName || ''
+        const isMentioned = myName ? (msg.content || '').includes(`@${myName}`) : false
 
-        // インアプリ トースト通知（iOS含む全プラットフォーム対応）
-        const isCurrentRoom = msg.roomId === currentRoomIdRef.current
-        const isVisible = typeof document !== 'undefined' && document.visibilityState === 'visible'
-        if (!isCurrentRoom || !isVisible) {
-          setToasts((prev) => [
-            ...prev.slice(-2),
-            {
-              id: `${msg.id}-${Date.now()}`,
-              senderName: msg.user?.displayName || '誰か',
-              content: msg.content || 'ファイルを送信しました',
-              roomId: msg.roomId,
-              roomName,
-              avatarColor: msg.user?.avatarColor || '#16a34a',
-            },
-          ])
+        // ミュート中でもメンションされた場合は通知する
+        if (!isMuted || isMentioned) {
+          // ブラウザ通知（Android Chrome でバックグラウンド時に機能）
+          notifyRef.current(msg.user?.displayName || '誰か', msg.content || 'ファイルを送信しました', msg.roomId, roomName)
+
+          // インアプリ トースト通知（iOS含む全プラットフォーム対応）
+          const isCurrentRoom = msg.roomId === currentRoomIdRef.current
+          const isVisible = typeof document !== 'undefined' && document.visibilityState === 'visible'
+          if (!isCurrentRoom || !isVisible) {
+            setToasts((prev) => [
+              ...prev.slice(-2),
+              {
+                id: `${msg.id}-${Date.now()}`,
+                senderName: isMentioned ? `📣 ${msg.user?.displayName || '誰か'}` : (msg.user?.displayName || '誰か'),
+                content: msg.content || 'ファイルを送信しました',
+                roomId: msg.roomId,
+                roomName,
+                avatarColor: msg.user?.avatarColor || '#16a34a',
+              },
+            ])
+          }
         }
 
         // 初回メッセージ受信時にブラウザ通知権限を自動リクエスト（iOS以外）
@@ -372,9 +385,10 @@ export default function ChatRoomPage() {
   }
 
   async function sendMessage() {
-    if (!input.trim() && !replyTo) return
+    if (!input.trim()) return
     const content = input.trim()
     setInput('')
+    setShowMentionDropdown(false)
     const replyToId = replyTo?.id
     setReplyTo(null)
     if (typingTimerRef.current) { clearTimeout(typingTimerRef.current); socket?.emit('stop_typing', { roomId }) }
@@ -384,6 +398,28 @@ export default function ChatRoomPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content, replyToId }),
     })
+  }
+
+  async function toggleMute() {
+    setShowMenu(false)
+    const res = await authFetch(`/api/rooms/${roomId}/mute`, { method: 'POST' })
+    if (res.ok) {
+      const data = await res.json()
+      const update = (members: RoomMember[]) =>
+        members.map((m) => m.userId === user!.id ? { ...m, muteNotifications: data.muteNotifications } : m)
+      setCurrentRoom((prev) => prev ? { ...prev, members: update(prev.members) } : prev)
+      setRooms((prev) => prev.map((r) => r.id === roomId ? { ...r, members: update(r.members) } : r))
+    }
+  }
+
+  function insertMention(displayName: string) {
+    const before = input.slice(0, mentionStartRef.current)
+    const after = input.slice(mentionStartRef.current + 1 + mentionQuery.length)
+    const newVal = `${before}@${displayName} ${after}`
+    setInput(newVal)
+    setShowMentionDropdown(false)
+    setMentionQuery('')
+    textareaRef.current?.focus()
   }
 
   async function deleteMessage(messageId: string) {
@@ -519,7 +555,26 @@ export default function ChatRoomPage() {
   }
 
   function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setInput(e.target.value)
+    const val = e.target.value
+    setInput(val)
+
+    // メンション検出: カーソル位置より前の最後の @ を探す
+    const cursor = e.target.selectionStart ?? val.length
+    const textBefore = val.slice(0, cursor)
+    const atIdx = textBefore.lastIndexOf('@')
+    if (atIdx !== -1) {
+      const query = textBefore.slice(atIdx + 1)
+      if (!query.includes(' ') && !query.includes('\n')) {
+        setMentionQuery(query)
+        setShowMentionDropdown(true)
+        mentionStartRef.current = atIdx
+      } else {
+        setShowMentionDropdown(false)
+      }
+    } else {
+      setShowMentionDropdown(false)
+    }
+
     if (socket && user) {
       socket.emit('typing', { roomId, displayName: user.displayName })
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
@@ -528,7 +583,8 @@ export default function ChatRoomPage() {
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+    if (showMentionDropdown && e.key === 'Escape') { e.preventDefault(); setShowMentionDropdown(false); return }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!showMentionDropdown) sendMessage() }
   }
 
   async function exportChat(format: 'csv' | 'json') {
@@ -583,6 +639,33 @@ export default function ChatRoomPage() {
   }
 
   if (!user) return null
+
+  const isMuted = currentRoom?.members.find((m) => m.userId === user.id)?.muteNotifications ?? false
+
+  // メンションをハイライトしてレンダリング
+  function renderContent(content: string, isOwn: boolean) {
+    const parts = content.split(/(@\S+)/g)
+    return parts.map((part, i) => {
+      if (part.startsWith('@')) {
+        const name = part.slice(1)
+        const isMe = name === user!.displayName
+        const exists = currentRoom?.members.some((m) => m.user?.displayName === name)
+        if (exists) {
+          return (
+            <span
+              key={i}
+              className={`font-semibold rounded px-0.5 ${isOwn
+                ? (isMe ? 'bg-green-300 text-green-900' : 'bg-green-400 text-green-100')
+                : (isMe ? 'bg-blue-100 text-blue-700' : 'text-green-700')}`}
+            >
+              {part}
+            </span>
+          )
+        }
+      }
+      return <span key={i}>{part}</span>
+    })
+  }
 
   const groupedMessages: { date: string; messages: Message[] }[] = []
   messages.forEach((msg) => {
@@ -645,6 +728,9 @@ export default function ChatRoomPage() {
                   <div className="flex items-center justify-between gap-1">
                     <span className={`text-sm font-medium truncate ${(room.unreadCount || 0) > 0 && room.id !== roomId ? 'text-gray-900 font-semibold' : 'text-gray-900'}`}>{displayName}</span>
                     <div className="flex items-center gap-1 flex-shrink-0">
+                      {room.members.find((m) => m.userId === user.id)?.muteNotifications && (
+                        <span className="text-xs text-gray-300" title="通知オフ">🔕</span>
+                      )}
                       {lastMsg && <span className="text-xs text-gray-400">{formatTime(lastMsg.createdAt)}</span>}
                       {(room.unreadCount || 0) > 0 && room.id !== roomId && (
                         <span className="bg-green-500 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold leading-none">
@@ -768,6 +854,9 @@ export default function ChatRoomPage() {
                     {currentRoom.isGroup && (
                       <button onClick={() => { setShowRoomSettings(true); setShowMenu(false) }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">⚙️ グループ設定・招待</button>
                     )}
+                    <button onClick={toggleMute} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">
+                      {isMuted ? '🔔 通知をオンにする' : '🔕 通知をオフにする'}
+                    </button>
                     <button onClick={() => exportChat('csv')} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">📊 CSVエクスポート</button>
                     <button onClick={() => exportChat('json')} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100">📄 JSONエクスポート</button>
                     {currentRoom.isGroup && (
@@ -853,9 +942,13 @@ export default function ChatRoomPage() {
                           <span className="text-xs text-gray-500 mb-0.5 ml-1">{msg.user?.displayName}</span>
                         )}
                         {msg.replyTo && (
-                          <div className={`text-xs bg-white border-l-2 border-green-500 px-2 py-1.5 rounded-lg mb-1 text-gray-500 max-w-full ${isOwn ? 'self-end' : ''}`}>
-                            <span className="font-medium">{msg.replyTo.user?.displayName}</span>: {msg.replyTo.content.slice(0, 50)}
-                          </div>
+                          <button
+                            onClick={() => msg.replyToId && scrollToMessage(msg.replyToId)}
+                            className={`text-xs bg-white border-l-2 border-green-500 px-2 py-1.5 rounded-lg mb-1 text-gray-500 max-w-full text-left hover:bg-gray-50 active:bg-gray-100 ${isOwn ? 'self-end' : ''}`}
+                          >
+                            <span className="font-medium text-green-700">↩ {msg.replyTo.user?.displayName}</span>
+                            <span className="block truncate max-w-[200px]">{msg.replyTo.content.slice(0, 60)}</span>
+                          </button>
                         )}
                         <div
                           className={`relative px-3 py-2 rounded-2xl text-sm break-words group ${
@@ -902,7 +995,7 @@ export default function ChatRoomPage() {
                           ) : (
                             <>
                               {msg.pinned && <span className="text-[10px] mr-1" title="ピン留め">📌</span>}
-                              {msg.content && <p className="whitespace-pre-wrap inline">{msg.content}</p>}
+                              {msg.content && <p className="whitespace-pre-wrap inline">{renderContent(msg.content, isOwn)}</p>}
                               {isEdited && <span className={`text-[10px] ${isOwn ? 'text-green-200' : 'text-gray-400'}`}> 編集済み</span>}
                               {msg.attachments?.map((att) => (
                                 <div key={att.id} className="mt-1">
@@ -1009,6 +1102,30 @@ export default function ChatRoomPage() {
                   onClose={() => setShowEmojiPicker(false)}
                 />
               )}
+              {/* メンションドロップダウン */}
+              {showMentionDropdown && currentRoom && (() => {
+                const candidates = currentRoom.members
+                  .filter((m) => m.userId !== user.id && m.user?.displayName.toLowerCase().includes(mentionQuery.toLowerCase()))
+                  .slice(0, 5)
+                if (candidates.length === 0) return null
+                return (
+                  <div className="absolute bottom-full left-0 mb-2 bg-white border border-gray-200 rounded-xl shadow-xl z-30 w-56 overflow-hidden">
+                    <p className="text-xs text-gray-400 px-3 pt-2 pb-1">メンションする相手</p>
+                    {candidates.map((m) => (
+                      <button
+                        key={m.userId}
+                        onMouseDown={(e) => { e.preventDefault(); insertMention(m.user.displayName) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-green-50 active:bg-green-100 text-left"
+                      >
+                        <span className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: m.user.avatarColor }}>
+                          {m.user.displayName.charAt(0)}
+                        </span>
+                        <span className="truncate">{m.user.displayName}</span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()}
               <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => e.target.files?.[0] && uploadFile(e.target.files[0])} />
               <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2.5 text-gray-400 hover:text-gray-600 active:text-gray-600 flex-shrink-0 rounded-full hover:bg-gray-100" aria-label="ファイル添付">
                 {uploading ? '⏳' : '📎'}
@@ -1017,10 +1134,11 @@ export default function ChatRoomPage() {
                 😊
               </button>
               <textarea
+                ref={textareaRef}
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder="メッセージを入力..."
+                placeholder="メッセージを入力... (@でメンション)"
                 rows={1}
                 className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5 text-sm resize-none outline-none max-h-32 overflow-y-auto leading-5"
                 style={{ minHeight: '42px' }}

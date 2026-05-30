@@ -90,18 +90,45 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     try {
       const room = await prisma.room.findUnique({
         where: { id: roomId },
-        select: { name: true, isGroup: true, members: { select: { userId: true } } },
+        select: {
+          name: true,
+          isGroup: true,
+          members: {
+            select: {
+              userId: true,
+              muteNotifications: true,
+              user: { select: { displayName: true } },
+            },
+          },
+        },
       })
       if (!room) return
-      const recipientIds = room.members.map((m) => m.userId).filter((id) => id !== auth.userId)
-      if (recipientIds.length === 0) return
 
       const senderName = message.user?.displayName || '誰か'
       const roomLabel = room.isGroup ? room.name : senderName
       const bodyText = type === 'image' ? '画像を送信しました' : type === 'file' ? 'ファイルを送信しました' : (content || '')
 
+      // @メンションされた表示名を抽出
+      const mentionedNames = new Set(
+        ((content || '').match(/@(\S+)/g) || []).map((m: string) => m.slice(1))
+      )
+
+      const allRecipients = room.members.filter((m) => m.userId !== auth.userId)
+
+      // ミュートしていないユーザー、またはメンションされたユーザーに送信
+      const recipientIds = allRecipients
+        .filter((m) => !m.muteNotifications || mentionedNames.has(m.user?.displayName || ''))
+        .map((m) => m.userId)
+
+      if (recipientIds.length === 0) return
+
+      const hasMention = mentionedNames.size > 0
+      const title = hasMention
+        ? `📣 ${senderName} があなたをメンションしました`
+        : room.isGroup ? `${senderName} — ${roomLabel}` : senderName
+
       await sendPushToUsers(recipientIds, {
-        title: room.isGroup ? `${senderName} — ${roomLabel}` : senderName,
+        title,
         body: bodyText.length > 80 ? bodyText.slice(0, 80) + '...' : bodyText,
         roomId,
         tag: roomId,

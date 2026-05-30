@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const rooms = await prisma.room.findMany({
     where: { members: { some: { userId: auth.userId } } },
     include: {
-      members: { include: { user: { select: { id: true, displayName: true, avatarColor: true } } } },
+      members: { include: { user: { select: { id: true, displayName: true, avatarColor: true } } }, orderBy: { joinedAt: 'asc' } },
       messages: {
         orderBy: { createdAt: 'desc' },
         take: 1,

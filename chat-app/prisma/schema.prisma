@@ -35,12 +35,13 @@ model Room {
 }
 
 model RoomMember {
-  id         String    @id @default(uuid())
-  userId     String
-  roomId     String
-  role       String    @default("member")
-  joinedAt   DateTime  @default(now())
-  lastReadAt DateTime?
+  id                String    @id @default(uuid())
+  userId            String
+  roomId            String
+  role              String    @default("member")
+  joinedAt          DateTime  @default(now())
+  lastReadAt        DateTime?
+  muteNotifications Boolean   @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
