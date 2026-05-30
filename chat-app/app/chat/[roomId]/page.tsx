@@ -816,11 +816,15 @@ export default function ChatRoomPage() {
   const groupOnlineCount = currentRoom ? currentRoom.members.filter((m) => m.userId !== user.id && onlineUsers.has(m.userId)).length : 0
 
   const chatContent = (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-white overflow-hidden">
       {currentRoom ? (
         <>
-          <div className="flex items-center gap-2 px-3 py-3 border-b border-gray-200 bg-white safe-top">
-            <button onClick={() => setShowSidebar(true)} className="md:hidden p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg flex-shrink-0" aria-label="戻る">‹</button>
+          <div className="flex items-center gap-2 px-3 py-3 border-b border-gray-200 bg-white safe-top flex-shrink-0">
+            <button onClick={() => setShowSidebar(true)} className="md:hidden flex items-center justify-center w-10 h-10 text-gray-600 hover:text-gray-800 hover:bg-gray-100 active:bg-gray-200 rounded-xl flex-shrink-0" aria-label="戻る">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
             <div className="relative flex-shrink-0">
               <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center">
                 <span>{currentRoom.isGroup ? '👥' : '👤'}</span>
@@ -869,7 +873,7 @@ export default function ChatRoomPage() {
           </div>
 
           {pinnedMessages.length > 0 && (
-            <div className="bg-amber-50 border-b border-amber-100 px-3 py-2">
+            <div className="bg-amber-50 border-b border-amber-100 px-3 py-2 flex-shrink-0">
               {pinnedMessages.slice(0, 1).map((pm) => (
                 <button
                   key={pm.id}
@@ -1085,7 +1089,7 @@ export default function ChatRoomPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="bg-white border-t border-gray-200 px-2 py-2 safe-bottom">
+          <div className="bg-white border-t border-gray-200 px-2 py-2 safe-bottom flex-shrink-0">
             {replyTo && (
               <div className="flex items-center gap-2 bg-green-50 rounded-xl px-3 py-2 mb-2 border-l-2 border-green-500">
                 <div className="flex-1 min-w-0">
