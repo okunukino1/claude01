@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>名刺フォントサンプル｜須田 敦士</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=BIZ+UDPMincho&family=Hina+Mincho&family=Kaisei+Decol&family=Kaisei+Opti&family=Klee+One&family=M+PLUS+1p:wght@400;500;700&family=M+PLUS+Rounded+1c:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Serif+JP:wght@400;500;700&family=Shippori+Mincho:wght@400;500;700&family=Yuji+Syuku&family=Zen+Antique&family=Zen+Kaku+Gothic+New:wght@400;500&family=Zen+Maru+Gothic:wght@400;500&family=Zen+Old+Mincho&family=Shippori+Antique&family=Reggae+One&family=Yomogi&family=Dela+Gothic+One&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #f5f5f0;
+      padding: 40px 20px;
+      color: #222;
+    }
+
+    h1 {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 14px;
+      font-weight: 400;
+      color: #888;
+      margin-bottom: 32px;
+      letter-spacing: 0.05em;
+    }
+
+    .section-title {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      color: #aaa;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin: 40px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .row {
+      display: flex;
+      align-items: baseline;
+      gap: 24px;
+      padding: 18px 0;
+      border-bottom: 1px solid #e8e8e4;
+    }
+
+    .row:last-child {
+      border-bottom: none;
+    }
+
+    .name {
+      font-size: 28px;
+      min-width: 200px;
+      line-height: 1.3;
+    }
+
+    .meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .font-name {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+    }
+
+    .font-name-en {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 11px;
+      color: #999;
+      letter-spacing: 0.03em;
+    }
+
+    .tag {
+      display: inline-block;
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      margin-top: 3px;
+    }
+    .tag-gothic  { background: #e8f0fe; color: #3c6bc4; }
+    .tag-mincho  { background: #fce8e6; color: #c0392b; }
+    .tag-design  { background: #e6f4ea; color: #2e7d32; }
+    .tag-hand    { background: #fff3e0; color: #e65100; }
+
+    /* ゴシック系 */
+    .f-noto-sans        { font-family: 'Noto Sans JP', sans-serif; }
+    .f-noto-sans-b      { font-family: 'Noto Sans JP', sans-serif; font-weight: 700; }
+    .f-mplus1p          { font-family: 'M PLUS 1p', sans-serif; }
+    .f-mplus1p-b        { font-family: 'M PLUS 1p', sans-serif; font-weight: 700; }
+    .f-mplus-rounded    { font-family: 'M PLUS Rounded 1c', sans-serif; }
+    .f-zen-kaku         { font-family: 'Zen Kaku Gothic New', sans-serif; }
+    .f-zen-maru         { font-family: 'Zen Maru Gothic', sans-serif; }
+    .f-biz-gothic       { font-family: 'BIZ UDPGothic', sans-serif; }
+    .f-biz-gothic-b     { font-family: 'BIZ UDPGothic', sans-serif; font-weight: 700; }
+
+    /* 明朝系 */
+    .f-noto-serif       { font-family: 'Noto Serif JP', serif; }
+    .f-noto-serif-b     { font-family: 'Noto Serif JP', serif; font-weight: 700; }
+    .f-shippori         { font-family: 'Shippori Mincho', serif; }
+    .f-shippori-b       { font-family: 'Shippori Mincho', serif; font-weight: 700; }
+    .f-biz-mincho       { font-family: 'BIZ UDPMincho', serif; }
+    .f-zen-old          { font-family: 'Zen Old Mincho', serif; }
+    .f-zen-antique      { font-family: 'Zen Antique', serif; }
+    .f-kaisei-opti      { font-family: 'Kaisei Opti', serif; }
+    .f-kaisei-decol     { font-family: 'Kaisei Decol', serif; }
+    .f-hina             { font-family: 'Hina Mincho', serif; }
+    .f-yuji-syuku       { font-family: 'Yuji Syuku', serif; }
+
+    /* デザイン・手書き系 */
+    .f-klee             { font-family: 'Klee One', cursive; }
+    .f-yomogi           { font-family: 'Yomogi', cursive; }
+    .f-reggae           { font-family: 'Reggae One', cursive; }
+    .f-dela             { font-family: 'Dela Gothic One', cursive; }
+
+    @media print {
+      body { background: white; padding: 20px; }
+      .section-title { break-after: avoid; }
+      .row { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>名刺フォントサンプル ／ 須田 敦士</h1>
+
+  <!-- ゴシック系 -->
+  <div class="section-title">ゴシック系（Sans-serif）</div>
+
+  <div class="row">
+    <div class="name f-noto-sans">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Noto Sans JP（Regular）</div>
+      <div class="font-name-en">Noto Sans JP 400</div>
+      <span class="tag tag-gothic">ゴシック</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-noto-sans-b">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Noto Sans JP（Bold）</div>
+      <div class="font-name-en">Noto Sans JP 700</div>
+      <span class="tag tag-gothic">ゴシック</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-mplus1p">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">M PLUS 1p（Regular）</div>
+      <div class="font-name-en">M PLUS 1p 400</div>
+      <span class="tag tag-gothic">ゴシック</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-mplus1p-b">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">M PLUS 1p（Bold）</div>
+      <div class="font-name-en">M PLUS 1p 700</div>
+      <span class="tag tag-gothic">ゴシック</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-mplus-rounded">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">M PLUS Rounded 1c</div>
+      <div class="font-name-en">M PLUS Rounded 1c 400</div>
+      <span class="tag tag-gothic">ゴシック</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-zen-kaku">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Zen Kaku Gothic New</div>
+      <div class="font-name-en">Zen Kaku Gothic New 400</div>
+      <span class="tag tag-gothic">ゴシック</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-zen-maru">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Zen Maru Gothic</div>
+      <div class="font-name-en">Zen Maru Gothic 400</div>
+      <span class="tag tag-gothic">ゴシック</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-biz-gothic">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">BIZ UDPGothic（Regular）</div>
+      <div class="font-name-en">BIZ UDPGothic 400</div>
+      <span class="tag tag-gothic">ゴシック</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-biz-gothic-b">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">BIZ UDPGothic（Bold）</div>
+      <div class="font-name-en">BIZ UDPGothic 700</div>
+      <span class="tag tag-gothic">ゴシック</span>
+    </div>
+  </div>
+
+  <!-- 明朝系 -->
+  <div class="section-title">明朝系（Serif）</div>
+
+  <div class="row">
+    <div class="name f-noto-serif">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Noto Serif JP（Regular）</div>
+      <div class="font-name-en">Noto Serif JP 400</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-noto-serif-b">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Noto Serif JP（Bold）</div>
+      <div class="font-name-en">Noto Serif JP 700</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-shippori">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">しっぽり明朝（Regular）</div>
+      <div class="font-name-en">Shippori Mincho 400</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-shippori-b">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">しっぽり明朝（Bold）</div>
+      <div class="font-name-en">Shippori Mincho 700</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-biz-mincho">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">BIZ UDPMincho</div>
+      <div class="font-name-en">BIZ UDPMincho 400</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-zen-old">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Zen Old Mincho</div>
+      <div class="font-name-en">Zen Old Mincho 400</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-zen-antique">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Zen Antique</div>
+      <div class="font-name-en">Zen Antique 400</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-kaisei-opti">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Kaisei Opti</div>
+      <div class="font-name-en">Kaisei Opti 400</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-kaisei-decol">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Kaisei Decol</div>
+      <div class="font-name-en">Kaisei Decol 400</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-hina">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">ひな明朝</div>
+      <div class="font-name-en">Hina Mincho 400</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-yuji-syuku">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">游教科書体</div>
+      <div class="font-name-en">Yuji Syuku 400</div>
+      <span class="tag tag-mincho">明朝</span>
+    </div>
+  </div>
+
+  <!-- デザイン・手書き系 -->
+  <div class="section-title">デザイン・手書き系</div>
+
+  <div class="row">
+    <div class="name f-klee">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Klee One</div>
+      <div class="font-name-en">Klee One 400</div>
+      <span class="tag tag-hand">手書き風</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-yomogi">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Yomogi</div>
+      <div class="font-name-en">Yomogi 400</div>
+      <span class="tag tag-hand">手書き風</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-reggae">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Reggae One</div>
+      <div class="font-name-en">Reggae One 400</div>
+      <span class="tag tag-design">デザイン</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="name f-dela">須田 敦士</div>
+    <div class="meta">
+      <div class="font-name">Dela Gothic One</div>
+      <div class="font-name-en">Dela Gothic One 400</div>
+      <span class="tag tag-design">デザイン</span>
+    </div>
+  </div>
+
+</body>
+</html>
