@@ -954,3 +954,175 @@ document.querySelectorAll('.mapboxgl-marker .delivery-marker').forEach(el => {
 - GPS追跡・地図操作の挙動
 - Service Worker / Web Push の登録フロー
 - Mapbox GL JS の地図初期化処理
+
+---
+
+# パフォーマンス改善タスク (v2026.06.01-1)
+
+> **作成日**: 2026-06-01
+> **基準ブランチ**: `origin/main`（**v2026.06.01-1**）。行番号はすべて `origin/main` のもの。
+> **重要**: 作業ブランチが古い場合は、必ず `origin/main` を取り込んでから着手すること。
+> 既存の高速化（並列ジオコーディング・OCR先読み・インメモリキャッシュ）を巻き戻さないこと。
+
+## ⚠️ 既に対処済み（再実装しないこと）
+
+以下はレビューで「ボトルネック候補」に挙がったが、最新版で**既に解決済み**。手を入れない。
+
+| 項目 | 対処コミット | 現状 |
+|---|---|---|
+| ジオコードキャッシュの読み取り時 I/O | `47c01a7` | `getGeocodeCacheObject()` でインメモリ化済み。読み取り時に `JSON.parse`/`setItem` しない |
+| インポート時ジオコーディングの直列処理 | `686e4d1` | `mapWithConcurrency(items, PICKUP_GEOCODE_CONCURRENCY=3, ...)` で並列化済み（行4114, 4159） |
+| OCR画像が重い / 同一住所の重複リクエスト | `c34d088` | 1120px/0.8圧縮 + `prefetchGeocodeAddress`（読取り中に先読み）+ `geocodeInFlight` で重複防止済み |
+
+---
+
+## TASK-P1: マーカー/リスト描画を差分更新化する 🟡 P2（最優先・常時コスト）
+
+### 問題
+`renderMarkers()`（行2514）と `renderList()`（行2773）が、操作のたびにペアで全再構築している。
+コード全体で約58箇所から呼ばれ、完了トグル1件でも全件を作り直す。件数Nに比例して重くなる。
+
+- `renderMarkers()` → `clearAllMarkers()`（行2367）で全マーカーを破棄し、`deliveries` 全件を `new mapboxgl.Marker()` で再生成
+- `renderList()` → `body.innerHTML = listItems.map(...).join('')`（行2803）で DOM 全置換し、毎回 `querySelectorAll('button[data-action]')` + `addEventListener` を全件に再付与
+
+### 修正方針
+
+**(a) マーカーの差分更新**
+`markers` Map を活かす:
+- 今回の可視ID集合を作る
+- `markers` にあって可視集合にないIDだけ `.remove()` + `markers.delete()`
+- 可視集合にあって `markers` にないIDだけ新規生成
+- 既存マーカーは `setLngLat()` と class / z-index の更新のみ（DOM再生成しない）
+
+`clearAllMarkers()` の全破棄方式はモード切替時など限定的な場面でのみ使う。
+
+**(b) リストのイベント委譲**
+`list-body` に**1つだけ** click リスナーを置き、`e.target.closest('[data-action]')` と `closest('.delivery-item')` で判定する。
+これで再描画ごとの `querySelectorAll + addEventListener`（行2806以降）が不要になる。
+完了トグルなど1件のみの変化は、該当行の class 切替＋num-badge更新だけで済ませられればなお良い（段階的でよい）。
+
+### 確認事項
+- マーカークリック→詳細パネル、リスト各ボタン（完了/ナビ/位置/編集）が従来通り動作
+- `activeDeliveryId` のハイライト（`.selected`）と z-index 最前面化が維持される
+- 配送/集荷モード切替、タブ切替で表示が崩れない
+
+---
+
+## TASK-P2: 集荷同期の複数シート fetch を並列化する 🟡 P2
+
+### 問題
+`syncPickupProgressFromSheets()`（行4060）が複数シートを直列 fetch している（行4079）。
+20秒ごとのポーリングで、シート枚数ぶん順番に待機する。
+
+### 現在のコード（行4079付近）
+```javascript
+for (const sheet of sheets) {
+  const data = await fetchPickupItems(sheet, false);   // 1枚ずつ順番待ち
+  if (isSpotPickupSheet(sheet)) {
+    changed = await mergePickupSheetSpotItems(data.items || [], { silent }) || changed;
+  }
+  changed = applyPickupProgressFromItems(data.items || []) || changed;
+}
+```
+
+### 修正方針
+**fetch（I/O）だけ並列化**し、結果適用は順次のままにする:
+```javascript
+const fetched = await Promise.all(
+  sheets.map(sheet => fetchPickupItems(sheet, false).then(data => ({ sheet, data })))
+);
+for (const { sheet, data } of fetched) {
+  if (isSpotPickupSheet(sheet)) {
+    changed = await mergePickupSheetSpotItems(data.items || [], { silent }) || changed;
+  }
+  changed = applyPickupProgressFromItems(data.items || []) || changed;
+}
+```
+`N×遅延` → `1×遅延` になる。`mergePickupSheetSpotItems` の適用は直列のままにし、`deliveries` への副作用の競合を避ける。
+
+### 確認事項
+- 複数コース（小舟町/浜町南/浜町北）の進捗とスポットが従来通り反映される
+- `pickupSyncInFlight` ガードと整合（並列化は fetch 内部のみ）
+
+---
+
+## TASK-P3: 同期時スポット集荷のジオコーディングを並列化する 🟢 P3
+
+### 問題
+`mergePickupSheetSpotItems()`（行3950）内で、座標なしの新規スポットに対し `await geocodeAddress()` を直列実行している（行4010, 4024付近）。
+通常は `savedLocation`（シート保存済み座標）でヒットするため発火しないが、新規スポットが多い瞬間は直列で遅くなる。
+
+### 修正方針
+既存の `mapWithConcurrency()`（行4114）を再利用し、ジオコーディングが必要なアイテムだけ先に並列解決してから `deliveries` への反映ループを回す。インポート経路（`resolvePickupImportItem` + `importPickupItems`）と同じパターンに揃える。
+
+### 確認事項
+- スポット集荷の新規追加・座標反映・キャンセル扱いが従来通り
+- 既存座標がある場合はジオコーディングを呼ばない（`savedLocation` 優先を維持）
+
+---
+
+## TASK-P4: 描画・保存時の重複 localStorage 書き込みを削減する 🟢 P3
+
+### 問題
+`removePickupRecordsFromDeliveryState()`（行1524）が `renderMarkers()`・`renderList()` の冒頭と `saveDeliveries()`（行1544、約25箇所から呼ばれる）でそれぞれ実行され、配送モードでは毎回 `deliveries` 全体を `JSON.stringify` して localStorage に書き込む可能性がある。描画のたびに stringify が走る。
+
+### 修正方針
+- 描画関数（`renderMarkers`/`renderList`）からは「pickup記録の物理移動＋localStorage書き込み」を外し、**読み取り専用のフィルタ**（`isVisibleInCurrentMode`）のみに依存させる。
+- 実際の移動（`movePickupRecordsToPickupStorage` + localStorage書き込み）は**状態変化時のみ**に限定する（モード切替 `switchAppMode`、インポート、シート同期で `changed===true` の時）。
+- これにより毎描画の `JSON.stringify(deliveries)` が消える。
+
+### 確認事項
+- 配送モードに集荷記録が表示されない不変条件（db88c7e で確立）を維持すること
+- ⚠️ `removePickupRecordsFromDeliveryState` の挙動変更は db88c7e のバグ修正と密接。慎重に。表示テスト必須
+
+---
+
+## TASK-P5: PHP `optimize_route.php` の 2-opt 反復を可変化する 🟢 P3
+
+### 問題
+`improve_matrix_route()` が最大80反復 × O(N²)（24件で約46,000ループ）をPHPで実行。ルート最適化ボタン押下時のみだが、件数が多いと数秒かかる。
+
+### 修正方針
+- 反復上限を件数に応じて可変にするか、経過時間ベース（例: 1.5秒）で打ち切る。
+- 早期収束（改善が一定回数なければ break）を入れる。
+- ※ アルゴリズムの結果品質を大きく変えないこと。24件上限の制約は維持。
+
+---
+
+## TASK-P6: PHP `spot_pickups_refresh.php` の直列スクレイピングを並列化する 🟢 P3（要注意）
+
+### 問題
+複数ターゲットを直列に HTTP GET している。`N×2秒` 程度かかる。
+
+### 修正方針
+`curl_multi_*` で並列取得する。
+⚠️ **注意**: スクレイピング先（エコ配ドライバーポータル）への同時接続数を増やすことになる。負荷・BANリスクを考慮し、並列度は控えめ（2〜3）に。動作確認とレート配慮を最優先。
+
+---
+
+## TASK-P7: 起動時の直列 await を一部並走させる 🟢 P3
+
+### 問題
+init で `await loadMapboxConfig()` → `await initMap()` → `await resetStalePickupCompletions()` が直列。
+
+### 修正方針
+地図ロードに依存しない処理（`resetStalePickupCompletions` など）を `initMap()` と並走させる。
+⚠️ Mapbox の地図初期化処理自体（`initMap` の中身、`map.on('load')` フロー）は**変更しないこと**（「変更してはいけないこと」参照）。並走の制御は init 関数側のみで行う。
+
+### 確認事項
+- 起動時に地図・マーカー・リストが従来通り表示される
+- 通知から起動した場合のコース展開（`openPickupCourseFromNotification`）が動作する
+
+---
+
+## パフォーマンスタスク 優先度まとめ
+
+| タスク | 優先度 | 効果 | リスク |
+|---|---|---|---|
+| P1 マーカー/リスト差分更新 | 🟡 P2 | 大（常時・件数比例） | 中（描画ロジック広範） |
+| P2 同期シート並列fetch | 🟡 P2 | 中（20秒ごと） | 低 |
+| P3 同期時ジオコード並列化 | 🟢 P3 | 小〜中（新規時のみ） | 低 |
+| P4 重複localStorage削減 | 🟢 P3 | 中（描画毎） | 中（db88c7e と密接） |
+| P5 2-opt反復可変化 | 🟢 P3 | 中（最適化時のみ） | 低 |
+| P6 PHP並列スクレイピング | 🟢 P3 | 中（更新時のみ） | 中（外部負荷・BAN） |
+| P7 起動時await並走 | 🟢 P3 | 小（起動時のみ） | 低 |
