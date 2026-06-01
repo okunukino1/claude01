@@ -780,6 +780,170 @@ location ^~ /delivery_map_mapbox/data/private/ {
 
 ---
 
+---
+
+# db88c7e バグ検証結果 — 追加タスク (v2026.06.01-1)
+
+> **検証日**: 2026-06-01  
+> **検証対象コミット**: `db88c7e` "Remove stale pickup markers in delivery mode"  
+> **前提**: 07936f1 → 47c01a7 → db88c7e の3段階修正を総合評価
+
+---
+
+## 検証サマリー
+
+| 懸念点 | 判定 | 根拠 |
+|---|---|---|
+| `renderMarkers(visibleDeliveries idx)` vs `renderList(deliveries index)` の数字ズレ | **問題なし** | `removePickupRecordsFromDeliveryState()` が両関数の先頭で `deliveries` を浄化するため、実行時点では `visibleDeliveries === deliveries` |
+| `clearAllMarkers()` DOM sweep が GPS マーカーを消す | **問題なし** | GPS マーカー要素はクラス属性なし。`.delivery-marker` セレクターに一致しない |
+| `markerKey = d.id \|\| 'idx:${idx}'` と `markers.get(d.id)` の不整合 | **実質無害** | `uid()` が UUID を保証するため `d.id` は常に truthy。フォールバックは使われない |
+| `syncPickupProgressFromSheets` がモード切替後に完走するパス | **ガード済み** | 完走しても `saveDeliveries()` → `removePickupRecordsFromDeliveryState()` が先に呼ばれてから `renderMarkers()` が実行される |
+| `activeDeliveryId` の整合性 | **問題なし** | `removePickupRecordsFromDeliveryState()` がアクティブアイテム除去時に `activeDeliveryId = null` にリセットする |
+| 配送モードでの青いスポットピン問題（根本原因） | **解決済み** | 3段階修正で triple-guard が揃っている |
+
+---
+
+## TASK-M1: `oldMarker.remove()` dead code 除去と `markerKey` 統一 🟡 P2
+
+### 問題
+
+`renderMarkers()` で `clearAllMarkers()` を呼んだ直後に `oldMarker` チェックを行っているが、
+`clearAllMarkers()` が既に `markers.clear()` しているため `markers.get(markerKey)` は常に `undefined` を返す。
+`oldMarker.remove()` は絶対に実行されない dead code。
+
+また、`markerKey = d.id || \`idx:${idx}\`` としているが、`uid()` が UUID を保証する以上フォールバックは不要であり、
+`updateMarkerZIndexes()` が `markers.get(d.id)` で参照するキーと一致させるべき。
+
+### 現在のコード（`index.html` 内 `renderMarkers()` のループ末尾）
+
+```javascript
+const markerKey = d.id || `idx:${idx}`;
+const oldMarker = markers.get(markerKey);  // clearAllMarkers() 後なので常に undefined
+if (oldMarker) oldMarker.remove();          // 絶対に実行されない
+markers.set(markerKey, marker);
+```
+
+### 修正後
+
+```javascript
+markers.set(d.id, marker);
+```
+
+### 確認事項
+- `updateMarkerZIndexes()` が `markers.get(d.id)` でマーカーを取得できること
+- マーカークリック → 詳細パネル開閉が正常に動作すること
+- 変更は3行→1行に減るだけ。ロジックの変化なし
+
+---
+
+## TASK-M2: `updateMarkerZIndexes()` の idx を visible ベースに統一 🟢 P3
+
+### 問題
+
+`renderMarkers()` が `visibleDeliveries` の `idx` で z-index 初期値を計算してマーカーを作成するのに対し、
+`updateMarkerZIndexes()` は `deliveries` の `idx` で z-index を再計算する。
+
+現状は `removePickupRecordsFromDeliveryState()` のおかげで delivery mode では両者が一致するが、
+将来 `isVisibleInCurrentMode` が pickup mode でもフィルタリングするようになった場合に z-index がズレる。
+コードの意図を明示するため統一する。
+
+### 現在のコード
+
+```javascript
+// renderMarkers()
+const visibleDeliveries = deliveries.filter(isVisibleInCurrentMode);
+visibleDeliveries.forEach((d, idx) => {
+  wrapper.style.zIndex = String(markerZIndex(d, idx));  // visibleDeliveries の idx
+  ...
+  markers.set(d.id, marker);  // TASK-M1 適用後
+});
+
+// updateMarkerZIndexes() — 別関数
+function updateMarkerZIndexes() {
+  deliveries.forEach((d, idx) => {          // deliveries の idx (異なる)
+    const marker = markers.get(d.id);
+    if (!marker) return;
+    marker.getElement().style.zIndex = String(markerZIndex(d, idx));
+  });
+}
+```
+
+### 修正後
+
+モジュールスコープに `_lastVisibleDeliveries` を追加し、`renderMarkers()` で更新する:
+
+```javascript
+// モジュール変数に追加（let deliveries = []; の近く）
+let _lastVisibleDeliveries = [];
+
+// renderMarkers() 内
+const visibleDeliveries = deliveries.filter(isVisibleInCurrentMode);
+_lastVisibleDeliveries = visibleDeliveries;
+
+// updateMarkerZIndexes() を修正
+function updateMarkerZIndexes() {
+  _lastVisibleDeliveries.forEach((d, idx) => {
+    const marker = markers.get(d.id);
+    if (!marker) return;
+    marker.getElement().style.zIndex = String(markerZIndex(d, idx));
+  });
+}
+```
+
+### 確認事項
+- マーカーをタップ → 選択マーカーが最前面に移動すること（z-index 100000 が適用される）
+- 完了マーカーが未完了マーカーより後ろに表示されること
+
+---
+
+## TASK-M3: GPS マーカーに explicit 保護属性を付与 🟢 P3
+
+### 問題
+
+`clearAllMarkers()` の DOM sweep は偶然 GPS マーカーを回避できているが（クラスなしのため）、
+将来 GPS マーカーに `.delivery-marker` 系クラスが追加された場合に誤削除するリスクがある。
+防護を偶然ではなく意図的にする。
+
+### 現在のコード（`updateUserLocation()` 内）
+
+```javascript
+userMarkerEl = document.createElement('div');
+userMarkerEl.style.cssText = `
+  width: 18px; height: 18px;
+  background: #2563eb;
+  ...
+`;
+```
+
+### 修正後
+
+```javascript
+userMarkerEl = document.createElement('div');
+userMarkerEl.dataset.role = 'user-location';  // 追加
+userMarkerEl.style.cssText = `
+  width: 18px; height: 18px;
+  background: #2563eb;
+  ...
+`;
+```
+
+`clearAllMarkers()` の DOM sweep 条件を明示化:
+
+```javascript
+document.querySelectorAll('.mapboxgl-marker .delivery-marker').forEach(el => {
+  const markerEl = el.closest('.mapboxgl-marker');
+  if (markerEl && !markerEl.querySelector('[data-role="user-location"]')) {
+    markerEl.remove();
+  }
+});
+```
+
+### 確認事項
+- GPS 追跡 ON → 現在地マーカー（青い円）が地図上に表示されること
+- GPS 中に `renderMarkers()` が呼ばれても現在地マーカーが消えないこと
+
+---
+
 # 変更してはいけないこと
 
 - 配送モード / 集荷モードの切り替えロジック（`switchAppMode`）の振る舞い
