@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.01-3';
+const APP_VERSION = 'v2026.06.01-4';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -4020,6 +4020,33 @@ async function mergePickupSheetSpotItems(items, options = {}) {
   });
   if (deliveries.length !== beforeLength) changed = true;
 
+  const geocodeTargets = [];
+  spotItems.forEach((item, index) => {
+    if (pickupLocationFromItem(item)) return;
+    const spotId = String(item.id);
+    const spotKey = spotPickupNaturalKey(item);
+    const existing = deliveries.find(d => isSpotPickupDelivery(d) &&
+      (String(d.spotPickupId || '') === spotId || (spotKey && spotPickupNaturalKey(d) === spotKey)));
+    if (!existing || existing.address !== item.address || existing.lat == null || existing.lng == null) {
+      geocodeTargets.push({ item, index });
+    }
+  });
+
+  const geocodedSpotLocations = new Map();
+  if (geocodeTargets.length > 0) {
+    const geocoded = await mapWithConcurrency(
+      geocodeTargets,
+      PICKUP_GEOCODE_CONCURRENCY,
+      async ({ item, index }) => {
+        if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${index + 1}/${spotItems.length}`);
+        return { item, result: await geocodeAddress(item.address) };
+      }
+    );
+    geocoded.forEach(({ item, result }) => {
+      if (result) geocodedSpotLocations.set(item, result);
+    });
+  }
+
   for (let i = 0; i < spotItems.length; i++) {
     const item = spotItems[i];
     const spotId = String(item.id);
@@ -4060,8 +4087,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
         existing.approx = savedLocation.approx;
         existing.formatted = savedLocation.formatted;
       } else if (addressChanged || existing.lat == null || existing.lng == null) {
-        if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${i + 1}/${spotItems.length}`);
-        const result = await geocodeAddress(item.address);
+        const result = geocodedSpotLocations.get(item);
         if (!result) continue;
         existing.lat = result.lat;
         existing.lng = result.lng;
@@ -4074,8 +4100,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
 
     let result = savedLocation;
     if (!result) {
-      if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${i + 1}/${spotItems.length}`);
-      result = await geocodeAddress(item.address);
+      result = geocodedSpotLocations.get(item);
     }
     if (!result) continue;
     deliveries.push({
@@ -4128,9 +4153,12 @@ async function syncPickupProgressFromSheets(silent = true) {
       return;
     }
 
+    const fetchedSheets = await Promise.all(
+      sheets.map(sheet => fetchPickupItems(sheet).then(data => ({ sheet, data })))
+    );
+
     let changed = false;
-    for (const sheet of sheets) {
-      const data = await fetchPickupItems(sheet, false);
+    for (const { sheet, data } of fetchedSheets) {
       if (isSpotPickupSheet(sheet)) {
         changed = await mergePickupSheetSpotItems(data.items || [], { silent }) || changed;
       }
@@ -4942,13 +4970,14 @@ document.addEventListener('visibilitychange', () => {
     updateAddrButton();
     showLoading('地図を読み込み中...');
     mapboxConfig = await loadMapboxConfig();
-    await initMap();
+    const mapReady = initMap();
     loadDeliveries();
     if (appMode === 'pickup') {
       const selectedCourse = getSelectedPickupSheet();
       saveRegularPickupCache(selectedCourse, deliveries);
       showCachedRegularPickupCourse(selectedCourse);
     }
+    await mapReady;
     await resetStalePickupCompletions();
     renderMarkers();
     renderList();

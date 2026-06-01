@@ -235,12 +235,16 @@ function nearest_neighbor_matrix_route($matrix, $points) {
 
 function improve_matrix_route($route, $matrix, $points) {
   if (count($route) < 4) return $route;
+  $deadline = microtime(true) + 1.5;
+  $routeCount = count($route);
+  $maxPasses = min(80, max(12, $routeCount * 3));
   $changed = true;
   $guard = 0;
-  while ($changed && $guard < 80) {
+  while ($changed && $guard < $maxPasses && microtime(true) < $deadline) {
     $changed = false;
     $guard++;
     for ($i = 0; $i < count($route) - 1; $i++) {
+      if (microtime(true) >= $deadline) break 2;
       for ($k = $i + 1; $k < count($route); $k++) {
         $a = $i === 0 ? 0 : $route[$i - 1];
         $b = $route[$i];
