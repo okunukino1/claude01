@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.01-2';
+const APP_VERSION = 'v2026.06.01-3';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -1097,11 +1097,14 @@ const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-pickup-location-admin-pin-v1';
 const PICKUP_LIST_TAB_KEY = 'rys-mapbox-pickup-list-tab-v1';
 const PUSH_SELECTED_COURSES_KEY = 'rys-mapbox-push-selected-courses-v1';
 const TEXT_SIZE_KEY = 'rys-mapbox-text-size-v1';
+const APP_VERSION_CHECK_KEY = 'rys-mapbox-version-check-v1';
+const APP_VERSION_PROMPTED_KEY = 'rys-mapbox-version-prompted-v1';
 const GEOCODE_CACHE_KEY = 'rys-mapbox-geocode-cache-v1';
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const PICKUP_GEOCODE_CONCURRENCY = 3;
 const PHOTO_OCR_MAX_SIZE = 1120;
 const PHOTO_OCR_QUALITY = 0.8;
+const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const TEXT_SIZE_OPTIONS = {
   small: 0.9,
   normal: 1,
@@ -1268,6 +1271,49 @@ async function reloadLatestApp() {
   const url = new URL(window.location.href);
   url.searchParams.set('refresh', String(Date.now()));
   window.location.replace(url.toString());
+}
+
+async function fetchServerAppVersion() {
+  const url = new URL(window.location.href);
+  url.hash = '';
+  url.searchParams.set('version_check', String(Date.now()));
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  if (!response.ok) throw new Error(`version check failed: ${response.status}`);
+  const html = await response.text();
+  const match = html.match(/const\s+APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+  return match ? match[1] : '';
+}
+
+function promptAppUpdate(serverVersion) {
+  const versionPair = `${APP_VERSION}->${serverVersion}`;
+  if (localStorage.getItem(APP_VERSION_PROMPTED_KEY) === versionPair) return;
+  if (document.querySelector('.modal-bg.show')) {
+    setTimeout(() => checkAppVersionUpdate({ force: true }), 30000);
+    return;
+  }
+
+  localStorage.setItem(APP_VERSION_PROMPTED_KEY, versionPair);
+  showConfirm(
+    'アプリ更新があります',
+    `サーバーの最新版は ${serverVersion} です。\nこの端末で動いている版は ${APP_VERSION} です。\n最新のアプリを読み込みますか？`,
+    reloadLatestApp
+  );
+}
+
+async function checkAppVersionUpdate({ force = false } = {}) {
+  const now = Date.now();
+  if (!force) {
+    const lastCheckedAt = Number(localStorage.getItem(APP_VERSION_CHECK_KEY) || 0);
+    if (now - lastCheckedAt < APP_VERSION_CHECK_INTERVAL_MS) return;
+  }
+
+  localStorage.setItem(APP_VERSION_CHECK_KEY, String(now));
+  try {
+    const serverVersion = await fetchServerAppVersion();
+    if (serverVersion && serverVersion !== APP_VERSION) promptAppUpdate(serverVersion);
+  } catch (e) {
+    console.warn('app version check failed', e);
+  }
 }
 
 function selectedPushCourses() {
@@ -2969,6 +3015,10 @@ function openEdit(id) {
   const doneBtn = $('btn-edit-done');
   doneBtn.textContent = d.completed ? '完了解除' : '完了';
   doneBtn.disabled = false;
+  const deleteBtn = $('btn-edit-delete');
+  const isPickupItem = isPickupStorageRecord(d);
+  deleteBtn.hidden = isPickupItem;
+  deleteBtn.disabled = isPickupItem;
   openModal('modal-edit');
 }
 
@@ -3122,6 +3172,10 @@ function deleteEditedItem() {
   if (!editingItemId) return;
   const d = deliveries.find(x => x.id === editingItemId);
   if (!d) return;
+  if (isPickupStorageRecord(d)) {
+    showToast('集荷先は削除できません', true);
+    return;
+  }
   showConfirm(
     '削除の確認',
     `「${d.address}」を削除しますか？`,
@@ -4869,7 +4923,10 @@ window.addEventListener('appinstalled', () => {
   updateNotificationInstallGuide();
 });
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) retryPendingPickupProgress({ silent: true });
+  if (!document.hidden) {
+    retryPendingPickupProgress({ silent: true });
+    checkAppVersionUpdate();
+  }
 });
 
 (async function init() {
@@ -4901,6 +4958,7 @@ document.addEventListener('visibilitychange', () => {
     ensureGpsWatching();
     updateGpsButton();
     hideLoading();
+    checkAppVersionUpdate({ force: true });
     ensurePushServiceWorker().catch(e => console.warn('push service worker registration failed', e));
     const openedFromNotification = await openPickupCourseFromNotification();
     if (!openedFromNotification) {
