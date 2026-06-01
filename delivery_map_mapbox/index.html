@@ -836,7 +836,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.06.01-1</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.06.01-2</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -879,7 +879,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.01-1</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.01-2</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.01-1';
+const APP_VERSION = 'v2026.06.01-2';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -1158,6 +1158,7 @@ let map = null;
 let mapboxConfig = null;
 let appMode = detectInitialAppMode();
 let deliveries = [];
+let lastVisibleDeliveries = [];
 let markers = new Map();
 let activeDeliveryId = null;
 let userMarker = null;
@@ -2369,7 +2370,7 @@ function clearAllMarkers() {
   markers.clear();
   document.querySelectorAll('.mapboxgl-marker .delivery-marker').forEach(el => {
     const markerEl = el.closest('.mapboxgl-marker');
-    if (markerEl) markerEl.remove();
+    if (markerEl && !markerEl.querySelector('[data-role="user-location"]')) markerEl.remove();
   });
 }
 
@@ -2412,7 +2413,7 @@ function markerZIndex(d, idx) {
 }
 
 function updateMarkerZIndexes() {
-  deliveries.forEach((d, idx) => {
+  lastVisibleDeliveries.forEach((d, idx) => {
     const marker = markers.get(d.id);
     if (!marker) return;
     marker.getElement().style.zIndex = String(markerZIndex(d, idx));
@@ -2517,6 +2518,7 @@ function renderMarkers() {
   clearAllMarkers();
   const modeKey = LABEL_MODES[labelModeIndex].key;
   const visibleDeliveries = deliveries.filter(isVisibleInCurrentMode);
+  lastVisibleDeliveries = visibleDeliveries;
   const overlapInfo = buildMarkerOverlapInfo(visibleDeliveries);
 
   visibleDeliveries.forEach((d, idx) => {
@@ -2564,10 +2566,7 @@ function renderMarkers() {
       rotationAlignment: 'viewport',
       pitchAlignment: 'viewport'
     }).setLngLat([d.lng, d.lat]).addTo(map);
-    const markerKey = d.id || `idx:${idx}`;
-    const oldMarker = markers.get(markerKey);
-    if (oldMarker) oldMarker.remove();
-    markers.set(markerKey, marker);
+    markers.set(d.id, marker);
   });
 }
 
@@ -4662,6 +4661,7 @@ function updateUserLocation(pos, moveMap = false) {
 
   if (!userMarker) {
     userMarkerEl = document.createElement('div');
+    userMarkerEl.dataset.role = 'user-location';
     userMarkerEl.style.cssText = `
       width: 18px; height: 18px;
       background: #2563eb;
