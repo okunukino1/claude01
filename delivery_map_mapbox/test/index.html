@@ -836,7 +836,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.01-4-test.1</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.01-4-test.2</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.01-4-test.1';
+const APP_VERSION = 'v2026.06.01-4-test.2';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2558,61 +2558,84 @@ function buildMarkerOverlapInfo(items = deliveries) {
   return overlaps;
 }
 
+function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
+  const num = displayNumber(d, idx);
+  wrapper.className = 'delivery-marker'
+    + (d.completed ? ' done' : '')
+    + (d.approx ? ' approx' : '')
+    + (isSpotPickupDelivery(d) ? ' spot' : '');
+  wrapper.style.zIndex = String(markerZIndex(d, idx));
+  wrapper.innerHTML = '';
+
+  const labelText = buildLabelText(d, num, modeKey);
+  if (labelText) {
+    const lbl = document.createElement('div');
+    lbl.className = 'delivery-label';
+    lbl.innerHTML = `<span class="lbl-bldg">${escapeHtml(labelText)}</span>`;
+    wrapper.appendChild(lbl);
+  }
+
+  const pin = document.createElement('div');
+  pin.className = 'delivery-pin';
+  pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${escapeHtml(num)}${d.approx ? '?' : ''}</div>`;
+  if (overlap && overlap.index === 0) {
+    const overlapLabel = document.createElement('div');
+    overlapLabel.className = 'overlap-count-label';
+    overlapLabel.textContent = `${overlap.count}件`;
+    pin.appendChild(overlapLabel);
+  }
+  wrapper.appendChild(pin);
+}
+
+function createDeliveryMarker(d) {
+  const wrapper = document.createElement('div');
+  wrapper.addEventListener('click', (e) => {
+    e.stopPropagation();
+    activeDeliveryId = d.id;
+    updateMarkerZIndexes();
+    renderList();
+    openEdit(d.id);
+  });
+
+  return new mapboxgl.Marker({
+    element: wrapper,
+    anchor: 'bottom',
+    rotationAlignment: 'viewport',
+    pitchAlignment: 'viewport'
+  }).setLngLat([d.lng, d.lat]).addTo(map);
+}
+
 function renderMarkers() {
   if (!map) return;
   removePickupRecordsFromDeliveryState();
-  clearAllMarkers();
   const modeKey = LABEL_MODES[labelModeIndex].key;
   const visibleDeliveries = deliveries.filter(isVisibleInCurrentMode);
   lastVisibleDeliveries = visibleDeliveries;
   const overlapInfo = buildMarkerOverlapInfo(visibleDeliveries);
+  const visibleMarkerIds = new Set(
+    visibleDeliveries
+      .filter(d => d.id && d.lat != null && d.lng != null)
+      .map(d => d.id)
+  );
+
+  markers.forEach((marker, id) => {
+    if (!visibleMarkerIds.has(id)) {
+      marker.remove();
+      markers.delete(id);
+    }
+  });
 
   visibleDeliveries.forEach((d, idx) => {
-    if (d.lat == null || d.lng == null) return;
-    const num = displayNumber(d, idx);
+    if (!d.id || d.lat == null || d.lng == null) return;
     const overlap = overlapInfo.get(d.id);
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'delivery-marker'
-      + (d.completed ? ' done' : '')
-      + (d.approx ? ' approx' : '')
-      + (isSpotPickupDelivery(d) ? ' spot' : '');
-    wrapper.style.zIndex = String(markerZIndex(d, idx));
-
-    const labelText = buildLabelText(d, num, modeKey);
-    if (labelText) {
-      const lbl = document.createElement('div');
-      lbl.className = 'delivery-label';
-      lbl.innerHTML = `<span class="lbl-bldg">${escapeHtml(labelText)}</span>`;
-      wrapper.appendChild(lbl);
+    let marker = markers.get(d.id);
+    if (!marker) {
+      marker = createDeliveryMarker(d);
+      markers.set(d.id, marker);
+    } else {
+      marker.setLngLat([d.lng, d.lat]);
     }
-
-    const pin = document.createElement('div');
-    pin.className = 'delivery-pin';
-    pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${escapeHtml(num)}${d.approx ? '?' : ''}</div>`;
-    if (overlap && overlap.index === 0) {
-      const overlapLabel = document.createElement('div');
-      overlapLabel.className = 'overlap-count-label';
-      overlapLabel.textContent = `${overlap.count}件`;
-      pin.appendChild(overlapLabel);
-    }
-    wrapper.appendChild(pin);
-
-    wrapper.addEventListener('click', (e) => {
-      e.stopPropagation();
-      activeDeliveryId = d.id;
-      updateMarkerZIndexes();
-      renderList();
-      openEdit(d.id);
-    });
-
-    const marker = new mapboxgl.Marker({
-      element: wrapper,
-      anchor: 'bottom',
-      rotationAlignment: 'viewport',
-      pitchAlignment: 'viewport'
-    }).setLngLat([d.lng, d.lat]).addTo(map);
-    markers.set(d.id, marker);
+    updateDeliveryMarkerElement(marker.getElement(), d, idx, modeKey, overlap);
   });
 }
 
@@ -2876,30 +2899,32 @@ function renderList() {
     `;
   }).join('');
 
-  body.querySelectorAll('button[data-action]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = btn.dataset.id;
-      const action = btn.dataset.action;
-      if (action === 'done') {
-        toggleDone(id);
-      } else {
-        focusDelivery(id, false);
-        if (action === 'navi') openNavigation(id);
-        else if (action === 'place') startPlacement(id);
-        else if (action === 'edit') openEdit(id);
-      }
-    });
-  });
+}
 
-  body.querySelectorAll('.delivery-item').forEach(row => {
-    row.addEventListener('click', () => {
-      const d = deliveries.find(x => x.id === row.dataset.id);
-      if (d && d.lat) {
-        focusDelivery(d.id, true);
-      }
-    });
-  });
+function handleListBodyClick(event) {
+  const button = event.target.closest('button[data-action]');
+  if (button) {
+    event.stopPropagation();
+    const id = button.dataset.id;
+    const action = button.dataset.action;
+    if (!id) return;
+    if (action === 'done') {
+      toggleDone(id);
+      return;
+    }
+    focusDelivery(id, false);
+    if (action === 'navi') openNavigation(id);
+    else if (action === 'place') startPlacement(id);
+    else if (action === 'edit') openEdit(id);
+    return;
+  }
+
+  const row = event.target.closest('.delivery-item');
+  if (!row || !$('list-body').contains(row)) return;
+  const d = deliveries.find(x => x.id === row.dataset.id);
+  if (d && d.lat) {
+    focusDelivery(d.id, true);
+  }
 }
 
 async function toggleDone(id) {
@@ -4939,6 +4964,7 @@ document.querySelectorAll('[data-close]').forEach(btn => {
   btn.addEventListener('click', () => closeModal(btn.dataset.close));
 });
 
+$('list-body').addEventListener('click', handleListBodyClick);
 document.querySelector('.placement-banner').addEventListener('click', cancelPlacement);
 window.addEventListener('online', () => retryPendingPickupProgress({ silent: false }));
 window.addEventListener('beforeinstallprompt', event => {
