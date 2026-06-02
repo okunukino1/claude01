@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RYS配送マップ テスト版 使い方マニュアル</title>
+<style>
+  :root {
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --line: #d8d3c3;
+    --paper: #fffdf6;
+    --bg: #f5f0df;
+    --accent: #2563eb;
+    --good: #15803d;
+    --warn: #b45309;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.75;
+  }
+  header {
+    background: #2b2418;
+    color: #fffaf0;
+    padding: 18px 16px;
+    border-bottom: 4px solid #d6a94a;
+  }
+  header h1 {
+    margin: 0 0 4px;
+    font-size: clamp(22px, 5vw, 34px);
+    letter-spacing: 0;
+  }
+  header p {
+    margin: 0;
+    color: #eadfca;
+    font-size: 14px;
+  }
+  main {
+    width: min(960px, 100%);
+    margin: 0 auto;
+    padding: 18px 14px 42px;
+  }
+  section {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 14px 0;
+  }
+  h2 {
+    margin: 0 0 10px;
+    font-size: 20px;
+    border-bottom: 2px solid #ead9a7;
+    padding-bottom: 6px;
+  }
+  h3 {
+    margin: 18px 0 6px;
+    font-size: 16px;
+  }
+  ul, ol { padding-left: 1.4em; }
+  li { margin: 5px 0; }
+  .toc {
+    display: grid;
+    gap: 8px;
+  }
+  .toc a {
+    display: block;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 700;
+  }
+  .note {
+    border-left: 4px solid var(--accent);
+    background: #eff6ff;
+    padding: 10px 12px;
+    margin: 12px 0;
+  }
+  .warn {
+    border-left-color: var(--warn);
+    background: #fff7ed;
+  }
+  .ok {
+    border-left-color: var(--good);
+    background: #f0fdf4;
+  }
+  kbd, code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    background: #f3ead1;
+    border: 1px solid #dfd1ac;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .flow {
+    display: grid;
+    gap: 10px;
+  }
+  .step {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: #fffaf0;
+  }
+  .step b { display: block; margin-bottom: 2px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+  }
+  th, td {
+    border: 1px solid var(--line);
+    padding: 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #f3ead1; }
+  @media (max-width: 640px) {
+    section { padding: 14px; }
+    th, td { display: block; width: 100%; }
+    th { border-bottom: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>RYS配送マップ テスト版 使い方マニュアル</h1>
+  <p>配送・集荷の現場で使うための操作手順です。最終更新: 2026年5月26日</p>
+</header>
+
+<main>
+  <section>
+    <h2>まず覚えること</h2>
+    <div class="toc">
+      <a href="#daily">毎日の基本の流れ</a>
+      <a href="#mode">配送モードと集荷モード</a>
+      <a href="#add">配送先の追加</a>
+      <a href="#pickup">集荷リストの取り込み</a>
+      <a href="#spot">スポット集荷</a>
+      <a href="#notifications">スポット集荷の通知</a>
+      <a href="#text-size">文字サイズ</a>
+      <a href="#pin">ピン表示と固定位置</a>
+      <a href="#done">完了・未完了の操作</a>
+      <a href="#route">ルート並べ替え</a>
+      <a href="#reset">翌日の集荷リセット</a>
+      <a href="#trouble">困ったとき</a>
+    </div>
+  </section>
+
+  <section id="daily">
+    <h2>毎日の基本の流れ</h2>
+    <div class="flow">
+      <div class="step">
+        <b>1. アプリを開く</b>
+        位置情報の許可が出たら許可してください。現在地ボタンや車用ルート提案で使います。
+      </div>
+      <div class="step">
+        <b>2. モードを確認する</b>
+        左上付近の <code>モード: 配送</code> / <code>モード: 集荷</code> を確認します。メニューから切り替えできます。
+      </div>
+      <div class="step">
+        <b>3. 配送先・集荷先を準備する</b>
+        配送は手入力・音声・伝票撮影で追加します。集荷はメニューの <code>集荷コースを選択</code> を使います。コースを開くと、定期集荷と現在反映済みのスポット集荷が一緒に表示されます。
+      </div>
+      <div class="step">
+        <b>4. 順番を整える</b>
+        徒歩・自転車なら近い順、車なら道路優先ルートを使います。
+      </div>
+      <div class="step">
+        <b>5. 終わったら完了にする</b>
+        リストの <code>✓</code> を押すと完了です。通信が悪い場所で押した場合も、未同期として保存され、通信回復後に自動で再送されます。
+      </div>
+    </div>
+  </section>
+
+  <section id="mode">
+    <h2>配送モードと集荷モード</h2>
+    <table>
+      <tr>
+        <th>配送モード</th>
+        <td>単発の配送先を追加して回るためのモードです。配送先はこの端末のブラウザに保存されます。</td>
+      </tr>
+      <tr>
+        <th>集荷モード</th>
+        <td>Googleスプレッドシートの集荷リストを取り込んで使うモードです。完了状態はスプレッドシートにも書き戻され、他の人の端末にも同期されます。</td>
+      </tr>
+    </table>
+    <p>切り替えは、画面左上付近の <code>モード</code> ボタン、またはメニューの <code>配送モードに切替</code> / <code>集荷モードに切替</code> から行います。</p>
+    <div class="note">
+      左上の <code>モード</code> ボタンを押すと、現在が配送モードでも集荷モードでも、<code>配送モード</code>、<code>小舟町店</code>、<code>浜町店 南</code>、<code>浜町店 北</code> を選べます。
+    </div>
+  </section>
+
+  <section id="add">
+    <h2>配送先の追加</h2>
+    <h3>伝票撮影</h3>
+    <ol>
+      <li><code>📷 伝票撮影</code> を押します。</li>
+      <li>配送伝票やラベルの住所が読めるように撮影します。</li>
+      <li>写真の向きが横向きになっている場合は、プレビュー画面で <code>左に90°</code> / <code>右に90°</code> を押します。</li>
+      <li><code>この向きで読み取り</code> を押します。</li>
+      <li>読み取った住所を確認し、必要なら備考を直して追加します。</li>
+    </ol>
+    <h3>音声入力</h3>
+    <ol>
+      <li><code>🎤 音声</code> を押します。</li>
+      <li>住所をゆっくり話します。</li>
+      <li>認識された住所を確認して追加します。</li>
+    </ol>
+    <h3>手入力</h3>
+    <ol>
+      <li><code>✏️ 手入力</code> を押します。</li>
+      <li>住所と備考を入力します。</li>
+      <li><code>追加</code> を押します。</li>
+    </ol>
+    <div class="note warn">
+      住所検索でピン位置がずれることがあります。配送先やスポット集荷は、リストの <code>📍</code> から地図上の正しい位置へ移動できます。
+    </div>
+  </section>
+
+  <section id="pickup">
+    <h2>集荷リストの取り込み</h2>
+    <ol>
+      <li>メニューを開きます。</li>
+      <li><code>集荷コースを選択</code> を押します。</li>
+      <li>コース、または <code>配送モード</code> を選びます。</li>
+      <li><code>このコースを開く</code> を押します。</li>
+    </ol>
+    <div class="note">
+      集荷リストの <code>id</code> は定期集荷ピンの番号、<code>company</code> はピンのラベル、<code>address</code> は住所として取り込まれます。完了/未完了は <code>collected</code> だけで管理します。
+      <code>checked</code> は使いません。
+    </div>
+    <div class="note ok">
+      小舟町店を選んだ場合は <code>小舟町店スポット</code>、浜町店 南を選んだ場合は <code>浜町店 南スポット</code>、浜町店 北を選んだ場合は <code>浜町店 北スポット</code> のスポット集荷も一緒に取り込みます。
+    </div>
+    <p>集荷リストの下部は <code>定期集荷</code> と <code>スポット集荷</code> のタブで切り替えられます。地図上にはどちらのピンも常に表示されます。</p>
+    <p>定期集荷シートの <code>list_tab</code> 列は、誰が回るかによってリストの表示先を選ぶ項目です。空欄または <code>定期集荷</code> は定期集荷タブ、<code>スポット集荷</code> を選択した行はスポット集荷タブに表示されます。</p>
+    <p>集荷リストでは、同じ建物内の訪問先を見分けやすくするため、会社名を太字で上段に、住所と時間・連絡事項を細字で下段に表示します。</p>
+    <p>定期集荷はコースごとに端末へ保存されます。2回目以降は保存済みの定期集荷ピンを先に表示し、スプレッドシートとの照合後、新規の集荷先または住所が変更された集荷先だけ住所検索を行います。</p>
+  </section>
+
+  <section id="spot">
+    <h2>スポット集荷</h2>
+    <p>スポット集荷はエコ配システムから自動取得し、コースごとのスポット用シートに保存されます。</p>
+    <table>
+      <tr>
+        <th>小舟町店</th>
+        <td><code>小舟町店スポット</code> を一緒に読み込みます。</td>
+      </tr>
+      <tr>
+        <th>浜町店 南</th>
+        <td><code>浜町店 南スポット</code> を一緒に読み込みます。</td>
+      </tr>
+      <tr>
+        <th>浜町店 北</th>
+        <td><code>浜町店 北スポット</code> を一緒に読み込みます。</td>
+      </tr>
+    </table>
+    <ul>
+      <li>GitHub Actions が7時台から17時台まで10分ごとにエコ配を確認します。</li>
+      <li>アプリを開いた時や集荷コースを開いた時にも、スポット集荷チェックが走ります。</li>
+      <li>短時間に何度も開いた場合は、サーバー側で間隔を空けるため、毎回エコ配へアクセスするわけではありません。</li>
+      <li>同じスポット集荷は同じIDで更新されるため、同じピンが重複して増えないようになっています。</li>
+      <li>スポット集荷のピン番号は時間帯コードで表示されます。例: <code>S09</code>、<code>S13</code>、<code>S16</code>。</li>
+    </ul>
+    <h3>キャンセルの表示</h3>
+    <p>エコ配側でキャンセルになったスポット集荷は、完了済みと同じ扱いで表示されます。担当者名の欄には <code>キャンセル</code> と表示されます。</p>
+  </section>
+
+  <section id="notifications">
+    <h2>スポット集荷の通知</h2>
+    <p>新しいスポット集荷、またはキャンセルが見つかった時に、選択したコースだけスマホへ通知できます。</p>
+    <h3>最初にアプリを追加する</h3>
+    <table>
+      <tr>
+        <th>iPhone</th>
+        <td>Safariでアプリを開き、共有ボタンから <code>ホーム画面に追加</code> を選びます。ホーム画面の <code>RYS配送マップ テスト版</code> を開いて設定してください。iOS/iPadOS 16.4以降が必要です。</td>
+      </tr>
+      <tr>
+        <th>Android</th>
+        <td>Chromeでアプリを開き、表示される <code>アプリをインストール</code> ボタン、またはChromeメニューの <code>アプリをインストール</code> / <code>ホーム画面に追加</code> を選びます。</td>
+      </tr>
+    </table>
+    <p>App StoreやGoogle Playから探す必要はありません。RYS配送マップ テスト版のページをホーム画面へ追加して使います。</p>
+    <h3>通知を有効にする</h3>
+    <ol>
+      <li>ホーム画面に追加した <code>RYS配送マップ テスト版</code> を開き、メニューの <code>通知設定</code> を開きます。</li>
+      <li>通知を受けるコースを1つ以上選びます。複数コースも選べます。</li>
+      <li><code>有効化 / 更新</code> を押し、端末の通知許可を許可します。</li>
+    </ol>
+    <table>
+      <tr>
+        <th>新規の通知例</th>
+        <td><code>小舟町店: S16 新規1件</code></td>
+      </tr>
+      <tr>
+        <th>キャンセルの通知例</th>
+        <td><code>浜町店 南: S14 キャンセル1件</code></td>
+      </tr>
+    </table>
+    <div class="note ok">
+      ロック画面の通知には、コース名・時間帯コード・件数だけを表示します。会社名、住所、電話番号は通知に表示しません。通知を押すと対象コースの集荷画面が開きます。
+    </div>
+    <div class="note warn">
+      iPhoneでは、Safariの共有メニューからこのアプリをホーム画面に追加し、ホーム画面のアイコンから開いて通知を有効にしてください。iOS/iPadOS 16.4以降が必要です。
+    </div>
+    <p>定期確認は7時台から17時台まで10分ごとです。反映から通知までは通常最大約10分です。通知を止める場合は <code>通知設定</code> の <code>解除</code> を押します。</p>
+  </section>
+
+  <section id="text-size">
+    <h2>文字サイズ</h2>
+    <p>メニューの <code>Aa 文字サイズ</code> から、画面内の文字を <code>小</code>、<code>標準</code>、<code>大</code> の3段階で変更できます。</p>
+    <ul>
+      <li>選択するとすぐに地図上のピン表示、リスト、操作ボタンへ反映されます。</li>
+      <li>選んだ大きさはスマホごとに保存され、次回起動時も維持されます。</li>
+      <li>地図上のピン位置は変更されません。</li>
+    </ul>
+  </section>
+
+  <section id="pin">
+    <h2>ピン表示と固定位置</h2>
+    <table>
+      <tr>
+        <th>通常ピン</th>
+        <td>未完了の配送先・定期集荷です。</td>
+      </tr>
+      <tr>
+        <th>スポット集荷ピン</th>
+        <td>青色で表示され、番号部分に <code>S09</code> などの集荷時間コードが出ます。</td>
+      </tr>
+      <tr>
+        <th>完了済みスポット集荷</th>
+        <td>緑色で表示されます。未完了の青色と区別しやすくしています。</td>
+      </tr>
+      <tr>
+        <th>黄色いピン</th>
+        <td>住所検索の精度が低く、位置が仮の可能性があるピンです。</td>
+      </tr>
+      <tr>
+        <th><code>2件</code> などのラベル</th>
+        <td>同じ場所、または近い場所に複数のピンがあることを表します。</td>
+      </tr>
+    </table>
+    <h3>定期集荷の固定位置</h3>
+    <p>定期集荷は毎回同じ場所へ行くため、スプレッドシートの <code>lat</code>、<code>lng</code> を優先してピンを立てます。固定位置が入っている集荷先は、毎回住所検索をしません。端末に保存された位置は高速表示に使い、スプレッドシート側の固定位置が変更された場合は同期後に更新されます。</p>
+    <div class="note warn">
+      定期集荷の固定位置を変更するには管理者PINが必要です。通常の配送先やスポット集荷の位置修正には、この管理者PINは不要です。
+    </div>
+  </section>
+
+  <section id="done">
+    <h2>完了・未完了の操作</h2>
+    <ul>
+      <li>リストの <code>✓</code> を押すと完了になります。</li>
+      <li>完了済みの行で <code>↩</code> を押すと未完了に戻ります。</li>
+      <li>集荷モードでは、完了時に担当者名が必要です。</li>
+      <li>担当者名はメニューの <code>担当者名を設定</code> から保存できます。</li>
+      <li>通信が悪くてスプレッドシートへ書き込めない場合は、行の左側に未同期の印が出ます。通信が回復すると自動で再送されます。</li>
+    </ul>
+    <div class="note ok">
+      集荷モードの完了状態はスプレッドシートへ自動で書き戻されます。他の人の端末は定期的にスプレッドシートを読み直すため、同じ完了状態を共有できます。
+    </div>
+  </section>
+
+  <section id="route">
+    <h2>ルート並べ替え</h2>
+    <table>
+      <tr>
+        <th>徒歩・自転車向け 近い順</th>
+        <td>現在地、または地図中心から近い順に並べます。一方通行や道路事情は考慮しません。</td>
+      </tr>
+      <tr>
+        <th>車向け 道路優先ルート</th>
+        <td>Mapboxの道路ルートを使い、一方通行や車で走れる道を考慮して順番を提案します。最大で現在地 + 24件までです。</td>
+      </tr>
+      <tr>
+        <th>Google車向け 道路優先ルート</th>
+        <td>Google Routes APIの道路ルートを使って順番を提案します。Mapbox版と結果を比べたい時に使えます。最大で現在地 + 24件までです。</td>
+      </tr>
+    </table>
+    <ol>
+      <li>メニューを開きます。</li>
+      <li>用途に合わせて <code>徒歩・自転車向け 近い順</code>、<code>車向け 道路優先ルート</code>、<code>Google車向け 道路優先ルート</code> のどれかを押します。</li>
+      <li>提案内容を確認します。</li>
+      <li>問題なければOKを押して並べ替えます。</li>
+    </ol>
+  </section>
+
+  <section id="reset">
+    <h2>翌日の集荷リセット</h2>
+    <p>集荷は毎日同じコースを回るため、前日に完了した集荷先は翌日に自動で未完了へ戻ります。</p>
+    <ul>
+      <li>集荷モードを開いた時に、前日以前の完了分を自動でリセットします。</li>
+      <li>スプレッドシートの <code>collected</code>、<code>collected_at</code>、<code>collected_by</code> も空に戻します。</li>
+      <li>当日中に完了したものは、その日のうちは勝手に戻しません。</li>
+      <li>スポット集荷用シートは日付で管理されます。日にちが変わると当日のスポット集荷だけを表示します。</li>
+    </ul>
+    <h3>手動で戻したい場合</h3>
+    <ol>
+      <li>集荷モードでメニューを開きます。</li>
+      <li><code>集荷完了をリセット</code> を押します。</li>
+      <li>確認画面でOKを押します。</li>
+    </ol>
+  </section>
+
+  <section id="tools">
+    <h2>便利な表示機能</h2>
+    <ul>
+      <li><code>◎ 現在地</code>: GPSをONにして現在地を表示します。</li>
+      <li><code>表示: 番地+建物</code>: ピンのラベル表示を切り替えます。</li>
+      <li><code>町丁目境界</code>: 町丁目の境界線表示を切り替えます。</li>
+      <li><code>番地表示</code>: 地図上に番地ラベルを表示します。ズーム17以上で見えます。</li>
+    </ul>
+    <h3>メニューの表示</h3>
+    <p>メニューは配送モードと集荷モードで表示内容が変わります。集荷モードでは集荷時間とID順を優先するため、近い順や車用ルート検索は表示しません。</p>
+    <table>
+      <tr>
+        <th>配送モードで表示</th>
+        <td>ルート検索、完了分を削除、API使用状況など、配送先を追加して回る時に使う項目です。</td>
+      </tr>
+      <tr>
+        <th>集荷モードで表示</th>
+        <td>担当者名を設定、集荷完了をリセットなど、スプレッドシートと集荷完了を共有するための項目です。</td>
+      </tr>
+      <tr>
+        <th>どちらでも表示</th>
+        <td><code>Aa 文字サイズ</code> と <code>通知設定</code> は配送モードと集荷モードのどちらからでも開けます。</td>
+      </tr>
+    </table>
+  </section>
+
+  <section id="trouble">
+    <h2>困ったとき</h2>
+    <h3>現在地が出ない</h3>
+    <p>ブラウザの位置情報許可を確認してください。屋内ではGPS精度が落ちることがあります。</p>
+    <h3>住所の場所がずれる</h3>
+    <p>リストの <code>📍</code> から、地図上の正しい場所へピンを移動してください。</p>
+    <p>定期集荷の固定位置を変更する場合は管理者PINが必要です。管理者PINが分からない場合は、管理者に位置修正を依頼してください。</p>
+    <h3>集荷の完了がスプレッドシートに反映されない</h3>
+    <p>担当者名が未設定の場合は先に設定してください。通信が悪い場所で完了を押した場合は、未同期として端末に保存され、通信回復後に自動で再送されます。</p>
+    <h3>スポット集荷が表示されない</h3>
+    <p>集荷コースをもう一度開いてください。アプリ起動時とコース選択時にスポット集荷チェックが走ります。短時間に連続して開いた場合は、サーバー側の制限により少し待ってから反映されることがあります。</p>
+    <h3>キャンセルのスポット集荷が残っている</h3>
+    <p>キャンセル分は削除せず、完了済み扱いとして表示します。担当者名の欄に <code>キャンセル</code> と出ていれば正常です。</p>
+    <h3>通知が届かない</h3>
+    <p>メニューの <code>通知設定</code> で通知状態と選択コースを確認してください。設定できない場合は、通知設定画面に表示される端末別のインストール手順に従い、ホーム画面のアプリから開き直してください。端末側で通知を拒否した場合は、端末の通知設定から許可を戻してください。</p>
+    <h3>伝票写真が横向きになる</h3>
+    <p>撮影後のプレビューで <code>左に90°</code> または <code>右に90°</code> を押し、正しい向きにしてから <code>この向きで読み取り</code> を押してください。</p>
+    <h3>車用ルートが失敗する</h3>
+    <p>配送先が25点以上ある場合は、24件以内に分けて検索してください。Google車向けルートだけ失敗する場合は、Google CloudでRoutes APIが有効になっているか、サーバーのAPIキー設定を確認してください。それ以外の場合は管理者に連絡してください。</p>
+    <h3>画面が古いままに見える</h3>
+    <p>ブラウザで開いている場合は、ページを下に引っ張って更新、またはブラウザの更新ボタンを使います。ホーム画面から開くアプリ版では、メニューの <code>アプリを更新</code> を押してください。</p>
+  </section>
+</main>
+</body>
+</html>

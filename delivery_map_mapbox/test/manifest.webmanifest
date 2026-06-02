@@ -1,0 +1,19 @@
+{
+  "name": "RYS配送マップ テスト版",
+  "short_name": "RYSテスト",
+  "description": "配送・集荷マップ テスト版",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f4ee",
+  "theme_color": "#ff5722",
+  "icons": [
+    {
+      "src": "app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

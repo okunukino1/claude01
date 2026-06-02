@@ -1,0 +1,5015 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ff5722">
+<title>RYS配送マップ (テスト版)</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="app-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="app-icon.svg">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0d1117;
+    --ink-soft: #2a2f3a;
+    --paper: #f6f4ee;
+    --paper-soft: #ecead9;
+    --accent: #ff5722;
+    --accent-soft: #ffe0d6;
+    --done: #6b7280;
+    --spot-done: #16a34a;
+    --spot-done-border: #052e16;
+    --danger: #d32f2f;
+    --list-height: 50dvh;
+    --list-collapsed-height: 46px;
+    --text-scale: 1;
+  }
+  body.list-collapsed { --list-height: var(--list-collapsed-height); }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%; height: 100dvh;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Meiryo", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* ===== Top bar ===== */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 8px calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left));
+    padding-top: calc(8px + env(safe-area-inset-top));
+    display: flex; align-items: center; gap: 8px;
+    z-index: 50;
+    border-bottom: 2px solid var(--accent);
+  }
+  .topbar h1 {
+    margin: 0; font-size: 14px; font-weight: 700;
+    flex: 1;
+    text-overflow: ellipsis; overflow: hidden; white-space: nowrap;
+  }
+  .topbar h1 .badge-test {
+    font-size: 10px; padding: 2px 6px;
+    background: var(--accent); color: white;
+    border-radius: 3px; margin-left: 6px; vertical-align: middle;
+  }
+  .topbar h1 .app-version {
+    font-size: 9px;
+    font-weight: 700;
+    color: #d8d3c2;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .topbar button {
+    background: transparent; color: var(--paper);
+    border: 1px solid var(--paper); border-radius: 6px;
+    padding: 6px 10px; font-size: 13px; cursor: pointer;
+    min-width: 38px; min-height: 36px;
+  }
+
+  /* ===== Map ===== */
+  #map {
+    position: fixed;
+    top: calc(48px + env(safe-area-inset-top));
+    bottom: var(--list-height);
+    left: 0; right: 0;
+    background: var(--paper-soft);
+    transition: bottom 0.25s ease;
+  }
+  .mapboxgl-ctrl-attrib { font-size: 10px !important; }
+
+  /* ===== Delivery marker (pin + label combined) ===== */
+  .delivery-marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: auto;
+  }
+
+  .delivery-pin {
+    width: 36px; height: 44px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .delivery-pin .pin-shape {
+    width: 30px; height: 30px;
+    background: var(--accent);
+    border: 2.5px solid var(--ink);
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    position: absolute;
+    left: 3px; top: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+  }
+  .delivery-marker.done .delivery-pin .pin-shape {
+    background: var(--done);
+    opacity: 0.6;
+  }
+  .delivery-marker.approx .delivery-pin .pin-shape {
+    background: #fbbf24;
+  }
+  .delivery-marker.spot .delivery-pin .pin-shape {
+    background: #0284c7;
+  }
+  .delivery-marker.spot.done .delivery-pin .pin-shape {
+    background: var(--spot-done);
+    border-color: var(--spot-done-border);
+    opacity: 1;
+  }
+  .delivery-pin .pin-num {
+    position: absolute;
+    left: 0; top: 8px;
+    width: 36px; text-align: center;
+    color: white; font-weight: 800; font-size: 13px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    z-index: 2;
+  }
+  .delivery-marker.spot .delivery-pin .pin-num {
+    font-size: 16px;
+    top: 7px;
+  }
+  .delivery-marker.approx .delivery-pin .pin-num { color: var(--ink); }
+
+  /* ===== Label sits above pin in same wrapper ===== */
+  .delivery-label {
+    background: rgba(255,255,255,0.95);
+    border: 1.5px solid var(--ink);
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 11px; font-weight: 700;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    pointer-events: none;
+    color: var(--ink);
+    line-height: 1.3;
+    margin-bottom: 4px;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .delivery-marker.done .delivery-label { opacity: 0.55; }
+  .delivery-label .lbl-num {
+    color: var(--accent);
+    font-weight: 800;
+    margin-right: 3px;
+  }
+  .delivery-marker.done .delivery-label .lbl-num { color: var(--done); }
+  .delivery-label .lbl-bldg { font-weight: 600; }
+
+  .overlap-count-label {
+    position: absolute;
+    right: -22px;
+    top: -2px;
+    min-width: 28px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: white;
+    color: var(--accent);
+    border: 2px solid var(--ink);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 18px;
+    text-align: center;
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  /* ===== GPS / North controls ===== */
+  .map-control {
+    position: fixed;
+    right: calc(8px + env(safe-area-inset-right));
+    top: calc(58px + env(safe-area-inset-top));
+    z-index: 30;
+    display: flex; flex-direction: column; gap: 6px;
+    align-items: flex-end;
+  }
+  .map-control button {
+    background: white;
+    color: var(--ink);
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    min-height: 38px;
+  }
+  .map-control button.tracking {
+    background: #2563eb;
+    color: white;
+    border-color: var(--ink);
+  }
+  .map-control #btn-north {
+    background: var(--accent);
+    color: white;
+  }
+  .map-control .gps-status {
+    background: rgba(13,17,23,0.85);
+    color: white;
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: none;
+    line-height: 1.3;
+  }
+  .map-control .gps-status.show { display: block; }
+
+  /* ===== Left-side map controls (display mode, neighborhood toggle) ===== */
+  .map-control-left {
+    position: fixed;
+    left: calc(8px + env(safe-area-inset-left));
+    top: calc(58px + env(safe-area-inset-top));
+    z-index: 30;
+    display: flex; flex-direction: column; gap: 6px;
+    align-items: flex-start;
+  }
+  .map-control-left button {
+    background: white;
+    color: var(--ink);
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px; font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    min-height: 36px;
+    white-space: nowrap;
+  }
+  .map-control-left button.on {
+    background: var(--accent);
+    color: white;
+  }
+
+  /* ===== Placement mode ===== */
+  body.placing-mode #map {
+    cursor: crosshair;
+    box-shadow: inset 0 0 0 4px var(--accent);
+  }
+  .placement-banner {
+    position: fixed;
+    top: calc(58px + env(safe-area-inset-top));
+    left: 50%; transform: translateX(-50%);
+    background: var(--accent);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 24px;
+    font-weight: 700; font-size: 13px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    z-index: 40;
+    display: none;
+    cursor: pointer;
+  }
+  body.placing-mode .placement-banner { display: block; }
+
+  /* ===== List section ===== */
+  .list-section {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: var(--list-height);
+    background: var(--paper);
+    border-top: 3px solid var(--ink);
+    display: flex; flex-direction: column;
+    z-index: 20;
+    padding-bottom: env(safe-area-inset-bottom);
+    transition: height 0.25s ease;
+  }
+  .list-header {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px;
+    background: var(--paper-soft);
+    border-bottom: 1px solid #d4cfb8;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    flex-shrink: 0;
+  }
+  .list-header h2 {
+    margin: 0; font-size: 13px; font-weight: 700; flex: 1;
+  }
+  .list-header .stat {
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+  .list-header .toggle-icon {
+    background: white;
+    border: 1.5px solid var(--ink);
+    border-radius: 6px;
+    width: 36px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800;
+    color: var(--ink);
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+  }
+  body.list-collapsed .list-header .toggle-icon {
+    transform: rotate(180deg);
+  }
+  body.list-collapsed .list-body {
+    display: none;
+  }
+  body.list-collapsed .pickup-list-tabs {
+    display: none !important;
+  }
+  .pickup-list-tabs {
+    display: none;
+    gap: 6px;
+    padding: 6px 10px;
+    background: white;
+    border-bottom: 1px solid #e0dac4;
+    flex-shrink: 0;
+  }
+  .pickup-list-tabs.show {
+    display: flex;
+  }
+  .pickup-list-tab {
+    flex: 1;
+    min-height: 36px;
+    border: 1.5px solid #b8b29f;
+    background: #f7f5ec;
+    color: var(--ink);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .pickup-list-tab.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+  .pickup-list-tab .tab-count {
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 4px;
+  }
+  .list-body {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .delivery-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #e0dac4;
+    background: white;
+  }
+  .delivery-item.done {
+    opacity: 0.55;
+    background: var(--paper-soft);
+  }
+  .delivery-item.sync-pending {
+    box-shadow: inset 4px 0 0 #f59e0b;
+  }
+  .delivery-item.selected {
+    background: var(--accent-soft);
+  }
+  .delivery-item.done.selected {
+    background: #dedbd1;
+  }
+  .num-badge {
+    width: 32px; height: 32px;
+    background: var(--accent); color: white;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 14px;
+    flex-shrink: 0;
+  }
+  .delivery-item.done .num-badge { background: var(--done); }
+  .delivery-item.approx .num-badge {
+    background: #fbbf24;
+    color: var(--ink);
+  }
+  .delivery-item.spot .num-badge {
+    background: #0284c7;
+    color: white;
+    font-size: 12px;
+  }
+  .delivery-item.spot.done .num-badge {
+    background: var(--spot-done);
+    border: 2px solid var(--spot-done-border);
+    color: white;
+  }
+  .item-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .item-info .addr {
+    font-size: 13px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .item-info .pickup-company {
+    font-size: 13px;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .item-info .pickup-detail {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--ink-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+  .item-info .note {
+    font-size: 11px;
+    color: var(--ink-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+  .item-actions {
+    display: flex;
+    gap: 2px;
+  }
+  .item-actions button {
+    background: transparent;
+    border: 1px solid #c0bca8;
+    border-radius: 5px;
+    padding: 6px 8px;
+    font-size: 14px;
+    cursor: pointer;
+    min-width: 32px;
+    min-height: 32px;
+    line-height: 1;
+  }
+  .item-actions button.go-btn {
+    background: var(--accent);
+    color: white;
+    border-color: var(--ink);
+  }
+  .item-actions button.done-btn.completed {
+    background: var(--done);
+    color: white;
+  }
+  .item-actions button:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  /* ===== Bottom add buttons ===== */
+  .add-bar {
+    position: fixed;
+    bottom: calc(var(--list-height) + env(safe-area-inset-bottom));
+    left: 0; right: 0;
+    z-index: 25;
+    display: flex; gap: 6px;
+    padding: 6px 8px;
+    background: var(--ink);
+    transition: bottom 0.25s ease;
+  }
+  .add-bar button {
+    flex: 1;
+    background: var(--accent);
+    color: white;
+    border: 2px solid var(--paper);
+    border-radius: 8px;
+    padding: 9px 6px;
+    font-size: 12px; font-weight: 700;
+    cursor: pointer;
+    min-height: 42px;
+  }
+  .add-bar button.secondary {
+    background: white;
+    color: var(--ink);
+    border-color: var(--paper);
+  }
+
+  /* ===== Modals ===== */
+  .modal-bg {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 100;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: white;
+    border-radius: 12px;
+    padding: 18px;
+    width: 100%;
+    max-width: 420px;
+    max-height: 90dvh;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+  .modal h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+  }
+  .modal label {
+    display: block;
+    font-size: 12px;
+    margin-bottom: 4px;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .modal input[type=text],
+  .modal input[type=tel],
+  .modal select,
+  .modal textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1.5px solid #c0bca8;
+    border-radius: 6px;
+    font-size: 15px;
+    font-family: inherit;
+    margin-bottom: 12px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+  .inline-action {
+    width: 100%;
+    min-height: 38px;
+    margin: -4px 0 12px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .checkbox-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 4px 0 10px;
+    color: var(--ink-soft);
+  }
+  .checkbox-line input { width: 18px; height: 18px; }
+  .modal-help {
+    font-size: 12px;
+    line-height: 1.55;
+    color: #5f5a49;
+    margin: 6px 0 10px;
+  }
+  .modal-actions {
+    display: flex; gap: 8px;
+    margin-top: 8px;
+  }
+  .modal-actions button {
+    flex: 1;
+    padding: 10px;
+    border-radius: 6px;
+    border: 2px solid var(--ink);
+    font-size: 14px; font-weight: 700;
+    cursor: pointer;
+    min-height: 42px;
+  }
+  .modal-actions button.primary {
+    background: var(--accent);
+    color: white;
+  }
+  .modal-actions button.cancel {
+    background: white;
+    color: var(--ink);
+  }
+  .modal-actions button.danger {
+    background: var(--danger);
+    color: white;
+  }
+  .modal-actions button.done {
+    background: var(--done);
+    color: white;
+  }
+  .modal-actions button.go {
+    background: white;
+    color: var(--ink);
+  }
+  .photo-preview {
+    width: 100%;
+    height: min(52dvh, 420px);
+    background: #111;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin: 8px 0 12px;
+  }
+  .photo-preview img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    transition: transform 0.15s ease;
+  }
+  .photo-rotate-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .photo-rotate-actions button {
+    min-height: 42px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    background: white;
+    color: var(--ink);
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .menu-list button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: white;
+    border: 1px solid #d4cfb8;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  .notification-status {
+    border: 1px solid #d4cfb8;
+    border-radius: 6px;
+    background: #f7f4e7;
+    color: var(--ink-soft);
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 10px;
+    margin-bottom: 12px;
+  }
+  .notification-courses {
+    border: 1px solid #d4cfb8;
+    border-radius: 6px;
+    padding: 10px 10px 2px;
+    margin-bottom: 10px;
+  }
+  .notification-courses .checkbox-line {
+    color: var(--ink);
+  }
+  .notification-install {
+    border: 1px solid #e2bea7;
+    border-left: 4px solid var(--accent);
+    border-radius: 6px;
+    background: #fff7f2;
+    color: var(--ink);
+    padding: 10px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .notification-install[hidden] { display: none; }
+  .notification-install strong {
+    display: block;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .notification-install ol {
+    padding-left: 20px;
+    margin: 6px 0 8px;
+  }
+  .notification-install button {
+    width: 100%;
+    min-height: 42px;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent);
+    color: white;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .text-size-choices {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 4px 0 12px;
+  }
+  .text-size-choice {
+    min-height: 58px;
+    border: 2px solid #c0bca8;
+    border-radius: 6px;
+    background: white;
+    color: var(--ink);
+    font-weight: 700;
+    cursor: pointer;
+    font-size: calc(14px * var(--text-scale));
+  }
+  .text-size-choice.selected {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: white;
+  }
+  .text-size-choice.size-small { font-size: calc(12px * var(--text-scale)); }
+  .text-size-choice.size-large { font-size: calc(17px * var(--text-scale)); }
+  .app-version-info {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border: 1px solid #d8d0b7;
+    border-radius: 6px;
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    font-weight: 700;
+    font-size: calc(12px * var(--text-scale));
+  }
+
+  /* Text sizing is intentionally separate from map and marker dimensions. */
+  .topbar h1,
+  .num-badge,
+  .item-actions button,
+  .modal-actions button,
+  .menu-list button,
+  .notification-install strong,
+  .notification-install button,
+  .confirm-msg,
+  .loading-overlay .msg { font-size: calc(14px * var(--text-scale)); }
+  .topbar h1 .badge-test,
+  .topbar h1 .app-version,
+  .map-control .gps-status { font-size: calc(10px * var(--text-scale)); }
+  .topbar button,
+  .delivery-pin .pin-num,
+  .map-control button,
+  .placement-banner,
+  .empty,
+  .item-info .addr,
+  .inline-action,
+  .checkbox-line,
+  .notification-status,
+  .notification-install,
+  .toast { font-size: calc(13px * var(--text-scale)); }
+  .item-info .pickup-company { font-size: calc(13px * var(--text-scale)); }
+  .delivery-label,
+  .overlap-count-label,
+  .list-header .stat,
+  .item-info .note,
+  .item-info .pickup-detail { font-size: calc(11px * var(--text-scale)); }
+  .map-control-left button,
+  .list-header .toggle-icon,
+  .delivery-item.spot .num-badge,
+  .add-bar button,
+  .modal label,
+  .modal-help { font-size: calc(12px * var(--text-scale)); }
+  .modal h3 { font-size: calc(16px * var(--text-scale)); }
+  .modal input[type=text],
+  .modal input[type=tel],
+  .modal select,
+  .modal textarea { font-size: calc(15px * var(--text-scale)); }
+  #usage-content { font-size: calc(13px * var(--text-scale)) !important; }
+
+  /* ===== Toast ===== */
+  .toast {
+    position: fixed;
+    bottom: calc(var(--list-height) + 60px);
+    left: 50%; transform: translateX(-50%);
+    background: var(--ink);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 24px;
+    font-size: 13px; font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    z-index: 200;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    max-width: 90vw;
+    text-align: center;
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { background: var(--danger); }
+
+  .confirm-msg {
+    font-size: 14px;
+    line-height: 1.55;
+    margin-bottom: 16px;
+    white-space: pre-wrap;
+  }
+
+  /* ===== Loading overlay ===== */
+  .loading-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 150;
+    display: none;
+    align-items: center; justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+    color: white;
+  }
+  .loading-overlay.show { display: flex; }
+  .loading-spinner {
+    width: 48px; height: 48px;
+    border: 4px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-overlay .msg { font-size: 14px; font-weight: 600; }
+
+  .hidden-input { display: none; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.01-4-test.1</span></h1>
+  <button id="btn-menu" type="button">⋮ メニュー</button>
+</div>
+
+<div id="map"></div>
+
+<div class="map-control">
+  <button id="btn-gps" type="button">◎ 現在地</button>
+  <button id="btn-north" type="button" style="display:none">🧭 北に戻す</button>
+  <div class="gps-status" id="gps-status"></div>
+</div>
+
+<div class="map-control-left">
+  <button id="btn-app-mode" type="button">モード: 配送</button>
+  <button id="btn-label-mode" type="button">表示: 番地+建物</button>
+</div>
+
+<div class="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
+
+<div class="add-bar">
+  <button id="btn-add-photo" type="button">📷 伝票撮影</button>
+  <button id="btn-add-voice" type="button" class="secondary">🎤 音声</button>
+  <button id="btn-add-manual" type="button" class="secondary">✏️ 手入力</button>
+</div>
+
+<div class="list-section">
+  <div class="list-header" id="list-header">
+    <h2>配送リスト</h2>
+    <div class="stat" id="list-stat"></div>
+    <div class="toggle-icon" aria-label="リストを折りたたむ">▼</div>
+  </div>
+  <div class="pickup-list-tabs" id="pickup-list-tabs" role="tablist" aria-label="集荷種別">
+    <button class="pickup-list-tab selected" id="pickup-tab-regular" type="button" role="tab" data-pickup-list-tab="regular" aria-selected="true">定期集荷 <span class="tab-count" id="pickup-tab-regular-count"></span></button>
+    <button class="pickup-list-tab" id="pickup-tab-spot" type="button" role="tab" data-pickup-list-tab="spot" aria-selected="false">スポット集荷 <span class="tab-count" id="pickup-tab-spot-count"></span></button>
+  </div>
+  <div class="list-body" id="list-body"></div>
+</div>
+
+<input type="file" id="file-photo" class="hidden-input" accept="image/*" capture="environment">
+
+<div class="modal-bg" id="modal-menu">
+  <div class="modal">
+    <h3>メニュー</h3>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.01-2</span></div>
+    <div class="menu-list">
+      <button id="menu-center-user" type="button">📍 現在地に移動</button>
+      <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
+      <button id="menu-import-pickup" type="button">📦 集荷コースを選択</button>
+      <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
+      <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
+      <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
+      <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
+      <button id="menu-operator" type="button">👤 担当者名を設定</button>
+      <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
+      <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
+      <button id="menu-clear-done" type="button">✓ 完了分を削除</button>
+      <button id="menu-clear-all" type="button">🗑 全件クリア</button>
+      <button id="menu-usage" type="button">📊 API使用状況</button>
+      <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
+      <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
+      <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
+      <button id="menu-text-size" type="button">Aa 文字サイズ</button>
+      <button id="menu-notifications" type="button">🔔 通知設定</button>
+      <button id="menu-reload-app" type="button">🔄 アプリを更新</button>
+      <button id="menu-manual" type="button">📖 使い方マニュアル</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-text-size">
+  <div class="modal">
+    <h3>文字サイズ</h3>
+    <div class="text-size-choices" role="group" aria-label="文字サイズ">
+      <button class="text-size-choice size-small" type="button" data-text-size="small">小</button>
+      <button class="text-size-choice" type="button" data-text-size="normal">標準</button>
+      <button class="text-size-choice size-large" type="button" data-text-size="large">大</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-text-size">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-notifications">
+  <div class="modal">
+    <h3>スポット集荷の通知設定</h3>
+    <div class="notification-status" id="notification-status">通知状態を確認しています...</div>
+    <div class="notification-install" id="notification-install" hidden>
+      <strong id="notification-install-title"></strong>
+      <div id="notification-install-text"></div>
+      <ol id="notification-install-ios-steps" hidden>
+        <li>このページをSafariで開く</li>
+        <li>共有ボタンから「ホーム画面に追加」を選ぶ</li>
+        <li>ホーム画面のRYS配送マップ テスト版を開き、もう一度通知設定を行う</li>
+      </ol>
+      <ol id="notification-install-android-steps" hidden>
+        <li>この画面のボタン、またはChromeのメニューからアプリをインストール</li>
+        <li>ホーム画面のRYS配送マップ テスト版を開き、通知を有効化</li>
+      </ol>
+      <button id="btn-notification-install" type="button" hidden>アプリをインストール</button>
+    </div>
+    <label>通知を受け取るコース</label>
+    <div class="notification-courses">
+      <label class="checkbox-line"><input type="checkbox" name="push-course" value="小舟町店">小舟町店</label>
+      <label class="checkbox-line"><input type="checkbox" name="push-course" value="浜町店 南">浜町店 南</label>
+      <label class="checkbox-line"><input type="checkbox" name="push-course" value="浜町店 北">浜町店 北</label>
+    </div>
+    <div class="modal-help">
+      通知にはコース名・時間帯コード・件数のみ表示します。iPhoneはホーム画面に追加したアプリから通知を有効にしてください。
+    </div>
+    <div class="modal-actions">
+      <button class="danger" id="btn-notification-disable" type="button">解除</button>
+      <button class="primary" id="btn-notification-save" type="button">有効化 / 更新</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-notifications">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-operator">
+  <div class="modal">
+    <h3>担当者名を設定</h3>
+    <label>担当者名</label>
+    <input type="text" id="operator-name" placeholder="例: 田中" autocomplete="name">
+    <div class="modal-help">
+      集荷済みにした時、スプレッドシートの collected_by に記録されます。
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" id="btn-operator-cancel" type="button">キャンセル</button>
+      <button class="primary" id="btn-operator-save" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-pickup-import">
+  <div class="modal">
+    <h3>モード・集荷コースを選択</h3>
+    <label>モード / コース</label>
+    <select id="pickup-sheet"></select>
+    <label class="checkbox-line" style="display:none">
+      <input type="checkbox" id="pickup-replace-list" checked>
+      現在の配送リストを置き換える
+    </label>
+    <div class="modal-help">
+      配送モード、または集荷コースを選んで開きます。集荷コースを選ぶと定期集荷とスポット集荷を読み込みます。
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-pickup-import">キャンセル</button>
+      <button class="primary" id="btn-pickup-import" type="button">このコースを開く</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-add">
+  <div class="modal">
+    <h3>配送先を追加</h3>
+    <label>住所 (必須)</label>
+    <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
+    <label>備考 (建物名・部屋番号など)</label>
+    <textarea id="add-note" placeholder="○○ビル 5F"></textarea>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-add">キャンセル</button>
+      <button class="primary" id="btn-add-confirm" type="button">追加</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-photo-preview">
+  <div class="modal">
+    <h3>伝票写真を確認</h3>
+    <div class="photo-preview">
+      <img id="photo-preview-img" alt="伝票写真プレビュー">
+    </div>
+    <div class="photo-rotate-actions">
+      <button id="btn-photo-rotate-left" type="button">左に90°</button>
+      <button id="btn-photo-rotate-right" type="button">右に90°</button>
+    </div>
+    <div class="modal-help">
+      横向きになっている場合は回転してから読み取ってください。
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" id="btn-photo-cancel" type="button">キャンセル</button>
+      <button class="primary" id="btn-photo-read" type="button">この向きで読み取り</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-edit">
+  <div class="modal">
+    <h3>配送先を編集</h3>
+    <label>住所</label>
+    <input type="text" id="edit-address">
+    <button class="inline-action" id="btn-edit-geocode" type="button">住所再検索</button>
+    <label>備考</label>
+    <textarea id="edit-note"></textarea>
+    <div class="modal-actions">
+      <button class="done" id="btn-edit-done" type="button">完了</button>
+      <button class="go" id="btn-edit-navi" type="button">ナビ</button>
+      <button class="danger" id="btn-edit-delete" type="button">削除</button>
+      <button class="cancel" type="button" data-close="modal-edit">キャンセル</button>
+      <button class="primary" id="btn-edit-save" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-confirm">
+  <div class="modal">
+    <h3 id="confirm-title">確認</h3>
+    <div class="confirm-msg" id="confirm-msg"></div>
+    <div class="modal-actions">
+      <button class="cancel" id="confirm-cancel" type="button">キャンセル</button>
+      <button class="primary" id="confirm-ok" type="button">OK</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-usage">
+  <div class="modal">
+    <h3>API使用状況</h3>
+    <div id="usage-content" style="font-size: 13px; line-height: 1.7;"></div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-usage">閉じる</button>
+      <button class="danger" id="btn-reset-usage" type="button">リセット</button>
+    </div>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loading">
+  <div class="loading-spinner"></div>
+  <div class="msg" id="loading-msg">処理中...</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
+<script>
+'use strict';
+
+const APP_VERSION = 'v2026.06.01-4-test.1';
+const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
+const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
+const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
+const APP_MODE_KEY = 'rys-mapbox-test-app-mode';
+const USAGE_KEY = 'rys-mapbox-test-usage-v1';
+const NEIGHBORHOOD_KEY = 'rys-mapbox-test-neighborhoods-visible';
+const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
+const LABEL_MODE_KEY = 'rys-mapbox-test-label-mode';
+const ADDR_VISIBLE_KEY = 'rys-mapbox-test-addr-visible';
+const ADDR_DATA_KEY = 'rys-mapbox-test-addr-data-v1';
+const OPERATOR_NAME_KEY = 'rys-mapbox-test-operator-name';
+const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-test-pickup-last-reset-date';
+const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-test-pickup-selected-sheet';
+const PICKUP_PENDING_SYNC_KEY = 'rys-mapbox-test-pickup-pending-sync-v1';
+const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-test-pickup-location-admin-pin-v1';
+const PICKUP_LIST_TAB_KEY = 'rys-mapbox-test-pickup-list-tab-v1';
+const PUSH_SELECTED_COURSES_KEY = 'rys-mapbox-test-push-selected-courses-v1';
+const TEXT_SIZE_KEY = 'rys-mapbox-test-text-size-v1';
+const APP_VERSION_CHECK_KEY = 'rys-mapbox-test-version-check-v1';
+const APP_VERSION_PROMPTED_KEY = 'rys-mapbox-test-version-prompted-v1';
+const GEOCODE_CACHE_KEY = 'rys-mapbox-test-geocode-cache-v1';
+const GEOCODE_CACHE_MAX_ITEMS = 500;
+const PICKUP_GEOCODE_CONCURRENCY = 3;
+const PHOTO_OCR_MAX_SIZE = 1120;
+const PHOTO_OCR_QUALITY = 0.8;
+const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+const TEXT_SIZE_OPTIONS = {
+  small: 0.9,
+  normal: 1,
+  large: 1.15
+};
+
+const ADDR_PREF = '東京都';
+const ADDR_CITY = '中央区';
+const ADDR_API_BASE = 'https://japanese-addresses-v2.geoloniamaps.com/api/ja';
+
+const LABEL_MODES = [
+  { key: 'num',  label: '番号のみ' },
+  { key: 'both', label: '番地+建物' },
+  { key: 'addr', label: '番地' },
+  { key: 'bldg', label: '建物' }
+];
+let labelModeIndex = 1;
+const geocodeInFlight = new Map();
+let geocodeCacheObj = null;
+
+const PICKUP_SHEETS = [
+  '小舟町店',
+  '浜町店 南',
+  '浜町店 北'
+];
+const PICKUP_SPOT_SHEETS_BY_COURSE = {
+  '小舟町店': '小舟町店スポット',
+  '浜町店 南': '浜町店 南スポット',
+  '浜町店 北': '浜町店 北スポット'
+};
+const PICKUP_DELIVERY_MODE_VALUE = '__delivery__';
+const PICKUP_LIST_TAB_REGULAR = 'regular';
+const PICKUP_LIST_TAB_SPOT = 'spot';
+const PICKUP_SYNC_INTERVAL_MS = 20000;
+const PICKUP_SPOT_TOUCH_RETRY_MS = 60 * 1000;
+let pushRegistrationPromise = null;
+let deferredInstallPrompt = null;
+
+const DEFAULT_CENTER_LNG = 139.7745;
+const DEFAULT_CENTER_LAT = 35.6845;
+const DEFAULT_ZOOM = 16;
+
+function detectInitialAppMode() {
+  const saved = localStorage.getItem(APP_MODE_KEY);
+  if (saved === 'pickup' || saved === 'delivery') return saved;
+  try {
+    const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    if (Array.isArray(existing) && existing.some(d => d && d.pickupSheet)) return 'pickup';
+  } catch (e) {}
+  return 'delivery';
+}
+
+let map = null;
+let mapboxConfig = null;
+let appMode = detectInitialAppMode();
+let deliveries = [];
+let lastVisibleDeliveries = [];
+let markers = new Map();
+let activeDeliveryId = null;
+let userMarker = null;
+let userMarkerEl = null;
+let placingItemId = null;
+let pendingPlacementCoord = null;
+let editingItemId = null;
+let confirmCallback = null;
+let operatorSaveCallback = null;
+let operatorCancelCallback = null;
+let pickupSyncTimer = null;
+let pickupSyncInFlight = false;
+let pickupPendingRetryInFlight = false;
+let pickupLastSyncedAt = null;
+let pickupLastSpotTouchAt = 0;
+let pendingPhotoFile = null;
+let pendingPhotoUrl = '';
+let pendingPhotoRotation = 0;
+
+let gpsWatchId = null;
+let gpsActive = false;
+let gpsAutoFollow = false;
+let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
+let recognition = null;
+let mapStyleLoaded = false;
+
+let addrVisible = false;
+let addrData = null;
+let addrLoading = false;
+let pendingAddrData = null;
+
+const OCR_COST_PER_CALL = 0.00015;
+const GEOCODE_COST_PER_CALL = 0.005;
+const MAPBOX_OPTIMIZE_COST_PER_CALL = 0.002;
+
+let usage = JSON.parse(localStorage.getItem(USAGE_KEY) || '{"ocr":0,"geocode":0}');
+usage.ocr = usage.ocr || 0;
+usage.geocode = usage.geocode || 0;
+usage.routeOptimize = usage.routeOptimize || 0;
+usage.googleRouteOptimize = usage.googleRouteOptimize || 0;
+
+function $(id) { return document.getElementById(id); }
+
+function showToast(msg, isError = false) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => { t.className = 'toast' + (isError ? ' error' : ''); }, 3000);
+}
+
+function showLoading(msg) {
+  $('loading-msg').textContent = msg || '処理中...';
+  $('loading').classList.add('show');
+}
+function hideLoading() { $('loading').classList.remove('show'); }
+
+function openModal(id) { $(id).classList.add('show'); }
+function closeModal(id) { $(id).classList.remove('show'); }
+
+function showConfirm(title, msg, callback) {
+  $('confirm-title').textContent = title;
+  $('confirm-msg').textContent = msg;
+  confirmCallback = callback;
+  openModal('modal-confirm');
+}
+
+function currentTextSize() {
+  const saved = localStorage.getItem(TEXT_SIZE_KEY) || 'normal';
+  return Object.prototype.hasOwnProperty.call(TEXT_SIZE_OPTIONS, saved) ? saved : 'normal';
+}
+
+function applyTextSize(size, saveSetting = true) {
+  const selected = Object.prototype.hasOwnProperty.call(TEXT_SIZE_OPTIONS, size) ? size : 'normal';
+  document.documentElement.style.setProperty('--text-scale', String(TEXT_SIZE_OPTIONS[selected]));
+  document.querySelectorAll('[data-text-size]').forEach(button => {
+    const active = button.dataset.textSize === selected;
+    button.classList.toggle('selected', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  if (saveSetting) localStorage.setItem(TEXT_SIZE_KEY, selected);
+}
+
+function openTextSizeSettings() {
+  closeModal('modal-menu');
+  applyTextSize(currentTextSize(), false);
+  openModal('modal-text-size');
+}
+
+async function reloadLatestApp() {
+  closeModal('modal-menu');
+  showToast('最新のアプリを読み込みます...');
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        await Promise.race([
+          registration.update(),
+          new Promise(resolve => setTimeout(resolve, 1500))
+        ]);
+      }
+    }
+  } catch (e) {
+    console.warn('service worker update check failed', e);
+  }
+
+  const url = new URL(window.location.href);
+  url.searchParams.set('refresh', String(Date.now()));
+  window.location.replace(url.toString());
+}
+
+async function fetchServerAppVersion() {
+  const url = new URL(window.location.href);
+  url.hash = '';
+  url.searchParams.set('version_check', String(Date.now()));
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  if (!response.ok) throw new Error(`version check failed: ${response.status}`);
+  const html = await response.text();
+  const match = html.match(/const\s+APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+  return match ? match[1] : '';
+}
+
+function promptAppUpdate(serverVersion) {
+  const versionPair = `${APP_VERSION}->${serverVersion}`;
+  if (localStorage.getItem(APP_VERSION_PROMPTED_KEY) === versionPair) return;
+  if (document.querySelector('.modal-bg.show')) {
+    setTimeout(() => checkAppVersionUpdate({ force: true }), 30000);
+    return;
+  }
+
+  localStorage.setItem(APP_VERSION_PROMPTED_KEY, versionPair);
+  showConfirm(
+    'アプリ更新があります',
+    `サーバーの最新版は ${serverVersion} です。\nこの端末で動いている版は ${APP_VERSION} です。\n最新のアプリを読み込みますか？`,
+    reloadLatestApp
+  );
+}
+
+async function checkAppVersionUpdate({ force = false } = {}) {
+  const now = Date.now();
+  if (!force) {
+    const lastCheckedAt = Number(localStorage.getItem(APP_VERSION_CHECK_KEY) || 0);
+    if (now - lastCheckedAt < APP_VERSION_CHECK_INTERVAL_MS) return;
+  }
+
+  localStorage.setItem(APP_VERSION_CHECK_KEY, String(now));
+  try {
+    const serverVersion = await fetchServerAppVersion();
+    if (serverVersion && serverVersion !== APP_VERSION) promptAppUpdate(serverVersion);
+  } catch (e) {
+    console.warn('app version check failed', e);
+  }
+}
+
+function selectedPushCourses() {
+  return [...document.querySelectorAll('input[name="push-course"]:checked')].map(input => input.value);
+}
+
+function savedPushCourses() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PUSH_SELECTED_COURSES_KEY) || '[]');
+    return Array.isArray(saved) ? saved.filter(course => PICKUP_SHEETS.includes(course)) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function setPushCourseChecks(courses) {
+  document.querySelectorAll('input[name="push-course"]').forEach(input => {
+    input.checked = courses.includes(input.value);
+  });
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function isStandaloneApp() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function updateNotificationInstallGuide() {
+  const guide = $('notification-install');
+  const title = $('notification-install-title');
+  const text = $('notification-install-text');
+  const iosSteps = $('notification-install-ios-steps');
+  const androidSteps = $('notification-install-android-steps');
+  const installButton = $('btn-notification-install');
+
+  if (isStandaloneApp()) {
+    guide.hidden = true;
+    return;
+  }
+
+  guide.hidden = false;
+  if (isIosDevice()) {
+    title.textContent = 'iPhoneは先にホーム画面へ追加してください';
+    text.textContent = 'App Storeからダウンロードするアプリではありません。下の手順でこのWebアプリを追加します。';
+    iosSteps.hidden = false;
+    androidSteps.hidden = true;
+    installButton.hidden = true;
+    return;
+  }
+
+  title.textContent = deferredInstallPrompt
+    ? 'アプリをインストールして通知を受け取る'
+    : '通知設定ができない場合はアプリから開いてください';
+  text.textContent = deferredInstallPrompt
+    ? 'インストール後、ホーム画面のアイコンから開いて通知を設定してください。'
+    : 'Chromeのメニューに「アプリをインストール」または「ホーム画面に追加」が表示される場合は、そこから追加してください。';
+  iosSteps.hidden = true;
+  androidSteps.hidden = false;
+  installButton.hidden = !deferredInstallPrompt;
+}
+
+async function installPushApp() {
+  if (!deferredInstallPrompt) {
+    showToast('Chromeのメニューからアプリをインストールしてください');
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  updateNotificationInstallGuide();
+  if (choice && choice.outcome === 'accepted') {
+    showToast('ホーム画面のアプリから通知設定を行ってください');
+  }
+}
+
+async function ensurePushServiceWorker() {
+  if (!('serviceWorker' in navigator)) throw new Error('この端末は通知に対応していません');
+  if (!pushRegistrationPromise) {
+    pushRegistrationPromise = navigator.serviceWorker.register('service-worker.js');
+  }
+  return pushRegistrationPromise;
+}
+
+async function fetchPushConfig() {
+  const res = await fetch('../api/push_config.php', { cache: 'no-store' });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || data.error) throw new Error((data && data.error) || '通知設定を取得できませんでした');
+  return data;
+}
+
+async function currentPushSubscription() {
+  if (!('serviceWorker' in navigator)) return null;
+  const registration = await ensurePushServiceWorker();
+  return registration.pushManager.getSubscription();
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map(character => character.charCodeAt(0)));
+}
+
+async function openNotificationSettings() {
+  closeModal('modal-menu');
+  openModal('modal-notifications');
+  $('notification-status').textContent = '通知状態を確認しています...';
+  setPushCourseChecks(savedPushCourses());
+  updateNotificationInstallGuide();
+  try {
+    const config = await fetchPushConfig();
+    if (!config.enabled) {
+      $('notification-status').textContent = '通知機能はサーバー設定中です。設定完了後に有効化できます。';
+      return;
+    }
+    if (!('Notification' in window) || !('PushManager' in window)) {
+      $('notification-status').textContent = 'この端末またはブラウザはプッシュ通知に対応していません。';
+      return;
+    }
+    if (isIosDevice() && !isStandaloneApp()) {
+      $('notification-status').textContent = 'iPhoneでは、先にホーム画面へ追加して、そのアイコンからアプリを開いてください。';
+      return;
+    }
+    const subscription = await currentPushSubscription();
+    const permission = Notification.permission;
+    $('notification-status').textContent = subscription && permission === 'granted'
+      ? '通知は有効です。受け取るコースを変更できます。'
+      : permission === 'denied'
+        ? '通知がブロックされています。端末の設定で許可を変更してください。'
+        : '通知はまだ有効になっていません。';
+  } catch (e) {
+    $('notification-status').textContent = e.message || '通知状態を確認できませんでした。';
+  }
+}
+
+async function savePushSettings() {
+  const courses = selectedPushCourses();
+  if (courses.length === 0) {
+    showToast('通知するコースを1つ以上選択してください', true);
+    return;
+  }
+  try {
+    if (isIosDevice() && !isStandaloneApp()) {
+      throw new Error('iPhoneではホーム画面に追加したアプリから設定してください');
+    }
+    const config = await fetchPushConfig();
+    if (!config.enabled || !config.publicKey) throw new Error('通知機能はサーバー設定中です');
+    if (!('Notification' in window) || !('PushManager' in window)) throw new Error('この端末は通知に対応していません');
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') throw new Error('通知が許可されていません');
+    const registration = await ensurePushServiceWorker();
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(config.publicKey)
+      });
+    }
+    const res = await fetch('../api/push_subscriptions.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', subscription: subscription.toJSON(), courses })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || '通知設定を保存できませんでした');
+    localStorage.setItem(PUSH_SELECTED_COURSES_KEY, JSON.stringify(courses));
+    $('notification-status').textContent = '通知は有効です。選択したコースの新規・キャンセルを通知します。';
+    showToast('通知設定を保存しました');
+  } catch (e) {
+    showToast(e.message || '通知設定を保存できませんでした', true);
+  }
+}
+
+async function disablePushNotifications() {
+  try {
+    const subscription = await currentPushSubscription();
+    if (subscription) {
+      await fetch('../api/push_subscriptions.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'remove', endpoint: subscription.endpoint })
+      });
+      await subscription.unsubscribe();
+    }
+    localStorage.removeItem(PUSH_SELECTED_COURSES_KEY);
+    setPushCourseChecks([]);
+    $('notification-status').textContent = '通知は無効です。';
+    showToast('通知を解除しました');
+  } catch (e) {
+    showToast(e.message || '通知を解除できませんでした', true);
+  }
+}
+
+function uid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function updateAppVersionLabels() {
+  ['app-version-label', 'menu-app-version'].forEach(id => {
+    const el = $(id);
+    if (el) el.textContent = APP_VERSION;
+  });
+}
+
+function currentStorageKey() {
+  return appMode === 'pickup' ? PICKUP_STORAGE_KEY : STORAGE_KEY;
+}
+
+function loadStoredDeliveries(key) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(stored) ? stored : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function storedPickupIdentity(d) {
+  if (isPickupListSpotDelivery(d)) {
+    return `spot:${spotPickupNaturalKey(d) || String(d.spotPickupId || d.pickupId || d.id || '')}`;
+  }
+  if (isPickupBackedDelivery(d)) return `pickup:${pickupProgressKey(d) || d.id || ''}`;
+  return '';
+}
+
+function isPickupStorageRecord(d) {
+  return isPickupBackedDelivery(d) || isPickupListSpotDelivery(d);
+}
+
+function isVisibleInCurrentMode(d) {
+  return !(appMode === 'delivery' && isPickupStorageRecord(d));
+}
+
+function movePickupRecordsToPickupStorage(items) {
+  const pickupRecords = items.filter(isPickupStorageRecord);
+  if (pickupRecords.length === 0) return items;
+
+  const pickupItems = loadStoredDeliveries(PICKUP_STORAGE_KEY);
+  const merged = new Map();
+  [...pickupItems, ...pickupRecords].forEach(d => {
+    const key = storedPickupIdentity(d) || `id:${d.id || ''}`;
+    merged.set(key, d);
+  });
+  localStorage.setItem(PICKUP_STORAGE_KEY, JSON.stringify([...merged.values()]));
+  return items.filter(d => !isPickupStorageRecord(d));
+}
+
+function removePickupRecordsFromDeliveryState() {
+  if (appMode !== 'delivery') return false;
+  const keptDeliveries = movePickupRecordsToPickupStorage(deliveries);
+  if (keptDeliveries.length === deliveries.length) return false;
+
+  const activeWasPickup = activeDeliveryId && !keptDeliveries.some(d => d.id === activeDeliveryId);
+  deliveries = keptDeliveries;
+  if (activeWasPickup) activeDeliveryId = null;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(deliveries));
+  return true;
+}
+
+function migrateMisfiledPickupDeliveries() {
+  const deliveryItems = loadStoredDeliveries(STORAGE_KEY);
+  const keptDeliveries = movePickupRecordsToPickupStorage(deliveryItems);
+  if (keptDeliveries.length === deliveryItems.length) return;
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(keptDeliveries));
+}
+
+function saveDeliveries() {
+  removePickupRecordsFromDeliveryState();
+  localStorage.setItem(currentStorageKey(), JSON.stringify(deliveries));
+  if (appMode === 'pickup') {
+    const sheetName = getSelectedPickupSheet();
+    if (sheetName) saveRegularPickupCache(sheetName, deliveries);
+  }
+}
+function loadDeliveries() {
+  migrateMisfiledPickupDeliveries();
+  deliveries = loadStoredDeliveries(currentStorageKey());
+  removePickupRecordsFromDeliveryState();
+  if (appMode === 'pickup') {
+    const deduped = dedupeStoredSpotPickups(deliveries);
+    if (deduped.length !== deliveries.length) {
+      deliveries = deduped;
+      localStorage.setItem(PICKUP_STORAGE_KEY, JSON.stringify(deliveries));
+    }
+  }
+  if (appMode === 'pickup' && deliveries.length === 0) {
+    try {
+      const legacy = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      if (Array.isArray(legacy) && legacy.some(d => d && d.pickupSheet)) {
+        deliveries = legacy.filter(d => d && d.pickupSheet);
+        localStorage.setItem(PICKUP_STORAGE_KEY, JSON.stringify(deliveries));
+        const remaining = legacy.filter(d => !(d && d.pickupSheet));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining));
+      }
+    } catch (e) {}
+  }
+}
+
+function pickupRegularCacheKey(sheetName) {
+  return PICKUP_REGULAR_CACHE_PREFIX + String(sheetName || '');
+}
+
+function regularPickupIdentity(item) {
+  const sheet = String(item.sheet || item.pickupSheet || '');
+  const id = String(item.id || item.pickupId || '').trim();
+  const row = String(item.row || item.pickupRow || '').trim();
+  return `${sheet}:${id ? `id-${id}` : `row-${row}`}`;
+}
+
+function loadRegularPickupCache(sheetName) {
+  if (!PICKUP_SHEETS.includes(sheetName)) return [];
+  try {
+    const cached = JSON.parse(localStorage.getItem(pickupRegularCacheKey(sheetName)) || '[]');
+    return Array.isArray(cached)
+      ? cached.filter(item => item && item.pickupSheet === sheetName && !isSpotPickupDelivery(item))
+      : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveRegularPickupCache(sheetName, source = deliveries) {
+  if (!PICKUP_SHEETS.includes(sheetName)) return;
+  const regularItems = source.filter(item =>
+    item && item.pickupSheet === sheetName && !isSpotPickupDelivery(item)
+  );
+  if (regularItems.length > 0) {
+    localStorage.setItem(pickupRegularCacheKey(sheetName), JSON.stringify(regularItems));
+  }
+}
+
+function showCachedRegularPickupCourse(sheetName) {
+  const cached = loadRegularPickupCache(sheetName);
+  if (cached.length === 0) return false;
+  const todayDigits = localDateKey().replace(/\D/g, '');
+  const spotSheet = spotSheetForPickupCourse(sheetName);
+  const knownTodaySpots = dedupeStoredSpotPickups(deliveries.filter(item =>
+    isSpotPickupDelivery(item) &&
+    item.pickupSheet === spotSheet &&
+    String(item.spotPickupDate || '').replace(/\D/g, '').slice(0, 8) === todayDigits
+  ));
+  deliveries = [...cached, ...knownTodaySpots];
+  activeDeliveryId = null;
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  return true;
+}
+
+function bumpUsage(kind) {
+  usage[kind] = (usage[kind] || 0) + 1;
+  localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
+}
+
+function getOperatorName() {
+  return (localStorage.getItem(OPERATOR_NAME_KEY) || '').trim();
+}
+
+function saveOperatorName(name) {
+  localStorage.setItem(OPERATOR_NAME_KEY, String(name || '').trim());
+}
+
+function formatTime(value) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 16);
+  return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+}
+
+function localDateKey(value = Date.now()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function localIsoString(value = Date.now()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString();
+}
+
+function openOperatorModal(callback, cancelCallback) {
+  closeModal('modal-menu');
+  $('operator-name').value = getOperatorName();
+  operatorSaveCallback = callback || null;
+  operatorCancelCallback = cancelCallback || null;
+  openModal('modal-operator');
+  setTimeout(() => $('operator-name').focus(), 0);
+}
+
+function saveOperatorFromModal() {
+  const name = $('operator-name').value.trim();
+  if (!name) { showToast('担当者名を入力してください', true); return; }
+  saveOperatorName(name);
+  closeModal('modal-operator');
+  showToast('担当者名を保存しました');
+  if (operatorSaveCallback) {
+    const cb = operatorSaveCallback;
+    operatorSaveCallback = null;
+    operatorCancelCallback = null;
+    cb(name);
+  }
+}
+
+function cancelOperatorModal() {
+  closeModal('modal-operator');
+  operatorSaveCallback = null;
+  if (operatorCancelCallback) {
+    const cb = operatorCancelCallback;
+    operatorCancelCallback = null;
+    cb();
+  }
+}
+
+function ensureOperatorName() {
+  const current = getOperatorName();
+  if (current) return Promise.resolve(current);
+  return new Promise(resolve => {
+    openOperatorModal(name => resolve(name), () => resolve(''));
+  });
+}
+
+function modeLabel() {
+  return appMode === 'pickup' ? '集荷' : '配送';
+}
+
+function getSelectedPickupSheet() {
+  const saved = localStorage.getItem(PICKUP_SELECTED_SHEET_KEY) || '';
+  return PICKUP_SHEETS.includes(saved) ? saved : '';
+}
+
+function setSelectedPickupSheet(sheetName) {
+  if (PICKUP_SHEETS.includes(sheetName)) {
+    localStorage.setItem(PICKUP_SELECTED_SHEET_KEY, sheetName);
+  }
+}
+
+function normalizePickupListTab(value) {
+  const tab = String(value || '').trim().toLowerCase();
+  return ['spot', 'スポット', 'スポット集荷'].includes(tab) ? PICKUP_LIST_TAB_SPOT : PICKUP_LIST_TAB_REGULAR;
+}
+
+function currentPickupListTab() {
+  return normalizePickupListTab(localStorage.getItem(PICKUP_LIST_TAB_KEY));
+}
+
+function isPickupListSpotDelivery(d) {
+  return isSpotPickupDelivery(d) || normalizePickupListTab(d && d.pickupListTab) === PICKUP_LIST_TAB_SPOT;
+}
+
+function setPickupListTab(tab) {
+  localStorage.setItem(PICKUP_LIST_TAB_KEY, normalizePickupListTab(tab));
+  renderList();
+}
+
+function updatePickupListTabs() {
+  const tabs = $('pickup-list-tabs');
+  if (!tabs) return;
+  const visible = appMode === 'pickup';
+  tabs.classList.toggle('show', visible);
+  if (!visible) return;
+
+  const selectedTab = currentPickupListTab();
+  const regularCount = deliveries.filter(d => !isPickupListSpotDelivery(d)).length;
+  const spotCount = deliveries.filter(d => isPickupListSpotDelivery(d)).length;
+  $('pickup-tab-regular-count').textContent = `(${regularCount})`;
+  $('pickup-tab-spot-count').textContent = `(${spotCount})`;
+  document.querySelectorAll('[data-pickup-list-tab]').forEach(button => {
+    const selected = button.dataset.pickupListTab === selectedTab;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+  });
+}
+
+function updateModeUi() {
+  const modeBtn = $('btn-app-mode');
+  if (modeBtn) {
+    const course = appMode === 'pickup' ? getSelectedPickupSheet() : '';
+    modeBtn.textContent = appMode === 'pickup' && course ? `モード: 集荷 (${course})` : `モード: ${modeLabel()}`;
+    modeBtn.classList.toggle('on', appMode === 'pickup');
+  }
+  const menuBtn = $('menu-toggle-mode');
+  if (menuBtn) {
+    menuBtn.textContent = '🔁 モード・コースを選択';
+  }
+  const importPickupBtn = $('menu-import-pickup');
+  if (importPickupBtn) {
+    importPickupBtn.style.display = 'none';
+  }
+  const resetPickupBtn = $('menu-reset-pickup');
+  if (resetPickupBtn) {
+    resetPickupBtn.style.display = appMode === 'pickup' ? 'block' : 'none';
+  }
+  const pickupOnlyIds = ['menu-operator'];
+  const deliveryOnlyIds = ['menu-optimize-walk', 'menu-optimize-car', 'menu-optimize-google', 'menu-clear-done', 'menu-usage'];
+  const hiddenDailyIds = ['menu-export-json', 'menu-copy', 'menu-clear-all'];
+  pickupOnlyIds.forEach(id => {
+    const el = $(id);
+    if (el) el.style.display = appMode === 'pickup' ? 'block' : 'none';
+  });
+  deliveryOnlyIds.forEach(id => {
+    const el = $(id);
+    if (el) el.style.display = appMode === 'delivery' ? 'block' : 'none';
+  });
+  hiddenDailyIds.forEach(id => {
+    const el = $(id);
+    if (el) el.style.display = 'none';
+  });
+  const title = document.querySelector('.list-header h2');
+  if (title) title.textContent = `${modeLabel()}リスト`;
+  updatePickupListTabs();
+}
+
+async function switchAppMode(mode, showMessage = true, options = {}) {
+  if (mode !== 'pickup' && mode !== 'delivery') return;
+  const openCourseModal = options.openCourseModal !== false;
+  if (appMode === mode) {
+    updateModeUi();
+    await resetStalePickupCompletions();
+    restartPickupAutoSync();
+    if (mode === 'pickup' && openCourseModal) openPickupCourseModal();
+    return;
+  }
+  const switchingToPickup = mode === 'pickup';
+  saveDeliveries();
+  appMode = mode;
+  localStorage.setItem(APP_MODE_KEY, appMode);
+  activeDeliveryId = null;
+  clearOptimizedRouteGeometry();
+  loadDeliveries();
+  await resetStalePickupCompletions();
+  renderMarkers();
+  renderList();
+  updateModeUi();
+  restartPickupAutoSync();
+  if (showMessage) showToast(`${modeLabel()}モードに切り替えました`);
+  if (switchingToPickup && openCourseModal) openPickupCourseModal();
+}
+
+function toggleAppMode() {
+  closeModal('modal-menu');
+  openPickupCourseModal();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+async function loadMapboxConfig() {
+  const res = await fetch('../api/maps_config.php');
+  if (!res.ok) throw new Error('地図設定の取得に失敗しました');
+  const cfg = await res.json();
+  if (!cfg.mapboxAccessToken) {
+    throw new Error('Mapboxアクセストークンが設定されていません。api/config.php を確認してください。');
+  }
+  return cfg;
+}
+
+function initMap() {
+  mapboxgl.accessToken = mapboxConfig.mapboxAccessToken;
+
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: mapboxConfig.mapboxStyle || 'mapbox://styles/mapbox/standard',
+    center: [DEFAULT_CENTER_LNG, DEFAULT_CENTER_LAT],
+    zoom: DEFAULT_ZOOM,
+    pitch: 0,
+    bearing: 0,
+    dragRotate: true,
+    pitchWithRotate: true,
+    touchPitch: true,
+    touchZoomRotate: true,
+    config: {
+      basemap: { language: 'ja', lightPreset: 'day' }
+    },
+    attributionControl: {
+      compact: true,
+      customAttribution: '番地データ: <a href="https://github.com/geolonia/japanese-addresses-v2" target="_blank">Geolonia</a> / アドレス・ベース・レジストリ'
+    }
+  });
+  map.on('rotate', () => {
+    const bearing = map.getBearing();
+    const pitch = map.getPitch();
+    $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
+  });
+  map.on('pitch', () => {
+    const bearing = map.getBearing();
+    const pitch = map.getPitch();
+    $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
+  });
+  map.on('click', (e) => {
+    if (!placingItemId) return;
+    pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+    const d = deliveries.find(x => x.id === placingItemId);
+    showConfirm(
+      '位置を変更',
+      `「${d ? d.address : '配送先'}」をこの場所に移動してよいですか？`,
+      () => commitPlacement()
+    );
+  });
+
+  return new Promise((resolve) => {
+    map.on('load', () => {
+      mapStyleLoaded = true;
+      try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
+      addGeoshapeNeighborhoodLayers();
+      if (pendingAddrData) {
+        addAddressLayer(pendingAddrData);
+        pendingAddrData = null;
+      }
+      resolve();
+    });
+  });
+}
+
+// 町丁目境界は Geoshape の全国行政境界タイルを主表示にする。
+// z=13-15 は町丁目境界、z=16 以上は z=15 のオーバーズーム。
+const GEOSHAPE_ADMIN_TILE_SOURCES = [
+  {
+    id: 'proxy',
+    tiles: ['../api/tile_proxy.php?z={z}&x={x}&y={y}'],
+    attribution: '町丁目境界: Geoshape 行政境界データセット'
+  },
+  {
+    id: 'direct',
+    tiles: ['https://geoshape.ex.nii.ac.jp/ka/resource/ka_2020_dc/{z}/{x}/{y}.pbf'],
+    attribution: '町丁目境界: Geoshape 行政境界データセット'
+  }
+];
+const GEOSHAPE_ADMIN_LAYER_CANDIDATES = [
+  'ka_2020_dc',
+  'ka_2020',
+  'ka',
+  'default',
+  'data',
+  'area',
+  'areas',
+  'polygon',
+  'polygons',
+  'boundary',
+  'admin',
+  'adm'
+];
+
+const ESTAT_BOUNDARY_TILES = 'https://ubukawa.github.io/estat01/04_tiles/zxy-s/{z}/{x}/{y}.pbf';
+
+// 国土地理院ベクトルタイルは補助線として使う。
+// ftCode=6101 は「特定地区界」。町丁目そのものではない地域もあるため、主データにはしない。
+const GSI_BOUNDARY_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
+const NEIGHBORHOOD_LAYER_IDS = [];
+const OPTIMIZED_ROUTE_SOURCE_ID = 'optimized-route';
+const OPTIMIZED_ROUTE_LAYER_ID = 'optimized-route-line';
+
+function addNeighborhoodLayer(layer) {
+  if (map.getLayer(layer.id)) return;
+  map.addLayer(layer);
+  NEIGHBORHOOD_LAYER_IDS.push(layer.id);
+}
+
+function addLocalNeighborhoodLayers() {
+  if (map.getSource('local-neighborhoods')) return;
+
+  map.addSource('local-neighborhoods', {
+    type: 'geojson',
+    data: '../data/chuo_nihonbashi_boundaries.geojson',
+    attribution: '日本橋周辺町丁目境界: Geoshape / e-Stat'
+  });
+
+  addNeighborhoodLayer({
+    id: 'local-neighborhoods-fill',
+    type: 'fill',
+    source: 'local-neighborhoods',
+    minzoom: 11,
+    slot: 'top',
+    layout: {
+      'visibility': neighborhoodVisible ? 'visible' : 'none'
+    },
+    paint: {
+      'fill-color': '#ff8a3d',
+      'fill-opacity': [
+        'interpolate', ['linear'], ['zoom'],
+        11, 0.02,
+        16, 0.07
+      ]
+    }
+  });
+
+  addNeighborhoodLayer({
+    id: 'local-neighborhoods-line',
+    type: 'line',
+    source: 'local-neighborhoods',
+    minzoom: 11,
+    slot: 'top',
+    layout: {
+      'visibility': neighborhoodVisible ? 'visible' : 'none',
+      'line-join': 'round',
+      'line-cap': 'round'
+    },
+    paint: {
+      'line-color': '#ff4b1f',
+      'line-width': [
+        'interpolate', ['linear'], ['zoom'],
+        11, 1.4,
+        16, 3.2,
+        19, 4.2
+      ],
+      'line-opacity': 0.95
+    }
+  });
+}
+
+function addEstatNeighborhoodLayers() {
+  if (map.getSource('estat-neighborhoods')) return;
+
+  map.addSource('estat-neighborhoods', {
+    type: 'vector',
+    tiles: [ESTAT_BOUNDARY_TILES],
+    minzoom: 8,
+    maxzoom: 10,
+    attribution: '全国小地域境界: <a href="https://ubukawa.github.io/estat01/" target="_blank">e-Stat 2020 小地域境界加工タイル</a>'
+  });
+
+  addNeighborhoodLayer({
+    id: 'estat-neighborhoods-fill',
+    type: 'fill',
+    source: 'estat-neighborhoods',
+    'source-layer': 'bnd',
+    minzoom: 10,
+    slot: 'top',
+    layout: {
+      'visibility': neighborhoodVisible ? 'visible' : 'none'
+    },
+    paint: {
+      'fill-color': '#ffb26b',
+      'fill-opacity': [
+        'interpolate', ['linear'], ['zoom'],
+        10, 0.015,
+        15, 0.04
+      ]
+    }
+  });
+
+  addNeighborhoodLayer({
+    id: 'estat-neighborhoods-line',
+    type: 'line',
+    source: 'estat-neighborhoods',
+    'source-layer': 'bnd',
+    minzoom: 10,
+    slot: 'top',
+    layout: {
+      'visibility': neighborhoodVisible ? 'visible' : 'none',
+      'line-join': 'round',
+      'line-cap': 'round'
+    },
+    paint: {
+      'line-color': '#d83218',
+      'line-width': [
+        'interpolate', ['linear'], ['zoom'],
+        10, 0.7,
+        13, 1.2,
+        16, 2.0,
+        19, 2.8
+      ],
+      'line-opacity': 0.82
+    }
+  });
+
+  addNeighborhoodLayer({
+    id: 'estat-neighborhoods-label',
+    type: 'symbol',
+    source: 'estat-neighborhoods',
+    'source-layer': 'bnd',
+    minzoom: 13,
+    slot: 'top',
+    layout: {
+      'visibility': neighborhoodVisible ? 'visible' : 'none',
+      'text-field': ['coalesce', ['get', 'S_NAME'], ['get', 'CITY_NAME']],
+      'text-size': [
+        'interpolate', ['linear'], ['zoom'],
+        13, 11.5,
+        16, 13.5,
+        19, 15.5
+      ],
+      'text-max-width': 8,
+      'text-padding': 4,
+      'text-allow-overlap': false,
+      'text-ignore-placement': false
+    },
+    paint: {
+      'text-color': '#8f2617',
+      'text-halo-color': 'rgba(255,255,255,0.96)',
+      'text-halo-width': 1.6
+    }
+  });
+}
+
+function addGeoshapeNeighborhoodLayers() {
+  addEstatNeighborhoodLayers();
+}
+
+function toggleNeighborhoods() {
+  neighborhoodVisible = !neighborhoodVisible;
+  localStorage.setItem(NEIGHBORHOOD_KEY, neighborhoodVisible ? '1' : '0');
+  NEIGHBORHOOD_LAYER_IDS.forEach(id => {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', neighborhoodVisible ? 'visible' : 'none');
+    }
+  });
+  updateNeighborhoodButton();
+  showToast(neighborhoodVisible ? '町丁目境界をON' : '町丁目境界をOFF');
+}
+
+function updateNeighborhoodButton() {
+  const btn = $('menu-toggle-neighborhoods');
+  if (!btn) return;
+  btn.textContent = neighborhoodVisible ? '🗾 町丁目境界: ON' : '🗾 町丁目境界: OFF';
+  btn.classList.toggle('on', neighborhoodVisible);
+}
+
+async function fetchAddressData(onProgress) {
+  const prefEnc = encodeURIComponent(ADDR_PREF);
+  const cityEnc = encodeURIComponent(ADDR_CITY);
+  const baseUrl = `${ADDR_API_BASE}/${prefEnc}/${cityEnc}`;
+
+  const cityRes = await fetch(`${baseUrl}.json`);
+  if (!cityRes.ok) {
+    throw new Error(`市区町村データ取得失敗 (HTTP ${cityRes.status})`);
+  }
+  const cityJson = await cityRes.json();
+
+  const ranges = (cityJson.data || [])
+    .filter(m => m.rsdt && m.csv_ranges && m.csv_ranges['住居表示'])
+    .map(m => ({
+      machiazaName: (m.oaza_cho || '') + (m.chome || ''),
+      start: m.csv_ranges['住居表示'].start,
+      length: m.csv_ranges['住居表示'].length
+    }));
+
+  if (ranges.length === 0) {
+    return { type: 'FeatureCollection', features: [] };
+  }
+
+  const txtUrl = `${baseUrl}-住居表示.txt`;
+  const features = [];
+  let completed = 0;
+  const total = ranges.length;
+  const CONCURRENCY = 6;
+  let nextIdx = 0;
+
+  async function worker() {
+    while (nextIdx < ranges.length) {
+      const r = ranges[nextIdx++];
+      try {
+        const res = await fetch(txtUrl, {
+          headers: { 'Range': `bytes=${r.start}-${r.start + r.length - 1}` }
+        });
+        if (res.ok || res.status === 206) {
+          const text = await res.text();
+          parseAddrSection(text, r.machiazaName, features);
+        }
+      } catch (e) {
+        console.warn(`fetch failed for ${r.machiazaName}:`, e);
+      }
+      completed++;
+      if (onProgress) onProgress(completed, total);
+    }
+  }
+
+  const workerCount = Math.min(CONCURRENCY, ranges.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  return { type: 'FeatureCollection', features };
+}
+
+function parseAddrSection(text, machiazaName, features) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 3) return;
+
+  const cols = lines[1].split(',').map(s => s.trim());
+  const idx = (n) => cols.indexOf(n);
+  const iBlk   = idx('blk_num');
+  const iRsdt  = idx('rsdt_num');
+  const iRsdt2 = idx('rsdt_num2');
+  const iPrc1  = idx('prc_num1');
+  const iPrc2  = idx('prc_num2');
+  const iPrc3  = idx('prc_num3');
+  const iLng   = idx('lng');
+  const iLat   = idx('lat');
+  if (iLng < 0 || iLat < 0) return;
+  const isRsdt = iBlk >= 0;
+  const isChiban = iPrc1 >= 0;
+  if (!isRsdt && !isChiban) return;
+
+  for (let i = 2; i < lines.length; i++) {
+    const v = lines[i].split(',');
+    let n1, n2, n3;
+    if (isRsdt) {
+      n1 = (v[iBlk] || '').trim();
+      n2 = (v[iRsdt] || '').trim();
+      n3 = (v[iRsdt2] || '').trim();
+    } else {
+      n1 = (v[iPrc1] || '').trim();
+      n2 = (v[iPrc2] || '').trim();
+      n3 = (v[iPrc3] || '').trim();
+    }
+    const lng = parseFloat(v[iLng]);
+    const lat = parseFloat(v[iLat]);
+    if (!isFinite(lng) || !isFinite(lat) || !n1) continue;
+
+    let label = n1;
+    if (n2) label += '-' + n2;
+    if (n3) label += '-' + n3;
+
+    features.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [lng, lat] },
+      properties: { label, n1, n2, n3, machiaza: machiazaName }
+    });
+  }
+}
+
+async function ensureAddressData() {
+  if (addrData) return addrData;
+  if (addrLoading) return null;
+
+  addrLoading = true;
+  try {
+    try {
+      const cached = localStorage.getItem(ADDR_DATA_KEY);
+      if (cached) {
+        const data = JSON.parse(cached);
+        if (data && data.type === 'FeatureCollection' && Array.isArray(data.features)) {
+          addrData = data;
+          return data;
+        }
+      }
+    } catch (e) {}
+
+    showLoading('番地データを取得中...');
+    const data = await fetchAddressData((c, t) => {
+      $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;
+    });
+    addrData = data;
+    try {
+      localStorage.setItem(ADDR_DATA_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.warn('番地データのキャッシュ保存失敗 (容量超過の可能性)', e);
+    }
+    return data;
+  } catch (e) {
+    showToast('番地データ取得失敗: ' + e.message, true);
+    return null;
+  } finally {
+    addrLoading = false;
+    hideLoading();
+  }
+}
+
+function addAddressLayer(data) {
+  if (!map || map.getSource('addr-points')) return;
+  map.addSource('addr-points', { type: 'geojson', data });
+  map.addLayer({
+    id: 'addr-points-label',
+    type: 'symbol',
+    source: 'addr-points',
+    minzoom: 17,
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-size': [
+        'interpolate', ['linear'], ['zoom'],
+        17, 9,
+        18, 11,
+        20, 13
+      ],
+      'text-allow-overlap': false,
+      'text-padding': 2,
+      'text-anchor': 'center',
+      'symbol-sort-key': ['length', ['get', 'label']]
+    },
+    paint: {
+      'text-color': '#1f3a5f',
+      'text-halo-color': 'rgba(255,255,255,0.95)',
+      'text-halo-width': 1.5
+    }
+  });
+}
+
+function setOptimizedRouteGeometry(geometry) {
+  if (!map || !geometry || geometry.type !== 'LineString') return;
+  const data = { type: 'Feature', geometry, properties: {} };
+
+  if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) {
+    map.getSource(OPTIMIZED_ROUTE_SOURCE_ID).setData(data);
+    return;
+  }
+
+  map.addSource(OPTIMIZED_ROUTE_SOURCE_ID, { type: 'geojson', data });
+  map.addLayer({
+    id: OPTIMIZED_ROUTE_LAYER_ID,
+    type: 'line',
+    source: OPTIMIZED_ROUTE_SOURCE_ID,
+    slot: 'top',
+    layout: {
+      'line-join': 'round',
+      'line-cap': 'round'
+    },
+    paint: {
+      'line-color': '#2563eb',
+      'line-width': [
+        'interpolate', ['linear'], ['zoom'],
+        12, 3,
+        16, 5,
+        19, 7
+      ],
+      'line-opacity': 0.8
+    }
+  });
+}
+
+function clearOptimizedRouteGeometry() {
+  if (!map) return;
+  if (map.getLayer(OPTIMIZED_ROUTE_LAYER_ID)) map.removeLayer(OPTIMIZED_ROUTE_LAYER_ID);
+  if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) map.removeSource(OPTIMIZED_ROUTE_SOURCE_ID);
+}
+
+function removeAddressLayer() {
+  if (!map) return;
+  if (map.getLayer('addr-points-label')) map.removeLayer('addr-points-label');
+  if (map.getSource('addr-points')) map.removeSource('addr-points');
+}
+
+function updateAddrButton() {
+  const btn = $('menu-toggle-addr');
+  if (!btn) return;
+  btn.textContent = addrVisible ? '🏷 番地表示: ON' : '🏷 番地表示: OFF';
+  btn.classList.toggle('on', addrVisible);
+}
+
+async function toggleAddressBlocks() {
+  closeModal('modal-menu');
+  if (addrVisible) {
+    addrVisible = false;
+    removeAddressLayer();
+    localStorage.setItem(ADDR_VISIBLE_KEY, '0');
+    updateAddrButton();
+    showToast('番地表示OFF');
+    return;
+  }
+  if (!addrData) {
+    const data = await ensureAddressData();
+    if (!data) return;
+  }
+  addrVisible = true;
+  if (mapStyleLoaded) {
+    addAddressLayer(addrData);
+  } else {
+    pendingAddrData = addrData;
+  }
+  localStorage.setItem(ADDR_VISIBLE_KEY, '1');
+  updateAddrButton();
+  showToast(`番地表示ON (${addrData.features.length.toLocaleString()}件) — ズーム17以上で表示`);
+}
+
+async function refreshAddressData() {
+  closeModal('modal-menu');
+  showConfirm(
+    '番地データ再取得',
+    'キャッシュを破棄して最新データを取り直しますか？\n通信が発生します(数百KB〜)。',
+    async () => {
+      addrData = null;
+      localStorage.removeItem(ADDR_DATA_KEY);
+      removeAddressLayer();
+      const data = await ensureAddressData();
+      if (!data) return;
+      if (addrVisible) {
+        addAddressLayer(data);
+        showToast(`番地データ再取得完了 (${data.features.length.toLocaleString()}件)`);
+      } else {
+        showToast(`番地データ再取得完了 (${data.features.length.toLocaleString()}件) — 「番地表示: ON」で表示`);
+      }
+    }
+  );
+}
+
+function clearAllMarkers() {
+  markers.forEach(m => m.remove());
+  markers.clear();
+  document.querySelectorAll('.mapboxgl-marker .delivery-marker').forEach(el => {
+    const markerEl = el.closest('.mapboxgl-marker');
+    if (markerEl && !markerEl.querySelector('[data-role="user-location"]')) markerEl.remove();
+  });
+}
+
+function extractBanchi(address) {
+  if (!address) return '';
+  const cleaned = address.replace(/〒\s*\d{3}[-]?\d{4}\s*/g, '');
+  const matches = cleaned.match(/\d+(?:-\d+)+/g);
+  if (matches && matches.length > 0) return matches[matches.length - 1];
+  const chomeMatch = cleaned.match(/\d+丁目/);
+  if (chomeMatch) return chomeMatch[0];
+  return '';
+}
+
+function extractBuilding(note) {
+  if (!note) return '';
+  return note.split(/[\n\r]/)[0].trim().slice(0, 24);
+}
+
+function buildLabelText(d, num, modeKey) {
+  if (modeKey === 'num') return '';
+  const banchi = extractBanchi(d.address);
+  const bldg   = extractBuilding(d.note);
+  let body = '';
+  if (modeKey === 'both') body = [banchi, bldg].filter(Boolean).join(' ');
+  else if (modeKey === 'addr') body = banchi;
+  else if (modeKey === 'bldg') body = bldg;
+  return body;
+}
+
+function displayNumber(d, idx) {
+  if (isSpotPickupDelivery(d)) return spotPickupTimeCode(d.spotPickupTime || '');
+  if (isPickupBackedDelivery(d) && d.pickupId) return String(d.pickupId);
+  return String(idx + 1);
+}
+
+function markerZIndex(d, idx) {
+  if (d.id === activeDeliveryId) return 100000;
+  const priority = deliveries.length - idx;
+  return (d.completed ? 1000 : 10000) + priority;
+}
+
+function updateMarkerZIndexes() {
+  lastVisibleDeliveries.forEach((d, idx) => {
+    const marker = markers.get(d.id);
+    if (!marker) return;
+    marker.getElement().style.zIndex = String(markerZIndex(d, idx));
+  });
+}
+
+function focusDelivery(id, shouldFly = true) {
+  const d = deliveries.find(x => x.id === id);
+  if (!d) return;
+  activeDeliveryId = id;
+  updateMarkerZIndexes();
+  renderList();
+  if (shouldFly && d.lat != null && d.lng != null) {
+    map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
+  }
+}
+
+function isPickupBackedDelivery(d) {
+  return !!(d && d.pickupSheet && d.pickupRow);
+}
+
+function pickupProgressKeyFromParts(sheet, row, id) {
+  return `${sheet || ''}:${row || ''}:${id || ''}`;
+}
+
+function pickupProgressKey(d) {
+  if (!isPickupBackedDelivery(d)) return '';
+  return pickupProgressKeyFromParts(d.pickupSheet, d.pickupRow, d.pickupId || '');
+}
+
+function isSpotPickupDelivery(d) {
+  return !!(d && d.pickupSource === 'ecohai-spot' && d.spotPickupId);
+}
+
+function isRegularPickupBackedDelivery(d) {
+  return isPickupBackedDelivery(d) && !isSpotPickupDelivery(d);
+}
+
+function finiteCoordinate(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function pickupLocationFromItem(item) {
+  const lat = finiteCoordinate(item && item.lat);
+  const lng = finiteCoordinate(item && item.lng);
+  if (lat === null || lng === null) return null;
+  return {
+    lat,
+    lng,
+    approx: isTruthyValue(item.approx),
+    formatted: item.formatted || item.address || ''
+  };
+}
+
+function applyPickupLocationFromItem(d, item) {
+  const location = pickupLocationFromItem(item);
+  if (!location) return false;
+  const changed = finiteCoordinate(d.lat) !== location.lat ||
+    finiteCoordinate(d.lng) !== location.lng ||
+    !!d.approx !== !!location.approx ||
+    (d.formatted || '') !== (location.formatted || '');
+  if (!changed) return false;
+  d.lat = location.lat;
+  d.lng = location.lng;
+  d.approx = location.approx;
+  d.formatted = location.formatted;
+  return true;
+}
+
+function markerOverlapKey(d) {
+  const lat = Number(d && d.lat);
+  const lng = Number(d && d.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';
+  return `${lat.toFixed(5)},${lng.toFixed(5)}`;
+}
+
+function buildMarkerOverlapInfo(items = deliveries) {
+  const groups = new Map();
+  items.forEach(d => {
+    const key = markerOverlapKey(d);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(d);
+  });
+
+  const overlaps = new Map();
+  groups.forEach(group => {
+    const count = group.length;
+    if (count <= 1) return;
+    group.forEach((d, idx) => {
+      overlaps.set(d.id, { count, index: idx });
+    });
+  });
+  return overlaps;
+}
+
+function renderMarkers() {
+  if (!map) return;
+  removePickupRecordsFromDeliveryState();
+  clearAllMarkers();
+  const modeKey = LABEL_MODES[labelModeIndex].key;
+  const visibleDeliveries = deliveries.filter(isVisibleInCurrentMode);
+  lastVisibleDeliveries = visibleDeliveries;
+  const overlapInfo = buildMarkerOverlapInfo(visibleDeliveries);
+
+  visibleDeliveries.forEach((d, idx) => {
+    if (d.lat == null || d.lng == null) return;
+    const num = displayNumber(d, idx);
+    const overlap = overlapInfo.get(d.id);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'delivery-marker'
+      + (d.completed ? ' done' : '')
+      + (d.approx ? ' approx' : '')
+      + (isSpotPickupDelivery(d) ? ' spot' : '');
+    wrapper.style.zIndex = String(markerZIndex(d, idx));
+
+    const labelText = buildLabelText(d, num, modeKey);
+    if (labelText) {
+      const lbl = document.createElement('div');
+      lbl.className = 'delivery-label';
+      lbl.innerHTML = `<span class="lbl-bldg">${escapeHtml(labelText)}</span>`;
+      wrapper.appendChild(lbl);
+    }
+
+    const pin = document.createElement('div');
+    pin.className = 'delivery-pin';
+    pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${escapeHtml(num)}${d.approx ? '?' : ''}</div>`;
+    if (overlap && overlap.index === 0) {
+      const overlapLabel = document.createElement('div');
+      overlapLabel.className = 'overlap-count-label';
+      overlapLabel.textContent = `${overlap.count}件`;
+      pin.appendChild(overlapLabel);
+    }
+    wrapper.appendChild(pin);
+
+    wrapper.addEventListener('click', (e) => {
+      e.stopPropagation();
+      activeDeliveryId = d.id;
+      updateMarkerZIndexes();
+      renderList();
+      openEdit(d.id);
+    });
+
+    const marker = new mapboxgl.Marker({
+      element: wrapper,
+      anchor: 'bottom',
+      rotationAlignment: 'viewport',
+      pitchAlignment: 'viewport'
+    }).setLngLat([d.lng, d.lat]).addTo(map);
+    markers.set(d.id, marker);
+  });
+}
+
+function cycleLabelMode() {
+  labelModeIndex = (labelModeIndex + 1) % LABEL_MODES.length;
+  localStorage.setItem(LABEL_MODE_KEY, String(labelModeIndex));
+  updateLabelModeButton();
+  renderMarkers();
+  showToast(`表示: ${LABEL_MODES[labelModeIndex].label}`);
+}
+
+function updateLabelModeButton() {
+  const btn = $('btn-label-mode');
+  if (btn) btn.textContent = `表示: ${LABEL_MODES[labelModeIndex].label}`;
+}
+
+function loadLabelMode() {
+  const saved = localStorage.getItem(LABEL_MODE_KEY);
+  if (saved !== null) {
+    const idx = parseInt(saved, 10);
+    if (!Number.isNaN(idx) && idx >= 0 && idx < LABEL_MODES.length) {
+      labelModeIndex = idx;
+    }
+  }
+}
+
+function normalizeAddress(addr) {
+  if (!addr) return '';
+  return addr
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[‐－―ー−]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanAddressForGeocoding(addr) {
+  let a = normalizeAddress(addr);
+  a = a.replace(/〒?\s*\d{3}[-]?\d{4}\s*/g, '');
+  a = a.replace(/[一-鿿々ー]{1,15}\s*様\s*/g, '');
+  const m = a.match(/^(.*?\d{1,4}[-－ー]?\d{1,4}([-－ー]\d{1,4})?)/);
+  if (m) {
+    const base = m[1].trim();
+    if (base.length >= 6) return base;
+  }
+  return a;
+}
+
+async function geocodeAddress(rawAddress) {
+  const cacheKey = geocodeCacheKey(rawAddress);
+  const cached = getCachedGeocode(cacheKey);
+  if (cached) return cached;
+  if (cacheKey && geocodeInFlight.has(cacheKey)) return geocodeInFlight.get(cacheKey);
+
+  const lookup = geocodeAddressUncached(rawAddress, cacheKey);
+  if (cacheKey) geocodeInFlight.set(cacheKey, lookup);
+  try {
+    return await lookup;
+  } finally {
+    if (cacheKey) geocodeInFlight.delete(cacheKey);
+  }
+}
+
+async function geocodeAddressUncached(rawAddress, cacheKey) {
+  const candidates = [
+    cleanAddressForGeocoding(rawAddress),
+    normalizeAddress(rawAddress)
+  ].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+  for (const q of candidates) {
+    try {
+      bumpUsage('geocode');
+      const res = await fetch('../api/geocode_address.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: q })
+      });
+      const data = await res.json();
+      if (data && data.lat && data.lng) {
+        const result = {
+          lat: data.lat,
+          lng: data.lng,
+          approx: !!data.approx,
+          formatted: data.formatted || q
+        };
+        if (cacheKey && !result.approx) setCachedGeocode(cacheKey, result);
+        return result;
+      }
+    } catch (e) {
+      console.warn('geocode failed for', q, e);
+    }
+  }
+  return null;
+}
+
+function prefetchGeocodeAddress(rawAddress) {
+  const cacheKey = geocodeCacheKey(rawAddress);
+  if (!cacheKey || getCachedGeocode(cacheKey) || geocodeInFlight.has(cacheKey)) return;
+  geocodeAddress(rawAddress).catch(e => console.warn('geocode prefetch failed', e));
+}
+
+function geocodeCacheKey(rawAddress) {
+  return normalizeAddress(cleanAddressForGeocoding(rawAddress || '')).replace(/\s+/g, '');
+}
+
+function getGeocodeCacheObject() {
+  if (geocodeCacheObj !== null) return geocodeCacheObj;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY) || '{}');
+    geocodeCacheObj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (e) {
+    geocodeCacheObj = {};
+  }
+  return geocodeCacheObj;
+}
+
+function persistGeocodeCache() {
+  if (geocodeCacheObj === null) return;
+  localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(geocodeCacheObj));
+}
+
+function loadGeocodeCache() {
+  return getGeocodeCacheObject();
+}
+
+function getCachedGeocode(key) {
+  if (!key) return null;
+  const cache = getGeocodeCacheObject();
+  const item = cache[key];
+  if (!item || !Number.isFinite(Number(item.lat)) || !Number.isFinite(Number(item.lng))) return null;
+  item.lastUsedAt = Date.now();
+  return {
+    lat: Number(item.lat),
+    lng: Number(item.lng),
+    approx: !!item.approx,
+    formatted: item.formatted || ''
+  };
+}
+
+function setCachedGeocode(key, result) {
+  if (!key || !result) return;
+  const cache = getGeocodeCacheObject();
+  cache[key] = {
+    lat: Number(result.lat),
+    lng: Number(result.lng),
+    approx: !!result.approx,
+    formatted: result.formatted || '',
+    savedAt: Date.now(),
+    lastUsedAt: Date.now()
+  };
+  const entries = Object.entries(cache);
+  if (entries.length > GEOCODE_CACHE_MAX_ITEMS) {
+    entries
+      .sort((a, b) => Number(a[1].lastUsedAt || a[1].savedAt || 0) - Number(b[1].lastUsedAt || b[1].savedAt || 0))
+      .slice(0, entries.length - GEOCODE_CACHE_MAX_ITEMS)
+      .forEach(([oldKey]) => delete cache[oldKey]);
+  }
+  persistGeocodeCache();
+}
+
+async function addDelivery({ address, note }) {
+  if (!address) { showToast('住所が空です', true); return; }
+  showLoading('住所を検索中...');
+  const result = await geocodeAddress(address);
+  hideLoading();
+  if (!result) { showToast('住所が見つかりませんでした', true); return; }
+
+  const d = {
+    id: uid(),
+    address,
+    note: note || '',
+    lat: result.lat,
+    lng: result.lng,
+    approx: result.approx,
+    formatted: result.formatted,
+    completed: false,
+    completedAt: null,
+    createdAt: Date.now()
+  };
+  deliveries.push(d);
+  activeDeliveryId = d.id;
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
+  showToast(result.approx ? '⚠ 概算位置で追加しました' : '配送先を追加しました');
+}
+
+function pickupListDisplay(d) {
+  const noteLines = String(d.note || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const storedCompany = String(d.pickupCompany || d.spotPickupCompany || '').trim();
+  const possibleCompany = noteLines[0] && !/^(時間|希望時間帯|連絡|登録電話番号|スポット集荷)[:：]?/.test(noteLines[0])
+    ? noteLines[0]
+    : '';
+  const company = storedCompany || possibleCompany;
+  const details = noteLines.slice(company && noteLines[0] === company ? 1 : 0);
+  return {
+    company: company || d.address,
+    detail: (company ? [d.address, ...details] : details).filter(Boolean).join(' / ')
+  };
+}
+
+function renderList() {
+  removePickupRecordsFromDeliveryState();
+  const body = $('list-body');
+  const stat = $('list-stat');
+  updatePickupListTabs();
+  const selectedPickupTab = currentPickupListTab();
+  const listItems = appMode === 'pickup'
+    ? deliveries
+        .map((delivery, index) => ({ delivery, index }))
+        .filter(entry => selectedPickupTab === PICKUP_LIST_TAB_SPOT
+          ? isPickupListSpotDelivery(entry.delivery)
+          : !isPickupListSpotDelivery(entry.delivery))
+    : deliveries
+        .map((delivery, index) => ({ delivery, index }))
+        .filter(entry => isVisibleInCurrentMode(entry.delivery));
+
+  if (listItems.length === 0) {
+    const emptyMessage = appMode === 'pickup'
+      ? (selectedPickupTab === PICKUP_LIST_TAB_SPOT ? 'スポット集荷はありません' : '定期集荷はありません')
+      : '配送先がありません<br>下のボタンから追加してください';
+    body.innerHTML = `<div class="empty">${emptyMessage}</div>`;
+    stat.textContent = '';
+    return;
+  }
+  const done = listItems.filter(entry => entry.delivery.completed).length;
+  const syncText = appMode === 'pickup' && pickupLastSyncedAt
+    ? ` / 同期 ${formatTime(pickupLastSyncedAt)}`
+    : '';
+  stat.textContent = `${done}/${listItems.length}件 完了${syncText}`;
+
+  body.innerHTML = listItems.map(({ delivery: d, index: idx }) => {
+    const num = displayNumber(d, idx);
+    const cls = 'delivery-item'
+      + (d.completed ? ' done' : '')
+      + (d.approx ? ' approx' : '')
+      + (isSpotPickupDelivery(d) ? ' spot' : '')
+      + (d.progressSyncFailed ? ' sync-pending' : '')
+      + (d.id === activeDeliveryId ? ' selected' : '');
+    const pickupDisplay = isPickupBackedDelivery(d) ? pickupListDisplay(d) : null;
+    return `
+      <div class="${cls}" data-id="${d.id}">
+        <div class="num-badge">${escapeHtml(num)}${d.approx ? '?' : ''}</div>
+        <div class="item-info">
+          ${pickupDisplay
+            ? `<div class="pickup-company">${escapeHtml(pickupDisplay.company)}</div>
+               <div class="pickup-detail">${escapeHtml(pickupDisplay.detail)}</div>`
+            : `<div class="addr">${escapeHtml(d.address)}</div>
+               ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}`}
+          ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
+          ${d.progressSyncFailed ? `<div class="note">未同期: 通信回復後に自動再送します</div>` : ''}
+        </div>
+        <div class="item-actions">
+          <button class="done-btn ${d.completed ? 'completed' : ''}" data-action="done" data-id="${d.id}" title="完了">${d.completed ? '↩' : '✓'}</button>
+          <button class="go-btn" data-action="navi" data-id="${d.id}" title="Google Mapsでナビ">ナビ</button>
+          <button data-action="place" data-id="${d.id}" title="位置修正">📍</button>
+          <button data-action="edit" data-id="${d.id}" title="編集">✎</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  body.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const action = btn.dataset.action;
+      if (action === 'done') {
+        toggleDone(id);
+      } else {
+        focusDelivery(id, false);
+        if (action === 'navi') openNavigation(id);
+        else if (action === 'place') startPlacement(id);
+        else if (action === 'edit') openEdit(id);
+      }
+    });
+  });
+
+  body.querySelectorAll('.delivery-item').forEach(row => {
+    row.addEventListener('click', () => {
+      const d = deliveries.find(x => x.id === row.dataset.id);
+      if (d && d.lat) {
+        focusDelivery(d.id, true);
+      }
+    });
+  });
+}
+
+async function toggleDone(id) {
+  const d = deliveries.find(x => x.id === id);
+  if (!d) return;
+  const nextCompleted = !d.completed;
+  const operatorName = nextCompleted && isPickupBackedDelivery(d) ? await ensureOperatorName() : '';
+  if (nextCompleted && isPickupBackedDelivery(d) && !operatorName) {
+    showToast('担当者名が未設定のため完了にできませんでした', true);
+    return;
+  }
+
+  d.completed = nextCompleted;
+  d.completedAt = d.completed ? Date.now() : null;
+  d.completedBy = d.completed ? operatorName : '';
+  d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
+  if (d.completed && activeDeliveryId === id) activeDeliveryId = null;
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  syncPickupProgress(d, operatorName);
+}
+
+function openNavigation(id) {
+  const d = deliveries.find(x => x.id === id);
+  if (!d || d.lat == null) return;
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}&travelmode=driving`;
+  window.location.assign(url);
+}
+
+function openEditedItemNavigation() {
+  if (!editingItemId) return;
+  openNavigation(editingItemId);
+}
+
+function getPickupLocationAdminPin() {
+  return (localStorage.getItem(PICKUP_LOCATION_ADMIN_PIN_KEY) || '').trim();
+}
+
+function clearPickupLocationAdminPin() {
+  localStorage.removeItem(PICKUP_LOCATION_ADMIN_PIN_KEY);
+}
+
+function requestPickupLocationAdminPin() {
+  const saved = getPickupLocationAdminPin();
+  if (saved) return saved;
+  const pin = window.prompt('定期集荷ピン位置の変更には管理者PINが必要です。');
+  if (!pin || !pin.trim()) {
+    showToast('管理者PINがないため位置変更をキャンセルしました', true);
+    return '';
+  }
+  localStorage.setItem(PICKUP_LOCATION_ADMIN_PIN_KEY, pin.trim());
+  return pin.trim();
+}
+
+async function startPlacement(id) {
+  const d = deliveries.find(x => x.id === id);
+  if (!d) return;
+  if (isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
+  placingItemId = id;
+  document.body.classList.add('placing-mode');
+  showToast('地図上で位置をタップしてください');
+}
+
+async function commitPlacement() {
+  if (!placingItemId || !pendingPlacementCoord) return;
+  const d = deliveries.find(x => x.id === placingItemId);
+  if (!d) return;
+  const before = {
+    lat: d.lat,
+    lng: d.lng,
+    approx: d.approx,
+    formatted: d.formatted
+  };
+  d.lat = pendingPlacementCoord.lat;
+  d.lng = pendingPlacementCoord.lng;
+  d.approx = false;
+  d.formatted = d.address || d.formatted || '';
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  const locationSynced = await syncPickupLocation(d, { silent: true, requireAdmin: true });
+  placingItemId = null;
+  pendingPlacementCoord = null;
+  document.body.classList.remove('placing-mode');
+  if (!locationSynced && isRegularPickupBackedDelivery(d)) {
+    d.lat = before.lat;
+    d.lng = before.lng;
+    d.approx = before.approx;
+    d.formatted = before.formatted;
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    showToast('管理者確認に失敗したため、位置変更を取り消しました', true);
+    return;
+  }
+  showToast(locationSynced ? '位置を更新しました' : '位置は更新しましたが固定位置の共有保存に失敗しました', !locationSynced);
+}
+
+function cancelPlacement() {
+  placingItemId = null;
+  pendingPlacementCoord = null;
+  document.body.classList.remove('placing-mode');
+  showToast('位置修正をキャンセル');
+}
+
+function openEdit(id) {
+  editingItemId = id;
+  const d = deliveries.find(x => x.id === id);
+  if (!d) return;
+  $('edit-address').value = d.address;
+  $('edit-note').value = d.note || '';
+  const doneBtn = $('btn-edit-done');
+  doneBtn.textContent = d.completed ? '完了解除' : '完了';
+  doneBtn.disabled = false;
+  const deleteBtn = $('btn-edit-delete');
+  const isPickupItem = isPickupStorageRecord(d);
+  deleteBtn.hidden = isPickupItem;
+  deleteBtn.disabled = isPickupItem;
+  openModal('modal-edit');
+}
+
+async function toggleEditedItemDone() {
+  if (!editingItemId) return;
+  const d = deliveries.find(x => x.id === editingItemId);
+  if (!d) return;
+  const nextCompleted = !d.completed;
+  const operatorName = nextCompleted && isPickupBackedDelivery(d) ? await ensureOperatorName() : '';
+  if (nextCompleted && isPickupBackedDelivery(d) && !operatorName) {
+    showToast('担当者名が未設定のため完了にできませんでした', true);
+    return;
+  }
+
+  d.completed = nextCompleted;
+  d.completedAt = d.completed ? Date.now() : null;
+  d.completedBy = d.completed ? operatorName : '';
+  d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
+  if (d.completed && activeDeliveryId === editingItemId) activeDeliveryId = null;
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  closeModal('modal-edit');
+  editingItemId = null;
+  showToast(d.completed ? '完了にしました' : '未完了に戻しました');
+  syncPickupProgress(d, operatorName);
+}
+
+async function reGeocodeEditedItem() {
+  if (!editingItemId) return;
+  const d = deliveries.find(x => x.id === editingItemId);
+  if (!d) return;
+  const newAddr = $('edit-address').value.trim();
+  const newNote = $('edit-note').value.trim();
+  if (!newAddr) { showToast('住所を入力してください', true); return; }
+  if (isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
+
+  const before = {
+    address: d.address,
+    note: d.note,
+    lat: d.lat,
+    lng: d.lng,
+    approx: d.approx,
+    formatted: d.formatted
+  };
+
+  showLoading('住所を再検索中...');
+  const result = await geocodeAddress(newAddr);
+  hideLoading();
+
+  if (!result) {
+    showToast('住所が見つかりませんでした', true);
+    return;
+  }
+
+  d.address = newAddr;
+  d.note = newNote;
+  d.lat = result.lat;
+  d.lng = result.lng;
+  d.approx = result.approx;
+  d.formatted = result.formatted;
+
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  const locationSynced = await syncPickupLocation(d, { silent: true, requireAdmin: true });
+  if (!locationSynced && isRegularPickupBackedDelivery(d)) {
+    d.address = before.address;
+    d.note = before.note;
+    d.lat = before.lat;
+    d.lng = before.lng;
+    d.approx = before.approx;
+    d.formatted = before.formatted;
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    showToast('管理者確認に失敗したため、住所再検索を取り消しました', true);
+    return;
+  }
+  map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
+  closeModal('modal-edit');
+  editingItemId = null;
+  const message = result.approx ? '概算位置で更新しました' : '住所検索でピン位置を更新しました';
+  showToast(locationSynced ? message : `${message}（固定位置の共有保存は未完了）`, !locationSynced);
+}
+
+async function saveEditedItem() {
+  if (!editingItemId) return;
+  const d = deliveries.find(x => x.id === editingItemId);
+  if (!d) return;
+  const newAddr = $('edit-address').value.trim();
+  const newNote = $('edit-note').value.trim();
+  if (!newAddr) { showToast('住所を入力してください', true); return; }
+
+  const addressChanged = (newAddr !== d.address);
+  if (addressChanged && isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
+  const before = {
+    address: d.address,
+    note: d.note,
+    lat: d.lat,
+    lng: d.lng,
+    approx: d.approx,
+    formatted: d.formatted
+  };
+  d.note = newNote;
+
+  let locationChanged = false;
+  if (addressChanged) {
+    showLoading('住所を再検索中...');
+    const result = await geocodeAddress(newAddr);
+    hideLoading();
+    if (result) {
+      d.address = newAddr;
+      d.lat = result.lat;
+      d.lng = result.lng;
+      d.approx = result.approx;
+      d.formatted = result.formatted;
+      locationChanged = true;
+    } else {
+      showToast('住所が見つかりませんでした(備考のみ更新)', true);
+    }
+  } else {
+    d.address = newAddr;
+  }
+
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+  const locationSynced = locationChanged
+    ? await syncPickupLocation(d, { silent: true, requireAdmin: true })
+    : true;
+  if (!locationSynced && isRegularPickupBackedDelivery(d)) {
+    d.address = before.address;
+    d.note = before.note;
+    d.lat = before.lat;
+    d.lng = before.lng;
+    d.approx = before.approx;
+    d.formatted = before.formatted;
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    showToast('管理者確認に失敗したため、住所変更を取り消しました', true);
+    return;
+  }
+  closeModal('modal-edit');
+  editingItemId = null;
+  showToast(locationSynced ? '更新しました' : '更新しました（固定位置の共有保存は未完了）', !locationSynced);
+}
+
+function deleteEditedItem() {
+  if (!editingItemId) return;
+  const d = deliveries.find(x => x.id === editingItemId);
+  if (!d) return;
+  if (isPickupStorageRecord(d)) {
+    showToast('集荷先は削除できません', true);
+    return;
+  }
+  showConfirm(
+    '削除の確認',
+    `「${d.address}」を削除しますか？`,
+    () => {
+      deliveries = deliveries.filter(x => x.id !== editingItemId);
+      if (activeDeliveryId === editingItemId) activeDeliveryId = null;
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      closeModal('modal-edit');
+      editingItemId = null;
+      showToast('削除しました');
+    }
+  );
+}
+
+function splitAddressAndBuilding(text) {
+  if (!text) return { address: '', note: '' };
+
+  let s = text
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/(\d)\s*の\s*(?=\d)/g, '$1-')
+    .replace(/(\d)\s*ノ\s*(?=\d)/g, '$1-')
+    .replace(/(\d)\s*[ー－―−]\s*(?=\d)/g, '$1-');
+
+  const patterns = [
+    /\d+丁目\s*\d+番(?:地)?\s*\d+号?/g,
+    /\d+番(?:地)?\s*\d+号?/g,
+    /\d+(?:-\d+){1,3}/g,
+  ];
+
+  let bestEnd = -1;
+  for (const pattern of patterns) {
+    const matches = [...s.matchAll(pattern)];
+    for (const m of matches) {
+      if (m.index < 10 && /^\d{3}-\d{4}$/.test(m[0])) continue;
+      const end = m.index + m[0].length;
+      if (end > bestEnd) bestEnd = end;
+    }
+  }
+
+  if (bestEnd < 0) return { address: s, note: '' };
+
+  let address = s.slice(0, bestEnd).trim();
+  let note = s.slice(bestEnd).trim();
+  note = note.replace(/^[\s,、。「」『』　ー\-]+/, '');
+
+  return { address, note };
+}
+
+function startVoiceInput() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { showToast('音声入力に対応していません', true); return; }
+  if (recognition) { recognition.stop(); recognition = null; }
+  recognition = new SR();
+  recognition.lang = 'ja-JP';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  showLoading('🎤 話してください...');
+  recognition.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    hideLoading();
+    const split = splitAddressAndBuilding(transcript);
+    $('add-address').value = split.address;
+    $('add-note').value = split.note;
+    openModal('modal-add');
+  };
+  recognition.onerror = (e) => {
+    hideLoading();
+    showToast('音声認識エラー: ' + e.error, true);
+  };
+  recognition.onend = () => { hideLoading(); };
+  recognition.start();
+}
+
+function resetPhotoPreviewState() {
+  if (pendingPhotoUrl) URL.revokeObjectURL(pendingPhotoUrl);
+  pendingPhotoFile = null;
+  pendingPhotoUrl = '';
+  pendingPhotoRotation = 0;
+  const img = $('photo-preview-img');
+  if (img) {
+    img.removeAttribute('src');
+    img.style.transform = '';
+  }
+}
+
+function updatePhotoPreviewRotation() {
+  const img = $('photo-preview-img');
+  if (img) img.style.transform = `rotate(${pendingPhotoRotation}deg)`;
+}
+
+function openPhotoPreview(file) {
+  if (!file) return;
+  resetPhotoPreviewState();
+  pendingPhotoFile = file;
+  pendingPhotoUrl = URL.createObjectURL(file);
+  pendingPhotoRotation = 0;
+  $('photo-preview-img').src = pendingPhotoUrl;
+  updatePhotoPreviewRotation();
+  openModal('modal-photo-preview');
+}
+
+function rotatePendingPhoto(delta) {
+  if (!pendingPhotoFile) return;
+  pendingPhotoRotation = (pendingPhotoRotation + delta + 360) % 360;
+  updatePhotoPreviewRotation();
+}
+
+function closePhotoPreview() {
+  closeModal('modal-photo-preview');
+  resetPhotoPreviewState();
+}
+
+async function readPendingPhoto() {
+  if (!pendingPhotoFile) return;
+  const file = pendingPhotoFile;
+  const rotation = pendingPhotoRotation;
+  closeModal('modal-photo-preview');
+  showLoading('画像を圧縮中...');
+  try {
+    const compressed = await compressImage(file, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, rotation);
+    showLoading('画像を変換中...');
+    const base64 = await blobToBase64(compressed);
+    showLoading('AI で住所を読み取り中...');
+    const res = await fetch('../api/extract_address.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' })
+    });
+    const data = await res.json();
+    bumpUsage('ocr');
+    hideLoading();
+    if (!res.ok || !data.address) {
+      showToast(data.error || '住所が読み取れませんでした', true);
+      return;
+    }
+    $('add-address').value = data.address || '';
+    $('add-note').value = data.note || data.building || '';
+    openModal('modal-add');
+    prefetchGeocodeAddress(data.address || '');
+  } catch (e) {
+    hideLoading();
+    showToast('画像処理に失敗しました: ' + e.message, true);
+  } finally {
+    resetPhotoPreviewState();
+  }
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result;
+      const idx = dataUrl.indexOf(',');
+      resolve(idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl);
+    };
+    reader.onerror = () => reject(new Error('Base64変換に失敗しました'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function compressImage(file, maxSize, quality, rotation = 0) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { width, height } = img;
+      const normalizedRotation = ((rotation % 360) + 360) % 360;
+      if (width > maxSize || height > maxSize) {
+        const r = Math.min(maxSize / width, maxSize / height);
+        width = Math.round(width * r);
+        height = Math.round(height * r);
+      }
+      const canvas = document.createElement('canvas');
+      const swap = normalizedRotation === 90 || normalizedRotation === 270;
+      canvas.width = swap ? height : width;
+      canvas.height = swap ? width : height;
+      const ctx = canvas.getContext('2d');
+      ctx.save();
+      if (normalizedRotation === 90) {
+        ctx.translate(canvas.width, 0);
+        ctx.rotate(Math.PI / 2);
+      } else if (normalizedRotation === 180) {
+        ctx.translate(canvas.width, canvas.height);
+        ctx.rotate(Math.PI);
+      } else if (normalizedRotation === 270) {
+        ctx.translate(0, canvas.height);
+        ctx.rotate(Math.PI * 1.5);
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      ctx.restore();
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('Canvas blob failed')), 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Image load failed')); };
+    img.src = objectUrl;
+  });
+}
+
+function copyListToClipboard() {
+  if (deliveries.length === 0) { showToast('配送先がありません', true); return; }
+  const text = deliveries.map((d, i) => {
+    const mark = d.completed ? '✓' : '○';
+    return `${mark} ${i + 1}. ${d.address}${d.note ? ' / ' + d.note : ''}`;
+  }).join('\n');
+  navigator.clipboard.writeText(text).then(
+    () => showToast('リストをコピーしました'),
+    () => showToast('コピーに失敗しました', true)
+  );
+  closeModal('modal-menu');
+}
+
+function clearCompleted() {
+  const n = deliveries.filter(d => d.completed).length;
+  if (n === 0) { showToast('完了済みの配送先がありません'); return; }
+  closeModal('modal-menu');
+  showConfirm('完了分削除', `完了済み ${n} 件を削除しますか？`, () => {
+    deliveries = deliveries.filter(d => !d.completed);
+    if (activeDeliveryId && !deliveries.some(d => d.id === activeDeliveryId)) activeDeliveryId = null;
+    clearOptimizedRouteGeometry();
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    showToast(`${n}件 削除しました`);
+  });
+}
+
+function clearAll() {
+  if (deliveries.length === 0) { showToast('配送先がありません'); return; }
+  closeModal('modal-menu');
+  showConfirm('全件クリア', `全 ${deliveries.length} 件を削除しますか？\nこの操作は取り消せません。`, () => {
+    deliveries = [];
+    activeDeliveryId = null;
+    clearOptimizedRouteGeometry();
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    showToast('全件削除しました');
+  });
+}
+
+function showUsage() {
+  closeModal('modal-menu');
+  const ocrCost = (usage.ocr * OCR_COST_PER_CALL).toFixed(4);
+  const geoCost = (usage.geocode * GEOCODE_COST_PER_CALL).toFixed(3);
+  const routeCost = (usage.routeOptimize * MAPBOX_OPTIMIZE_COST_PER_CALL).toFixed(3);
+  const total = (parseFloat(ocrCost) + parseFloat(geoCost) + parseFloat(routeCost)).toFixed(3);
+  $('usage-content').innerHTML = `
+    <p><b>伝票OCR (Gemini)</b><br>
+    呼び出し回数: ${usage.ocr} 回<br>
+    推定費用: $${ocrCost}</p>
+    <p><b>住所→緯度経度 (Google Geocoding)</b><br>
+    呼び出し回数: ${usage.geocode} 回<br>
+    推定費用: $${geoCost}</p>
+    <p><b>車用ルート最適化 (Mapbox)</b><br>
+    呼び出し回数: ${usage.routeOptimize} 回<br>
+    無料枠超過時の目安: $${routeCost}</p>
+    <p><b>車用ルート最適化 (Google Routes)</b><br>
+    呼び出し回数: ${usage.googleRouteOptimize} 回<br>
+    費用はGoogle Maps Platformの管理画面で確認してください。</p>
+    <p><b>Google車用ルートを除く合計推定費用: $${total}</b></p>
+    <p style="font-size:11px;color:#666;margin-top:12px">
+    ※ 地図表示自体 (Mapbox) はこのカウントに含まれません。<br>
+    Mapboxは月50,000マップロードまで無料、超過後は約$5/1000ロード。<br>
+    Mapboxダッシュボードで実際の使用量を確認してください。
+    </p>
+  `;
+  openModal('modal-usage');
+}
+
+function resetUsage() {
+  showConfirm('使用状況リセット', 'カウンターをリセットしますか？', () => {
+    usage = { ocr: 0, geocode: 0, routeOptimize: 0, googleRouteOptimize: 0 };
+    localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
+    showUsage();
+    showToast('リセットしました');
+  });
+}
+
+function findOtherDeliveryLists() {
+  const candidates = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || key === currentStorageKey() || key === PICKUP_STORAGE_KEY) continue;
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      if (Array.isArray(data) && data.length > 0) {
+        const sample = data[0];
+        if (sample && typeof sample === 'object' &&
+            'address' in sample &&
+            ('lat' in sample || 'lng' in sample)) {
+          candidates.push({ key, count: data.length, data });
+        }
+      }
+    } catch (e) {}
+  }
+  return candidates;
+}
+
+function labelForKey(key) {
+  if (key.includes('mapbox')) return 'Mapbox版 (別キー)';
+  if (key.includes('rys') || key.includes('delivery')) return 'Google Maps版';
+  return key;
+}
+
+function importDeliveriesFromOtherApp() {
+  closeModal('modal-menu');
+  const candidates = findOtherDeliveryLists();
+  if (candidates.length === 0) {
+    showToast('他のアプリの配送リストが見つかりませんでした', true);
+    return;
+  }
+  const chosen = candidates.reduce((a, b) => b.count > a.count ? b : a);
+  const label = labelForKey(chosen.key);
+
+  showConfirm(
+    'リストを取り込み',
+    `「${label}」から ${chosen.count}件 を見つけました。\n\n` +
+    `現在のMapbox版のリスト (${deliveries.length}件) は置き換えられます。\n` +
+    `取り込みますか？`,
+    () => {
+      const imported = chosen.data.map(d => ({
+        id: d.id || uid(),
+        address: d.address || '',
+        note: d.note || d.building || d.recipient || '',
+        lat: d.lat,
+        lng: d.lng,
+        approx: !!d.approx,
+        formatted: d.formatted || '',
+        completed: !!d.completed,
+        completedAt: d.completedAt || null,
+        completedBy: d.completedBy || '',
+        completedAtLabel: d.completedAtLabel || '',
+        createdAt: d.createdAt || Date.now(),
+        pickupSheet: d.pickupSheet || '',
+        pickupRow: d.pickupRow || null,
+        pickupId: d.pickupId || '',
+        progressSyncFailed: !!d.progressSyncFailed
+      })).filter(d => d.lat != null && d.lng != null);
+
+      deliveries = imported;
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      showToast(`${imported.length}件 取り込みました`);
+      if (imported.length > 0) {
+        const first = imported[0];
+        map.flyTo({ center: [first.lng, first.lat], zoom: 16, speed: 1.4 });
+      }
+    }
+  );
+}
+
+function setupPickupSheetOptions() {
+  const select = $('pickup-sheet');
+  if (!select) return;
+  if (select.options.length === 0) {
+    select.innerHTML = [
+      `<option value="${PICKUP_DELIVERY_MODE_VALUE}">配送モード</option>`,
+      ...PICKUP_SHEETS.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+    ].join('');
+  }
+  const saved = getSelectedPickupSheet();
+  select.value = appMode === 'pickup' ? (saved || PICKUP_SHEETS[0]) : PICKUP_DELIVERY_MODE_VALUE;
+}
+
+function openPickupCourseModal() {
+  closeModal('modal-menu');
+  setupPickupSheetOptions();
+  const replaceList = $('pickup-replace-list');
+  if (replaceList) replaceList.checked = true;
+  openModal('modal-pickup-import');
+}
+
+async function openPickupImportModal() {
+  if (appMode !== 'pickup') await switchAppMode('pickup', false);
+  else openPickupCourseModal();
+}
+
+function normalizePickupTime(value) {
+  const s = String(value || '').trim();
+  const m = s.match(/^1899-12-30T(\d{2}):(\d{2})/);
+  if (!m) return s;
+  return `${Number(m[1])}:${m[2]}`;
+}
+
+function spotPickupTimeCode(value) {
+  const s = String(value || '')
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[〜～－ー−]/g, '-')
+    .replace(/[　\s]/g, '');
+  if (/9時-?13時|09時-?13時/.test(s)) return '09';
+  if (/14時-?16時/.test(s)) return '14';
+  if (/16時-?18時/.test(s)) return '16';
+  const hour = s.match(/(\d{1,2})時/);
+  return hour ? hour[1].padStart(2, '0') : '?';
+}
+
+function isTruthyValue(value) {
+  const s = String(value || '').trim().toUpperCase();
+  return value === true || ['TRUE', '1', 'YES', 'Y', 'ON', '済', '○'].includes(s);
+}
+
+function spotSheetForPickupCourse(sheetName) {
+  return PICKUP_SPOT_SHEETS_BY_COURSE[sheetName] || '';
+}
+
+function isSpotPickupSheet(sheetName) {
+  return Object.values(PICKUP_SPOT_SHEETS_BY_COURSE).includes(sheetName);
+}
+
+function isSpotPickupItem(item) {
+  return !!(item && ((item.source || '') === 'ecohai-spot' || isSpotPickupSheet(item.sheet || '')));
+}
+
+function spotPickupNaturalKey(item) {
+  const date = String(item && (item.date || item.spotPickupDate) || '').replace(/\D/g, '').slice(0, 8);
+  const company = normalizeAddress(item && (item.company || item.spotPickupCompany || item.pickupCompany) || '').replace(/\s+/g, '');
+  const address = normalizeAddress(item && item.address || '').replace(/\s+/g, '');
+  const time = normalizeAddress(item && (item.time || item.spotPickupTime) || '').replace(/\s+/g, '');
+  const phone = String(item && (item.phone || item.spotPickupPhone) || '').replace(/\D/g, '');
+  if (!company || !address) return '';
+  return [date, company, address, time, phone].join('|');
+}
+
+function dedupeSpotPickupItems(items) {
+  const unique = [];
+  const spotIndexes = new Map();
+  (Array.isArray(items) ? items : []).forEach(item => {
+    if (!isSpotPickupItem(item)) {
+      unique.push(item);
+      return;
+    }
+    const key = spotPickupNaturalKey(item) || `id:${String(item.id || '')}`;
+    if (!spotIndexes.has(key)) {
+      spotIndexes.set(key, unique.length);
+      unique.push(item);
+      return;
+    }
+    const index = spotIndexes.get(key);
+    if (!isTruthyValue(unique[index].collected) && isTruthyValue(item.collected)) {
+      unique[index] = item;
+    }
+  });
+  return unique;
+}
+
+function dedupeStoredSpotPickups(items) {
+  const unique = [];
+  const spotIndexes = new Map();
+  (Array.isArray(items) ? items : []).forEach(item => {
+    if (!isSpotPickupDelivery(item)) {
+      unique.push(item);
+      return;
+    }
+    const key = spotPickupNaturalKey(item) || `id:${String(item.spotPickupId || item.pickupId || item.id || '')}`;
+    if (!spotIndexes.has(key)) {
+      spotIndexes.set(key, unique.length);
+      unique.push(item);
+      return;
+    }
+    const index = spotIndexes.get(key);
+    if (!unique[index].completed && item.completed) unique[index] = item;
+  });
+  return unique;
+}
+
+function pickupNote(item) {
+  if (isSpotPickupItem(item)) {
+    const time = normalizePickupTime(item.time);
+    return [
+      item.company || '',
+      'スポット集荷',
+      time ? `希望時間帯: ${time}` : '',
+      item.phone ? `登録電話番号: ${item.phone}` : '',
+      item.notes || ''
+    ].filter(Boolean).join('\n');
+  }
+
+  const lines = [];
+  if (item.company) lines.push(item.company);
+  const time = normalizePickupTime(item.time);
+  if (time) lines.push(`時間: ${time}`);
+  if (item.method) lines.push(`連絡: ${item.method}`);
+  if (item.notes) lines.push(item.notes);
+  return lines.join('\n');
+}
+
+function loadPendingPickupProgress() {
+  try {
+    const list = JSON.parse(localStorage.getItem(PICKUP_PENDING_SYNC_KEY) || '[]');
+    return Array.isArray(list) ? list.filter(item => item && item.key) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function savePendingPickupProgress(list) {
+  localStorage.setItem(PICKUP_PENDING_SYNC_KEY, JSON.stringify(list || []));
+}
+
+function pendingPayloadForDelivery(d, operatorName) {
+  const completedAt = d.completed ? localIsoString(d.completedAt || Date.now()) : '';
+  return {
+    sheet: d.pickupSheet,
+    row: d.pickupRow,
+    id: d.pickupId || '',
+    collected: !!d.completed,
+    collected_at: completedAt,
+    collected_by: d.completed ? (operatorName || d.completedBy || '') : ''
+  };
+}
+
+function upsertPendingPickupProgress(d, payload) {
+  const key = pickupProgressKey(d);
+  if (!key) return;
+  const list = loadPendingPickupProgress().filter(item => item.key !== key);
+  list.push({
+    key,
+    payload,
+    queuedAt: Date.now(),
+    attempts: 0,
+    lastError: ''
+  });
+  savePendingPickupProgress(list);
+}
+
+function removePendingPickupProgress(key) {
+  if (!key) return;
+  const list = loadPendingPickupProgress().filter(item => item.key !== key);
+  savePendingPickupProgress(list);
+}
+
+async function postPickupProgressPayload(payload) {
+  try {
+    const res = await fetch('../api/pickup_progress.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok || !data || data.error) {
+      const detail = data && data.detail ? ` (${data.detail})` : '';
+      throw new Error(((data && data.error) || 'スプレッドシート更新に失敗しました') + detail);
+    }
+    return data;
+  } catch (e) {
+    throw e;
+  }
+}
+
+async function syncPickupProgress(d, operatorName, options = {}) {
+  if (!isPickupBackedDelivery(d)) return true;
+  const key = pickupProgressKey(d);
+  const payload = pendingPayloadForDelivery(d, operatorName);
+  try {
+    await postPickupProgressPayload(payload);
+    d.progressSyncFailed = false;
+    removePendingPickupProgress(key);
+    saveDeliveries();
+    return true;
+  } catch (e) {
+    console.warn('pickup progress sync failed', e);
+    d.progressSyncFailed = true;
+    upsertPendingPickupProgress(d, payload);
+    saveDeliveries();
+    renderList();
+    if (!options.silent) showToast('通信不安定のため未同期です。通信回復後に自動再送します', true);
+    return false;
+  }
+}
+
+function pickupLocationPayloadForDelivery(d, adminPin = '') {
+  return {
+    sheet: d.pickupSheet,
+    row: d.pickupRow,
+    id: d.pickupId || '',
+    lat: finiteCoordinate(d.lat),
+    lng: finiteCoordinate(d.lng),
+    approx: !!d.approx,
+    formatted: d.formatted || d.address || '',
+    admin_pin: adminPin
+  };
+}
+
+async function postPickupLocationPayload(payload) {
+  const res = await fetch('../api/pickup_location.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || data.error) {
+    const detail = data && data.detail ? ` (${data.detail})` : '';
+    throw new Error(((data && data.error) || '固定位置の保存に失敗しました') + detail);
+  }
+  return data;
+}
+
+async function syncPickupLocation(d, options = {}) {
+  if (!isRegularPickupBackedDelivery(d)) return true;
+  const adminPin = options.requireAdmin ? requestPickupLocationAdminPin() : getPickupLocationAdminPin();
+  if (!adminPin) return false;
+  const payload = pickupLocationPayloadForDelivery(d, adminPin);
+  if (payload.lat === null || payload.lng === null) return false;
+  try {
+    await postPickupLocationPayload(payload);
+    return true;
+  } catch (e) {
+    console.warn('pickup location sync failed', e);
+    if (/PIN|403|unauthorized|権限|管理者/.test(e.message || '')) clearPickupLocationAdminPin();
+    if (!options.silent) showToast('ピン位置は端末内で更新しました。固定位置の共有保存に失敗しました', true);
+    return false;
+  }
+}
+
+async function retryPendingPickupProgress(options = {}) {
+  if (pickupPendingRetryInFlight) return { sent: 0, failed: 0 };
+  const pending = loadPendingPickupProgress();
+  if (pending.length === 0) return { sent: 0, failed: 0 };
+
+  pickupPendingRetryInFlight = true;
+  let sent = 0;
+  let failed = 0;
+  const remaining = [];
+
+  try {
+    for (const item of pending) {
+      try {
+        await postPickupProgressPayload(item.payload);
+        sent++;
+        const d = deliveries.find(x => pickupProgressKey(x) === item.key);
+        if (d) d.progressSyncFailed = false;
+      } catch (e) {
+        failed++;
+        remaining.push({
+          ...item,
+          attempts: (item.attempts || 0) + 1,
+          lastError: e.message || String(e),
+          lastAttemptAt: Date.now()
+        });
+      }
+    }
+    savePendingPickupProgress(remaining);
+    if (sent > 0) {
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      if (!options.silent) showToast(`未同期の集荷完了を${sent}件送信しました`);
+    }
+    return { sent, failed };
+  } finally {
+    pickupPendingRetryInFlight = false;
+  }
+}
+
+async function resetPickupTargets(targets, options = {}) {
+  const items = targets.filter(isPickupBackedDelivery);
+  if (items.length === 0) return { reset: 0, failed: 0 };
+
+  const previousInFlight = pickupSyncInFlight;
+  pickupSyncInFlight = true;
+
+  let failed = 0;
+  try {
+    if (!options.silent) showLoading('集荷完了をリセット中...');
+    items.forEach(d => {
+      d.completed = false;
+      d.completedAt = null;
+      d.completedBy = '';
+      d.completedAtLabel = '';
+      d.progressSyncFailed = false;
+    });
+    activeDeliveryId = null;
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+
+    for (let i = 0; i < items.length; i++) {
+      if (!options.silent) $('loading-msg').textContent = `集荷完了をリセット中... ${i + 1}/${items.length}`;
+      const ok = await syncPickupProgress(items[i], '', { silent: true });
+      if (!ok) failed++;
+    }
+
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    return { reset: items.length, failed };
+  } finally {
+    pickupSyncInFlight = previousInFlight;
+    if (!options.silent) hideLoading();
+  }
+}
+
+function shouldResetStalePickupCompletion(d, todayKey) {
+  if (!isPickupBackedDelivery(d) || !d.completed) return false;
+  const completedDate = d.completedAt ? localDateKey(d.completedAt) : '';
+  return !completedDate || completedDate < todayKey;
+}
+
+async function resetStalePickupCompletions() {
+  if (appMode !== 'pickup') return;
+  const today = localDateKey();
+  const lastReset = localStorage.getItem(PICKUP_LAST_RESET_DATE_KEY) || '';
+  const stale = deliveries.filter(d => shouldResetStalePickupCompletion(d, today));
+
+  if (stale.length === 0) {
+    if (lastReset !== today) localStorage.setItem(PICKUP_LAST_RESET_DATE_KEY, today);
+    return;
+  }
+
+  const result = await resetPickupTargets(stale, { silent: false });
+  localStorage.setItem(PICKUP_LAST_RESET_DATE_KEY, today);
+  const failText = result.failed ? ` / ${result.failed}件はシート更新に失敗` : '';
+  showToast(`前日分の集荷完了を${result.reset}件リセットしました${failText}`, result.failed > 0);
+}
+
+function resetPickupCompletionsManually() {
+  closeModal('modal-menu');
+  if (appMode !== 'pickup') {
+    showToast('集荷モードで使える機能です', true);
+    return;
+  }
+  const targets = deliveries.filter(d => isPickupBackedDelivery(d) && d.completed);
+  if (targets.length === 0) {
+    showToast('完了済みの集荷先がありません');
+    return;
+  }
+
+  showConfirm(
+    '集荷完了をリセット',
+    `完了済みの集荷先 ${targets.length}件 を未完了に戻します。\nスプレッドシートの collected も空にします。よろしいですか？`,
+    async () => {
+      const result = await resetPickupTargets(targets, { silent: false });
+      localStorage.setItem(PICKUP_LAST_RESET_DATE_KEY, localDateKey());
+      const failText = result.failed ? ` / ${result.failed}件はシート更新に失敗` : '';
+      showToast(`集荷完了を${result.reset}件リセットしました${failText}`, result.failed > 0);
+    }
+  );
+}
+
+async function fetchPickupItems(sheetName) {
+  const params = new URLSearchParams({
+    sheet: sheetName,
+    refresh: String(Date.now())
+  });
+  const res = await fetch(`../api/pickup_sheet.php?${params.toString()}`, { cache: 'no-store' });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || data.error) {
+    const detail = data && data.detail ? ` (${data.detail})` : '';
+    throw new Error(((data && data.error) || '集荷リストの取得に失敗しました') + detail);
+  }
+  return data;
+}
+
+async function triggerSpotPickupTouch(options = {}) {
+  pickupLastSpotTouchAt = Date.now();
+  try {
+    const res = await fetch('../api/spot_pickups_touch.php', { method: 'POST' });
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok || !data || data.error) {
+      const detail = data && data.detail ? ` (${data.detail})` : '';
+      throw new Error(((data && data.error) || 'スポット集荷チェックに失敗しました') + detail);
+    }
+    return data;
+  } catch (e) {
+    console.warn('spot pickup touch failed', e);
+    if (!options.silent) showToast(e.message || 'スポット集荷チェックに失敗しました', true);
+    return null;
+  }
+}
+
+async function triggerSpotPickupTouchIfDue(options = {}) {
+  if (Date.now() - pickupLastSpotTouchAt < PICKUP_SPOT_TOUCH_RETRY_MS) return null;
+  return triggerSpotPickupTouch(options);
+}
+
+function applyPickupProgressFromItems(items) {
+  let changed = false;
+  const byKey = new Map();
+  items.forEach(item => {
+    byKey.set(`${item.sheet || ''}:${item.row}`, item);
+  });
+
+  deliveries.forEach(d => {
+    if (!isPickupBackedDelivery(d)) return;
+    const item = byKey.get(`${d.pickupSheet}:${d.pickupRow}`);
+    if (!item) return;
+    if (d.pickupId && item.id && String(d.pickupId) !== String(item.id)) return;
+    const listTab = isSpotPickupItem(item) ? PICKUP_LIST_TAB_SPOT : normalizePickupListTab(item.list_tab);
+    if (normalizePickupListTab(d.pickupListTab) !== listTab) {
+      d.pickupListTab = listTab;
+      changed = true;
+    }
+    if (applyPickupLocationFromItem(d, item)) changed = true;
+    if (d.progressSyncFailed) return;
+
+    const completed = isTruthyValue(item.collected);
+    const completedBy = completed ? (item.collected_by || '') : '';
+    const completedAtLabel = completed ? formatTime(item.collected_at || '') : '';
+    const completedAt = completed
+      ? (item.collected_at ? Date.parse(item.collected_at) || d.completedAt || Date.now() : d.completedAt || Date.now())
+      : null;
+
+    if (d.completed !== completed ||
+        (d.completedBy || '') !== completedBy ||
+        (d.completedAtLabel || '') !== completedAtLabel) {
+      d.completed = completed;
+      d.completedAt = completedAt;
+      d.completedBy = completedBy;
+      d.completedAtLabel = completedAtLabel;
+      if (completed && activeDeliveryId === d.id) activeDeliveryId = null;
+      changed = true;
+    }
+  });
+
+  return changed;
+}
+
+async function mergePickupSheetSpotItems(items, options = {}) {
+  if (!Array.isArray(items)) items = [];
+  const spotItems = dedupeSpotPickupItems(items).filter(isSpotPickupItem).filter(item => item.id && item.address);
+  const incomingIds = new Set(spotItems.map(item => String(item.id)));
+  const incomingKeys = new Set(spotItems.map(spotPickupNaturalKey).filter(Boolean));
+  let changed = false;
+
+  const deduped = dedupeStoredSpotPickups(deliveries);
+  if (deduped.length !== deliveries.length) {
+    deliveries = deduped;
+    changed = true;
+  }
+  const beforeLength = deliveries.length;
+  deliveries = deliveries.filter(d => {
+    if (!isSpotPickupDelivery(d) || !isSpotPickupSheet(d.pickupSheet || '')) return true;
+    return incomingIds.has(String(d.spotPickupId || d.pickupId || '')) ||
+      incomingKeys.has(spotPickupNaturalKey(d));
+  });
+  if (deliveries.length !== beforeLength) changed = true;
+
+  const geocodeTargets = [];
+  spotItems.forEach((item, index) => {
+    if (pickupLocationFromItem(item)) return;
+    const spotId = String(item.id);
+    const spotKey = spotPickupNaturalKey(item);
+    const existing = deliveries.find(d => isSpotPickupDelivery(d) &&
+      (String(d.spotPickupId || '') === spotId || (spotKey && spotPickupNaturalKey(d) === spotKey)));
+    if (!existing || existing.address !== item.address || existing.lat == null || existing.lng == null) {
+      geocodeTargets.push({ item, index });
+    }
+  });
+
+  const geocodedSpotLocations = new Map();
+  if (geocodeTargets.length > 0) {
+    const geocoded = await mapWithConcurrency(
+      geocodeTargets,
+      PICKUP_GEOCODE_CONCURRENCY,
+      async ({ item, index }) => {
+        if (!options.silent) showLoading(`スポット集荷の住所を検索中... ${index + 1}/${spotItems.length}`);
+        return { item, result: await geocodeAddress(item.address) };
+      }
+    );
+    geocoded.forEach(({ item, result }) => {
+      if (result) geocodedSpotLocations.set(item, result);
+    });
+  }
+
+  for (let i = 0; i < spotItems.length; i++) {
+    const item = spotItems[i];
+    const spotId = String(item.id);
+    const spotKey = spotPickupNaturalKey(item);
+    const existing = deliveries.find(d => isSpotPickupDelivery(d) &&
+      (String(d.spotPickupId || '') === spotId || (spotKey && spotPickupNaturalKey(d) === spotKey)));
+    const note = pickupNote(item);
+    const completed = isTruthyValue(item.collected);
+    const completedAt = completed && item.collected_at ? Date.parse(item.collected_at) || Date.now() : null;
+    const completedBy = completed ? (item.collected_by || '') : '';
+    const completedAtLabel = completed ? formatTime(item.collected_at || Date.now()) : '';
+    const savedLocation = pickupLocationFromItem(item);
+
+    if (existing) {
+      const addressChanged = existing.address !== item.address;
+      existing.address = item.address;
+      existing.note = note;
+      if (!existing.progressSyncFailed) {
+        existing.completed = completed;
+        existing.completedAt = completedAt;
+        existing.completedBy = completedBy;
+        existing.completedAtLabel = completedAtLabel;
+      }
+      existing.pickupSource = 'ecohai-spot';
+      existing.pickupSheet = item.sheet || existing.pickupSheet || '';
+      existing.pickupRow = item.row || existing.pickupRow || null;
+      existing.pickupId = spotId;
+      existing.pickupListTab = PICKUP_LIST_TAB_SPOT;
+      existing.spotPickupId = spotId;
+      existing.spotPickupDate = item.date || existing.spotPickupDate || '';
+      existing.spotPickupTime = item.time || existing.spotPickupTime || '';
+      existing.spotPickupPhone = item.phone || existing.spotPickupPhone || '';
+      existing.spotPickupCompany = item.company || existing.spotPickupCompany || '';
+      existing.pickupCompany = item.company || existing.pickupCompany || '';
+      if (savedLocation) {
+        existing.lat = savedLocation.lat;
+        existing.lng = savedLocation.lng;
+        existing.approx = savedLocation.approx;
+        existing.formatted = savedLocation.formatted;
+      } else if (addressChanged || existing.lat == null || existing.lng == null) {
+        const result = geocodedSpotLocations.get(item);
+        if (!result) continue;
+        existing.lat = result.lat;
+        existing.lng = result.lng;
+        existing.approx = result.approx;
+        existing.formatted = result.formatted;
+      }
+      changed = true;
+      continue;
+    }
+
+    let result = savedLocation;
+    if (!result) {
+      result = geocodedSpotLocations.get(item);
+    }
+    if (!result) continue;
+    deliveries.push({
+      id: `spot-${spotId}`,
+      address: item.address,
+      note,
+      lat: result.lat,
+      lng: result.lng,
+      approx: result.approx,
+      formatted: result.formatted,
+      completed,
+      completedAt,
+      completedBy,
+      completedAtLabel,
+      createdAt: Date.now(),
+      pickupSheet: item.sheet || '',
+      pickupRow: item.row || null,
+      pickupId: spotId,
+      pickupSource: 'ecohai-spot',
+      pickupListTab: PICKUP_LIST_TAB_SPOT,
+      pickupCompany: item.company || '',
+      spotPickupId: spotId,
+      spotPickupDate: item.date || '',
+      spotPickupTime: item.time || '',
+      spotPickupPhone: item.phone || '',
+      spotPickupCompany: item.company || '',
+      progressSyncFailed: false
+    });
+    changed = true;
+  }
+
+  return changed;
+}
+
+async function syncPickupProgressFromSheets(silent = true) {
+  if (appMode !== 'pickup' || pickupSyncInFlight) return;
+  pickupSyncInFlight = true;
+  try {
+    await retryPendingPickupProgress({ silent: true });
+    const sheetSet = new Set(deliveries.filter(isPickupBackedDelivery).map(d => d.pickupSheet));
+    const selectedSpotSheet = spotSheetForPickupCourse(getSelectedPickupSheet());
+    if (selectedSpotSheet) {
+      await triggerSpotPickupTouchIfDue({ silent: true });
+      sheetSet.add(selectedSpotSheet);
+    }
+    const sheets = [...sheetSet].filter(Boolean);
+    if (sheets.length === 0) {
+      pickupLastSyncedAt = null;
+      renderList();
+      return;
+    }
+
+    const fetchedSheets = await Promise.all(
+      sheets.map(sheet => fetchPickupItems(sheet).then(data => ({ sheet, data })))
+    );
+
+    let changed = false;
+    for (const { sheet, data } of fetchedSheets) {
+      if (isSpotPickupSheet(sheet)) {
+        changed = await mergePickupSheetSpotItems(data.items || [], { silent }) || changed;
+      }
+      changed = applyPickupProgressFromItems(data.items || []) || changed;
+    }
+    pickupLastSyncedAt = new Date();
+    if (changed) {
+      saveDeliveries();
+      renderMarkers();
+    }
+    renderList();
+  } catch (e) {
+    console.warn('pickup auto sync failed', e);
+    if (!silent) showToast('集荷進捗の同期に失敗しました', true);
+  } finally {
+    pickupSyncInFlight = false;
+  }
+}
+
+function restartPickupAutoSync() {
+  if (pickupSyncTimer) {
+    clearInterval(pickupSyncTimer);
+    pickupSyncTimer = null;
+  }
+  if (appMode !== 'pickup') {
+    pickupLastSyncedAt = null;
+    renderList();
+    return;
+  }
+  syncPickupProgressFromSheets(true);
+  pickupSyncTimer = setInterval(() => syncPickupProgressFromSheets(true), PICKUP_SYNC_INTERVAL_MS);
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await worker(items[index], index);
+    }
+  }));
+  return results;
+}
+
+async function resolvePickupImportItem(item, index, total, cachedRegular, options) {
+  const spotItem = isSpotPickupItem(item);
+  const cachedItem = !spotItem ? cachedRegular.get(regularPickupIdentity(item)) : null;
+  const cachedLocation = cachedItem && cachedItem.address === item.address
+    ? pickupLocationFromItem(cachedItem)
+    : null;
+  const savedLocation = pickupLocationFromItem(item) || cachedLocation;
+  let result = savedLocation;
+  if (result) {
+    if (!options.background && !options.cacheVisible) {
+      showLoading(`${cachedLocation ? '保存済み位置' : '固定位置'}を読み込み中... ${index + 1}/${total}`);
+    }
+  } else {
+    if (!options.background) showLoading(`住所を検索中... ${index + 1}/${total}`);
+    result = await geocodeAddress(item.address);
+  }
+  return { item, spotItem, cachedItem, savedLocation, result };
+}
+
+async function importPickupItems(items, replaceList, options = {}) {
+  items = dedupeSpotPickupItems(items);
+  const courseName = options.courseName || getSelectedPickupSheet();
+  const cachedRegular = new Map(
+    loadRegularPickupCache(courseName).map(item => [regularPickupIdentity(item), item])
+  );
+  if (replaceList) {
+    deliveries = [];
+    activeDeliveryId = null;
+  }
+  const imported = [];
+  const failed = [];
+
+  const resolvedItems = await mapWithConcurrency(
+    items,
+    PICKUP_GEOCODE_CONCURRENCY,
+    (item, index) => resolvePickupImportItem(item, index, items.length, cachedRegular, options)
+  );
+
+  for (const resolved of resolvedItems) {
+    const { item, spotItem, cachedItem, savedLocation, result } = resolved;
+    if (!result) {
+      failed.push(item);
+      continue;
+    }
+    const pickupId = String(item.id || '');
+    const collected = isTruthyValue(item.collected);
+    const d = {
+      id: spotItem && pickupId ? `spot-${pickupId}` : (cachedItem && cachedItem.id ? cachedItem.id : uid()),
+      address: item.address,
+      note: pickupNote(item),
+      lat: result.lat,
+      lng: result.lng,
+      approx: result.approx,
+      formatted: result.formatted,
+      completed: collected,
+      completedAt: collected && item.collected_at ? Date.parse(item.collected_at) || Date.now() : null,
+      completedBy: collected ? (item.collected_by || '') : '',
+      completedAtLabel: collected ? formatTime(item.collected_at || Date.now()) : '',
+      createdAt: Date.now(),
+      pickupSheet: item.sheet || '',
+      pickupRow: item.row || null,
+      pickupId,
+      pickupSource: spotItem ? 'ecohai-spot' : '',
+      pickupListTab: spotItem ? PICKUP_LIST_TAB_SPOT : normalizePickupListTab(item.list_tab),
+      pickupCompany: item.company || '',
+      spotPickupId: spotItem ? pickupId : '',
+      spotPickupDate: spotItem ? (item.date || '') : '',
+      spotPickupTime: spotItem ? (item.time || '') : '',
+      spotPickupPhone: spotItem ? (item.phone || '') : '',
+      spotPickupCompany: spotItem ? (item.company || '') : '',
+      progressSyncFailed: false
+    };
+    deliveries.push(d);
+    imported.push(d);
+    if (!savedLocation && !spotItem) syncPickupLocation(d, { silent: true });
+  }
+
+  saveDeliveries();
+  saveRegularPickupCache(courseName);
+  await resetStalePickupCompletions();
+  renderMarkers();
+  renderList();
+  restartPickupAutoSync();
+  if (!options.background) hideLoading();
+
+  if (imported.length > 0 && options.focusFirst !== false) {
+    const first = imported[0];
+    activeDeliveryId = first.id;
+    updateMarkerZIndexes();
+    renderList();
+    map.flyTo({ center: [first.lng, first.lat], zoom: 16, speed: 1.4 });
+  }
+
+  const failMsg = failed.length > 0 ? ` / ${failed.length}件は住所検索できませんでした` : '';
+  if (!options.background) showToast(`${imported.length}件 取り込みました${failMsg}`, failed.length > 0);
+}
+
+async function fetchPickupCourseItems(sheetName, refreshSpots = true) {
+  const sourceSheets = [sheetName];
+  const spotSheet = spotSheetForPickupCourse(sheetName);
+  if (spotSheet) {
+    if (refreshSpots) await triggerSpotPickupTouch({ silent: true });
+    sourceSheets.push(spotSheet);
+  }
+
+  const items = [];
+  const warnings = [];
+  for (const sourceSheet of sourceSheets) {
+    try {
+      const data = await fetchPickupItems(sourceSheet);
+      items.push(...(data.items || []));
+    } catch (e) {
+      if (sourceSheet === sheetName) throw e;
+      warnings.push(e.message || `${sourceSheet}の取得に失敗しました`);
+    }
+  }
+  return { items, warnings };
+}
+
+async function refreshSelectedPickupCourseInBackground() {
+  const sheetName = getSelectedPickupSheet();
+  if (appMode !== 'pickup' || !PICKUP_SHEETS.includes(sheetName)) return;
+  try {
+    const result = await fetchPickupCourseItems(sheetName, false);
+    if (result.items.length === 0) return;
+    await importPickupItems(result.items, true, {
+      courseName: sheetName,
+      background: true,
+      cacheVisible: true,
+      focusFirst: false
+    });
+  } catch (e) {
+    console.warn('background pickup course refresh failed', e);
+  }
+}
+
+async function importPickupSheet() {
+  const sheetName = $('pickup-sheet').value;
+  if (sheetName === PICKUP_DELIVERY_MODE_VALUE) {
+    closeModal('modal-pickup-import');
+    if (appMode !== 'delivery') await switchAppMode('delivery');
+    return;
+  }
+  const replaceList = true;
+  if (appMode !== 'pickup') await switchAppMode('pickup', false, { openCourseModal: false });
+  setSelectedPickupSheet(sheetName);
+  updateModeUi();
+  closeModal('modal-pickup-import');
+  const cacheVisible = showCachedRegularPickupCourse(sheetName);
+
+  try {
+    if (cacheVisible) {
+      showToast('保存済みの定期集荷を表示しました。最新情報を確認中...');
+    } else {
+      showLoading(`${sheetName}の集荷コースを読み込み中...`);
+    }
+    const { items, warnings } = await fetchPickupCourseItems(sheetName);
+
+    if (items.length === 0) {
+      hideLoading();
+      showToast('取り込める集荷先がありませんでした', true);
+      return;
+    }
+
+    await importPickupItems(items, replaceList, { courseName: sheetName, cacheVisible });
+    updateModeUi();
+    if (warnings.length > 0) showToast(`スポット集荷の取得に失敗しました: ${warnings[0]}`, true);
+  } catch (e) {
+    hideLoading();
+    showToast(e.message || '集荷リストの取得に失敗しました', true);
+  }
+}
+
+async function openPickupCourseFromNotification() {
+  const params = new URLSearchParams(window.location.search);
+  const course = params.get('pickup_course') || '';
+  if (!PICKUP_SHEETS.includes(course)) return false;
+  setupPickupSheetOptions();
+  $('pickup-sheet').value = course;
+  await importPickupSheet();
+  params.delete('pickup_course');
+  const query = params.toString();
+  history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
+  return true;
+}
+
+function isRoutableDelivery(d) {
+  return d && !d.completed && Number.isFinite(Number(d.lat)) && Number.isFinite(Number(d.lng));
+}
+
+function routePoint(d) {
+  return { lat: Number(d.lat), lng: Number(d.lng) };
+}
+
+function distanceMeters(a, b) {
+  const lat1 = Number(a.lat);
+  const lat2 = Number(b.lat);
+  const lng1 = Number(a.lng);
+  const lng2 = Number(b.lng);
+  const toRad = deg => deg * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const rLat1 = toRad(lat1);
+  const rLat2 = toRad(lat2);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const h = sinLat * sinLat + Math.cos(rLat1) * Math.cos(rLat2) * sinLng * sinLng;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function routeDistanceMeters(start, route) {
+  if (!route.length) return 0;
+  let total = distanceMeters(start, routePoint(route[0]));
+  for (let i = 1; i < route.length; i++) {
+    total += distanceMeters(routePoint(route[i - 1]), routePoint(route[i]));
+  }
+  return total;
+}
+
+function nearestNeighborRoute(start, items) {
+  const remaining = items.slice();
+  const ordered = [];
+  let current = start;
+
+  while (remaining.length) {
+    let bestIndex = 0;
+    let bestDistance = Infinity;
+    remaining.forEach((item, idx) => {
+      const dist = distanceMeters(current, routePoint(item));
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        bestIndex = idx;
+      }
+    });
+    const next = remaining.splice(bestIndex, 1)[0];
+    ordered.push(next);
+    current = routePoint(next);
+  }
+
+  return ordered;
+}
+
+function improveRouteWithTwoOpt(start, route) {
+  const improved = route.slice();
+  if (improved.length < 4) return improved;
+
+  let changed = true;
+  let guard = 0;
+  while (changed && guard < 80) {
+    changed = false;
+    guard++;
+    for (let i = 0; i < improved.length - 1; i++) {
+      for (let k = i + 1; k < improved.length; k++) {
+        const a = i === 0 ? start : routePoint(improved[i - 1]);
+        const b = routePoint(improved[i]);
+        const c = routePoint(improved[k]);
+        const d = k + 1 < improved.length ? routePoint(improved[k + 1]) : null;
+        const before = distanceMeters(a, b) + (d ? distanceMeters(c, d) : 0);
+        const after = distanceMeters(a, c) + (d ? distanceMeters(b, d) : 0);
+        if (after + 0.5 < before) {
+          const reversed = improved.slice(i, k + 1).reverse();
+          improved.splice(i, reversed.length, ...reversed);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return improved;
+}
+
+function getRouteStartPoint() {
+  if (userMarker) {
+    const ll = userMarker.getLngLat();
+    return { lat: ll.lat, lng: ll.lng, label: '現在地' };
+  }
+  if (map) {
+    const center = map.getCenter();
+    return { lat: center.lat, lng: center.lng, label: '地図中心' };
+  }
+  return { lat: DEFAULT_CENTER_LAT, lng: DEFAULT_CENTER_LNG, label: '初期位置' };
+}
+
+function formatKm(meters) {
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1)}km`;
+  return `${Math.round(meters)}m`;
+}
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(Number(seconds))) return '';
+  const minutes = Math.round(Number(seconds) / 60);
+  if (minutes < 60) return `約${minutes}分`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `約${h}時間${m}分` : `約${h}時間`;
+}
+
+function shortRoutePreview(route) {
+  return route.slice(0, 5).map((d, idx) => {
+    const label = extractBuilding(d.note) || extractBanchi(d.address) || d.address;
+    return `${idx + 1}. ${label}`;
+  }).join('\n');
+}
+
+function optimizeRouteOrder() {
+  closeModal('modal-menu');
+  const routeItems = deliveries.filter(isRoutableDelivery);
+  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
+  const completedItems = deliveries.filter(d => d && d.completed);
+
+  if (routeItems.length < 2) {
+    showToast(`${modeLabel()}先が2件以上ある時に並べ替えできます`, true);
+    return;
+  }
+
+  const start = getRouteStartPoint();
+  const originalDistance = routeDistanceMeters(start, routeItems);
+  const suggested = improveRouteWithTwoOpt(start, nearestNeighborRoute(start, routeItems));
+  const suggestedDistance = routeDistanceMeters(start, suggested);
+  const diff = Math.max(0, originalDistance - suggestedDistance);
+  const tailNote = [
+    noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
+    completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
+  ].filter(Boolean).join('\n');
+
+  showConfirm(
+    'おすすめ順に並べ替え',
+    `${start.label}から近い順に${modeLabel()}順を提案します。\n` +
+    `目安距離: ${formatKm(originalDistance)} → ${formatKm(suggestedDistance)}` +
+    (diff > 0 ? ` (${formatKm(diff)}短縮)` : '') + '\n\n' +
+    shortRoutePreview(suggested) +
+    (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
+    (tailNote ? `\n\n${tailNote}` : '') +
+    '\n\nこの順番に並べ替えますか？',
+    () => {
+      deliveries = suggested.concat(noLocationItems, completedItems);
+      activeDeliveryId = suggested[0] ? suggested[0].id : null;
+      clearOptimizedRouteGeometry();
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      if (suggested[0] && map) {
+        map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
+      }
+      showToast(`${modeLabel()}順を並べ替えました`);
+    }
+  );
+}
+
+async function optimizeCarRouteOrder() {
+  closeModal('modal-menu');
+  const routeItems = deliveries.filter(isRoutableDelivery);
+  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
+  const completedItems = deliveries.filter(d => d && d.completed);
+
+  if (routeItems.length < 2) {
+    showToast(`${modeLabel()}先が2件以上ある時に車用ルート検索できます`, true);
+    return;
+  }
+  if (routeItems.length > 24) {
+    showToast('車用ルート検索は一度に24件までです。完了分を削除するか分けて検索してください。', true);
+    return;
+  }
+
+  const start = getRouteStartPoint();
+  showLoading('車用ルートを検索中...');
+  try {
+    bumpUsage('routeOptimize');
+    const res = await fetch('../api/optimize_route.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        profile: 'mapbox/driving',
+        start: { lat: start.lat, lng: start.lng },
+        points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
+      })
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    hideLoading();
+
+    if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
+      const detail = data && data.detail ? `\n${data.detail}` : '';
+      throw new Error(((data && data.error) || '車用ルート検索に失敗しました') + detail);
+    }
+
+    const byId = new Map(deliveries.map(d => [d.id, d]));
+    const suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
+    if (suggested.length !== routeItems.length) {
+      throw new Error('車用ルート検索結果の件数が一致しませんでした');
+    }
+
+    const distanceText = data.distance ? formatKm(data.distance) : '不明';
+    const durationText = data.duration ? formatDuration(data.duration) : '';
+    const tailNote = [
+      noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
+      completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
+    ].filter(Boolean).join('\n');
+
+    showConfirm(
+      '車向け 道路優先ルート',
+      `Mapboxの道路ルートで${modeLabel()}順を提案します。\n` +
+      `始点: ${start.label}\n` +
+      `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n\n` +
+      shortRoutePreview(suggested) +
+      (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
+      (tailNote ? `\n\n${tailNote}` : '') +
+      '\n\nこの順番に並べ替えますか？',
+      () => {
+        deliveries = suggested.concat(noLocationItems, completedItems);
+        activeDeliveryId = suggested[0] ? suggested[0].id : null;
+        saveDeliveries();
+        renderMarkers();
+        renderList();
+        if (data.geometry) setOptimizedRouteGeometry(data.geometry);
+        if (suggested[0] && map) {
+          map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
+        }
+        showToast(`${modeLabel()}順を車用ルートで並べ替えました`);
+      }
+    );
+  } catch (e) {
+    hideLoading();
+    showToast(e.message || '車用ルート検索に失敗しました', true);
+  }
+}
+
+async function optimizeGoogleCarRouteOrder() {
+  closeModal('modal-menu');
+  const routeItems = deliveries.filter(isRoutableDelivery);
+  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
+  const completedItems = deliveries.filter(d => d && d.completed);
+
+  if (routeItems.length < 2) {
+    showToast(`${modeLabel()}先が2件以上ある時にGoogle車用ルート検索できます`, true);
+    return;
+  }
+  if (routeItems.length > 24) {
+    showToast('Google車用ルート検索は一度に24件までです。完了分を削除するか分けて検索してください。', true);
+    return;
+  }
+
+  const start = getRouteStartPoint();
+  showLoading('Google車用ルートを検索中...');
+  try {
+    bumpUsage('googleRouteOptimize');
+    const res = await fetch('../api/google_route.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        start: { lat: start.lat, lng: start.lng },
+        points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
+      })
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    hideLoading();
+
+    if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
+      const detail = data && (data.hint || data.detail) ? `\n${data.hint || data.detail}` : '';
+      throw new Error(((data && data.error) || 'Google車用ルート検索に失敗しました') + detail);
+    }
+
+    const byId = new Map(deliveries.map(d => [d.id, d]));
+    const suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
+    if (suggested.length !== routeItems.length) {
+      throw new Error('Google車用ルート検索結果の件数が一致しませんでした');
+    }
+
+    const distanceText = data.distance ? formatKm(data.distance) : '不明';
+    const durationText = data.duration ? formatDuration(data.duration) : '';
+    const tailNote = [
+      noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
+      completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
+    ].filter(Boolean).join('\n');
+
+    showConfirm(
+      'Google車向け 道路優先ルート',
+      `Google Routes APIの道路ルートで${modeLabel()}順を提案します。\n` +
+      `始点: ${start.label}\n` +
+      `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n\n` +
+      shortRoutePreview(suggested) +
+      (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
+      (tailNote ? `\n\n${tailNote}` : '') +
+      '\n\nこの順番に並べ替えますか？',
+      () => {
+        deliveries = suggested.concat(noLocationItems, completedItems);
+        activeDeliveryId = suggested[0] ? suggested[0].id : null;
+        saveDeliveries();
+        renderMarkers();
+        renderList();
+        if (data.geometry) setOptimizedRouteGeometry(data.geometry);
+        if (suggested[0] && map) {
+          map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
+        }
+        showToast(`${modeLabel()}順をGoogle車用ルートで並べ替えました`);
+      }
+    );
+  } catch (e) {
+    hideLoading();
+    showToast(e.message || 'Google車用ルート検索に失敗しました', true);
+  }
+}
+
+function exportDeliveriesAsJSON() {
+  closeModal('modal-menu');
+  if (deliveries.length === 0) { showToast('配送先がありません', true); return; }
+  const json = JSON.stringify(deliveries, null, 2);
+  navigator.clipboard.writeText(json).then(
+    () => showToast(`${deliveries.length}件をJSONでクリップボードにコピーしました`),
+    () => showToast('コピーに失敗しました', true)
+  );
+}
+
+function updateGpsButton() {
+  const btn = $('btn-gps');
+  if (!btn) return;
+  btn.textContent = gpsAutoFollow ? '● 追跡中' : '◎ 現在地';
+  btn.classList.toggle('tracking', gpsAutoFollow);
+}
+
+function updateGpsStatus(pos) {
+  const el = $('gps-status');
+  if (!el || !pos) return;
+  const accuracy = Math.round(pos.coords.accuracy || 0);
+  const time = new Date(pos.timestamp || Date.now()).toLocaleTimeString('ja-JP', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  el.innerHTML = `GPS精度: 約${accuracy}m<br>更新: ${time}`;
+  el.classList.add('show');
+}
+
+function updateUserLocation(pos, moveMap = false) {
+  const { latitude, longitude } = pos.coords;
+  const lngLat = [longitude, latitude];
+
+  if (!userMarker) {
+    userMarkerEl = document.createElement('div');
+    userMarkerEl.dataset.role = 'user-location';
+    userMarkerEl.style.cssText = `
+      width: 18px; height: 18px;
+      background: #2563eb;
+      border: 3px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px #2563eb, 0 1px 4px rgba(0,0,0,0.4);
+    `;
+    userMarker = new mapboxgl.Marker({ element: userMarkerEl, anchor: 'center' })
+      .setLngLat(lngLat).addTo(map);
+  } else {
+    userMarker.setLngLat(lngLat);
+  }
+
+  updateGpsStatus(pos);
+
+  if (moveMap) {
+    map.easeTo({ center: lngLat, zoom: Math.max(map.getZoom(), 17), duration: 600 });
+  }
+}
+
+function ensureGpsWatching() {
+  if (!navigator.geolocation) { showToast('住置情報が利用できません', true); return false; }
+  if (gpsActive && gpsWatchId !== null) return true;
+
+  gpsActive = true;
+  gpsWatchId = navigator.geolocation.watchPosition(
+    (pos) => { updateUserLocation(pos, gpsAutoFollow); },
+    (err) => {
+      let msg = '位置情報を取得できません';
+      if (err.code === 1) msg = '位置情報の許可が必要です';
+      else if (err.code === 2) msg = '現在地を取得できませんでした';
+      else if (err.code === 3) msg = 'GPS取得がタイムアウトしました';
+      showToast(msg, true);
+      if (gpsWatchId !== null) {
+        navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = null;
+      }
+      gpsActive = false;
+      gpsAutoFollow = false;
+      updateGpsButton();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
+  );
+  return true;
+}
+
+function toggleGpsTracking() {
+  if (!gpsActive) {
+    if (!ensureGpsWatching()) return;
+    gpsAutoFollow = true;
+    updateGpsButton();
+    showToast('GPSをONにしました(地図が現在地に追従します)');
+    return;
+  }
+  gpsAutoFollow = !gpsAutoFollow;
+  updateGpsButton();
+  if (gpsAutoFollow) {
+    showToast('地図追従ON');
+    if (userMarker) {
+      const ll = userMarker.getLngLat();
+      map.easeTo({ center: [ll.lng, ll.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+    }
+  } else {
+    showToast('地図追従OFF: 現在地マーカーは動き続けます');
+  }
+}
+
+function centerOnUser() {
+  closeModal('modal-menu');
+  if (!navigator.geolocation) { showToast('位置情報が利用できません', true); return; }
+  ensureGpsWatching();
+  if (userMarker) {
+    const ll = userMarker.getLngLat();
+    map.easeTo({ center: [ll.lng, ll.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+    showToast('現在地を表示しました');
+    return;
+  }
+  showToast('現在地を取得中...');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => { updateUserLocation(pos, true); showToast('現在地を表示しました'); },
+    () => showToast('位置情報を取得できません', true),
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 5000 }
+  );
+}
+
+$('btn-menu').addEventListener('click', () => openModal('modal-menu'));
+$('btn-gps').addEventListener('click', toggleGpsTracking);
+$('btn-app-mode').addEventListener('click', openPickupCourseModal);
+$('btn-label-mode').addEventListener('click', cycleLabelMode);
+
+function toggleListCollapse(forceState) {
+  const willCollapse = (typeof forceState === 'boolean')
+    ? forceState
+    : !document.body.classList.contains('list-collapsed');
+  document.body.classList.toggle('list-collapsed', willCollapse);
+  localStorage.setItem(LIST_COLLAPSED_KEY, willCollapse ? '1' : '0');
+  setTimeout(() => { if (map) map.resize(); }, 280);
+}
+$('list-header').addEventListener('click', () => toggleListCollapse());
+document.querySelectorAll('[data-pickup-list-tab]').forEach(button => {
+  button.addEventListener('click', () => setPickupListTab(button.dataset.pickupListTab));
+});
+$('btn-north').addEventListener('click', () => {
+  map.easeTo({ bearing: 0, pitch: 0, duration: 400 });
+  showToast('🧭 北向き・水平に戻しました');
+});
+
+$('btn-add-photo').addEventListener('click', () => $('file-photo').click());
+$('file-photo').addEventListener('change', (e) => {
+  if (e.target.files && e.target.files[0]) {
+    openPhotoPreview(e.target.files[0]);
+    e.target.value = '';
+  }
+});
+$('btn-photo-rotate-left').addEventListener('click', () => rotatePendingPhoto(-90));
+$('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(90));
+$('btn-photo-cancel').addEventListener('click', closePhotoPreview);
+$('btn-photo-read').addEventListener('click', readPendingPhoto);
+$('btn-add-voice').addEventListener('click', startVoiceInput);
+$('btn-add-manual').addEventListener('click', () => {
+  $('add-address').value = '';
+  $('add-note').value = '';
+  openModal('modal-add');
+});
+
+$('btn-add-confirm').addEventListener('click', () => {
+  const address = $('add-address').value.trim();
+  const note = $('add-note').value.trim();
+  if (!address) { showToast('住所を入力してください', true); return; }
+  closeModal('modal-add');
+  addDelivery({ address, note });
+});
+
+$('btn-edit-save').addEventListener('click', saveEditedItem);
+$('btn-edit-geocode').addEventListener('click', reGeocodeEditedItem);
+$('btn-edit-done').addEventListener('click', toggleEditedItemDone);
+$('btn-edit-navi').addEventListener('click', openEditedItemNavigation);
+$('btn-edit-delete').addEventListener('click', deleteEditedItem);
+
+$('menu-center-user').addEventListener('click', centerOnUser);
+$('menu-toggle-mode').addEventListener('click', toggleAppMode);
+$('menu-import-pickup').addEventListener('click', openPickupImportModal);
+$('menu-reset-pickup').addEventListener('click', resetPickupCompletionsManually);
+$('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
+$('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
+$('menu-optimize-google').addEventListener('click', optimizeGoogleCarRouteOrder);
+$('menu-operator').addEventListener('click', () => openOperatorModal());
+$('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
+$('menu-copy').addEventListener('click', copyListToClipboard);
+$('menu-clear-done').addEventListener('click', clearCompleted);
+$('menu-clear-all').addEventListener('click', clearAll);
+$('menu-usage').addEventListener('click', showUsage);
+$('menu-toggle-neighborhoods').addEventListener('click', () => {
+  closeModal('modal-menu');
+  toggleNeighborhoods();
+});
+$('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
+$('menu-refresh-banchi').addEventListener('click', refreshAddressData);
+$('menu-text-size').addEventListener('click', openTextSizeSettings);
+$('menu-notifications').addEventListener('click', openNotificationSettings);
+$('menu-reload-app').addEventListener('click', reloadLatestApp);
+$('menu-manual').addEventListener('click', () => {
+  closeModal('modal-menu');
+  window.open('manual.html', '_blank', 'noopener');
+});
+
+$('btn-reset-usage').addEventListener('click', resetUsage);
+$('btn-pickup-import').addEventListener('click', importPickupSheet);
+$('btn-operator-save').addEventListener('click', saveOperatorFromModal);
+$('btn-operator-cancel').addEventListener('click', cancelOperatorModal);
+$('btn-notification-save').addEventListener('click', savePushSettings);
+$('btn-notification-disable').addEventListener('click', disablePushNotifications);
+$('btn-notification-install').addEventListener('click', installPushApp);
+document.querySelectorAll('[data-text-size]').forEach(button => {
+  button.addEventListener('click', () => applyTextSize(button.dataset.textSize));
+});
+
+$('confirm-ok').addEventListener('click', () => {
+  closeModal('modal-confirm');
+  if (confirmCallback) {
+    const cb = confirmCallback;
+    confirmCallback = null;
+    cb();
+  }
+});
+$('confirm-cancel').addEventListener('click', () => {
+  closeModal('modal-confirm');
+  pendingPlacementCoord = null;
+  confirmCallback = null;
+});
+
+document.querySelectorAll('[data-close]').forEach(btn => {
+  btn.addEventListener('click', () => closeModal(btn.dataset.close));
+});
+
+document.querySelector('.placement-banner').addEventListener('click', cancelPlacement);
+window.addEventListener('online', () => retryPendingPickupProgress({ silent: false }));
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updateNotificationInstallGuide();
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  updateNotificationInstallGuide();
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    retryPendingPickupProgress({ silent: true });
+    checkAppVersionUpdate();
+  }
+});
+
+(async function init() {
+  try {
+    updateAppVersionLabels();
+    applyTextSize(currentTextSize(), false);
+    if (localStorage.getItem(LIST_COLLAPSED_KEY) === '1') {
+      document.body.classList.add('list-collapsed');
+    }
+    loadLabelMode();
+    updateLabelModeButton();
+    updateNeighborhoodButton();
+    updateAddrButton();
+    showLoading('地図を読み込み中...');
+    mapboxConfig = await loadMapboxConfig();
+    const mapReady = initMap();
+    loadDeliveries();
+    if (appMode === 'pickup') {
+      const selectedCourse = getSelectedPickupSheet();
+      saveRegularPickupCache(selectedCourse, deliveries);
+      showCachedRegularPickupCourse(selectedCourse);
+    }
+    await mapReady;
+    await resetStalePickupCompletions();
+    renderMarkers();
+    renderList();
+    updateGpsButton();
+    updateModeUi();
+    restartPickupAutoSync();
+    ensureGpsWatching();
+    updateGpsButton();
+    hideLoading();
+    checkAppVersionUpdate({ force: true });
+    ensurePushServiceWorker().catch(e => console.warn('push service worker registration failed', e));
+    const openedFromNotification = await openPickupCourseFromNotification();
+    if (!openedFromNotification) {
+      triggerSpotPickupTouchIfDue({ silent: true }).then(() => {
+        if (appMode === 'pickup') refreshSelectedPickupCourseInBackground();
+      });
+    }
+
+    if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {
+      ensureAddressData().then(data => {
+        if (!data) return;
+        addrVisible = true;
+        addAddressLayer(data);
+        updateAddrButton();
+      });
+    }
+  } catch (e) {
+    hideLoading();
+    showToast('初期化エラー: ' + e.message, true);
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
