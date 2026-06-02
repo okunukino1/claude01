@@ -836,7 +836,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.01-4-test.3</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.01-4-test.4</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.01-4-test.3';
+const APP_VERSION = 'v2026.06.01-4-test.4';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2560,10 +2560,10 @@ function buildMarkerOverlapInfo(items = deliveries) {
 
 function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   const num = displayNumber(d, idx);
-  wrapper.className = 'delivery-marker'
-    + (d.completed ? ' done' : '')
-    + (d.approx ? ' approx' : '')
-    + (isSpotPickupDelivery(d) ? ' spot' : '');
+  wrapper.classList.add('delivery-marker');
+  wrapper.classList.toggle('done', !!d.completed);
+  wrapper.classList.toggle('approx', !!d.approx);
+  wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
   wrapper.style.zIndex = String(markerZIndex(d, idx));
   wrapper.innerHTML = '';
 
