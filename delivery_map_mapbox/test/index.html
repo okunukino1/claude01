@@ -836,7 +836,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.01-4-test.2</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.01-4-test.3</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.01-4-test.2';
+const APP_VERSION = 'v2026.06.01-4-test.3';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2607,7 +2607,6 @@ function createDeliveryMarker(d) {
 
 function renderMarkers() {
   if (!map) return;
-  removePickupRecordsFromDeliveryState();
   const modeKey = LABEL_MODES[labelModeIndex].key;
   const visibleDeliveries = deliveries.filter(isVisibleInCurrentMode);
   lastVisibleDeliveries = visibleDeliveries;
@@ -2839,7 +2838,6 @@ function pickupListDisplay(d) {
 }
 
 function renderList() {
-  removePickupRecordsFromDeliveryState();
   const body = $('list-body');
   const stat = $('list-stat');
   updatePickupListTabs();
