@@ -1126,3 +1126,120 @@ init で `await loadMapboxConfig()` → `await initMap()` → `await resetStaleP
 | P5 2-opt反復可変化 | 🟢 P3 | 中（最適化時のみ） | 低 |
 | P6 PHP並列スクレイピング | 🟢 P3 | 中（更新時のみ） | 中（外部負荷・BAN） |
 | P7 起動時await並走 | 🟢 P3 | 小（起動時のみ） | 低 |
+
+---
+
+# 🔴 テスト版 ピン位置ずれバグ — 緊急修正 (test/index.html)
+
+> **発見日**: 2026-06-02
+> **対象ファイル**: `delivery_map_mapbox/test/index.html` のみ（**テスト版**）
+> **対象バージョン**: `v2026.06.01-4-test.3`（`origin/main`）
+> **起因コミット**: `752c9dc` "Improve test map rendering performance"（TASK-P1 のマーカー差分更新実装）
+> **症状**: テスト版で、lat/lng を変えていないのに地図上のピンが移動する／位置がずれる
+>
+> ⚠️ **安定版 `delivery_map_mapbox/index.html` は正常動作中。絶対に変更しないこと。**
+
+---
+
+## TASK-T1: マーカー要素の className 上書きで `mapboxgl-marker` クラスが消える 🔴 最優先
+
+### 根本原因（断定）
+
+`updateDeliveryMarkerElement()` の `wrapper.className = '...'` が、
+Mapbox が wrapper に付与した `mapboxgl-marker` / `mapboxgl-marker-anchor-bottom` クラスを**上書き削除**している。
+
+Mapbox GL JS v3.7.0 のソース（`src/ui/marker.ts` L.182, L.194）:
+```javascript
+this._element = options.element;                    // = wrapper
+this._element.classList.add('mapboxgl-marker');     // wrapper に付与
+classList.add(`mapboxgl-marker-anchor-bottom`);     // wrapper に付与
+```
+
+Mapbox のCSS（`src/css/mapbox-gl.css`）:
+```css
+.mapboxgl-marker {
+    position: absolute;   /* ← ピンの位置決めの根拠。これが消えると崩れる */
+    top: 0;
+    left: 0;
+    will-change: transform;
+}
+```
+
+#### なぜ安定版は正常で、テスト版だけ壊れるか
+
+**安定版（正常）** — `index.html` の `renderMarkers()`:
+```
+① wrapper.className = 'delivery-marker ...'      ← 先にアプリ側クラスを設定
+② new mapboxgl.Marker({element: wrapper})        ← Mapbox が 'mapboxgl-marker' を追記
+結果: className = 'delivery-marker ... mapboxgl-marker mapboxgl-marker-anchor-bottom'
+→ position: absolute 保持 ✅
+```
+
+**テスト版（752c9dc 以降・バグ）** — `createDeliveryMarker()` → `updateDeliveryMarkerElement()`:
+```
+① new mapboxgl.Marker({element: wrapper})        ← Mapbox が 'mapboxgl-marker' を付与
+   className = 'mapboxgl-marker mapboxgl-marker-anchor-bottom'
+② updateDeliveryMarkerElement: wrapper.className = 'delivery-marker ...'  ← 全部上書き
+   → 'mapboxgl-marker' が消滅
+   → position: absolute 喪失 ❌
+```
+
+`position: absolute` を失ったマーカー要素は、`display: flex` の静的フロー（normal flow）で
+縦に積み重なる。`transform`（Mapbox の位置計算）は残るため、
+ピン#Nはフローオフセット`44px×(N-1)`ぶん累積してずれ、再描画のたびに位置が動いて見える。
+
+### 確定した「原因ではない」もの（再調査不要）
+
+| 候補 | 判定 | 根拠 |
+|---|---|---|
+| `anchor: 'bottom'` を空要素で初期化したことによるズレ | **無関係** | v3.7.0 の anchor は CSS パーセント値 `translate(-50%,-100%)`（`src/ui/anchor.ts`）。ブラウザが描画時に要素の現在サイズで動的計算するため、後からDOMを充填しても位置は正しく決まる |
+| 19aaa7f（TASK-P4 の `removePickupRecordsFromDeliveryState` 除去） | **無関係** | 配送モードの集荷記録除外は `isVisibleInCurrentMode()` フィルタが担保。ピンの座標計算には影響しない |
+
+### 現在のコード（`test/index.html` L.2561-2568）
+
+```javascript
+function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
+  const num = displayNumber(d, idx);
+  wrapper.className = 'delivery-marker'
+    + (d.completed ? ' done' : '')
+    + (d.approx ? ' approx' : '')
+    + (isSpotPickupDelivery(d) ? ' spot' : '');
+  wrapper.style.zIndex = String(markerZIndex(d, idx));
+  wrapper.innerHTML = '';
+  ...
+```
+
+### 修正（最小パッチ）
+
+`className =`（全置換）をやめ、`classList` でアプリ側クラスだけを足し引きする:
+
+```javascript
+function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
+  const num = displayNumber(d, idx);
+  // className 全置換は Mapbox が付与した 'mapboxgl-marker'(position:absolute) を消すため classList を使う
+  wrapper.classList.add('delivery-marker');
+  wrapper.classList.toggle('done', !!d.completed);
+  wrapper.classList.toggle('approx', !!d.approx);
+  wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
+  wrapper.style.zIndex = String(markerZIndex(d, idx));
+  wrapper.innerHTML = '';
+  ...
+```
+
+`updateDeliveryMarkerElement` 以降（innerHTML 充填部分）は変更不要。
+
+### 修正後に確認すべき操作
+
+| 確認項目 | 操作 |
+|---|---|
+| ピン位置が正しい | 配送先を2件以上追加 → 各ピンが住所どおりの位置に表示される |
+| ピンが動かない | 完了トグル・編集などリスト操作後、他のピンの地図位置が変わらない |
+| done/approx/spot 切替 | 完了トグルで灰色化、スポットコースで青ピンが正しい位置 |
+| ラベルモード切替 | 「表示: 番地」等に切り替えてもピン位置不変 |
+| 差分更新 | 件数の増減（追加・削除）後、残存ピンの位置が動かない |
+| 安定版への非影響 | `delivery_map_mapbox/index.html` に変更がないこと（本修正は `test/` のみ）|
+
+### 制約
+- **`delivery_map_mapbox/index.html`（安定版）は触らない。**
+- 修正対象は `delivery_map_mapbox/test/index.html` の `updateDeliveryMarkerElement` のみ。
+- バージョン文字列を上げる場合は `-test.4` 系のテスト表記で（安定版の版数を動かさない）。
