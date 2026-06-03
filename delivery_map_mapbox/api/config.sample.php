@@ -5,6 +5,11 @@
 // === Mapbox版 (delivery_map_mapbox) の設定 ===
 // 既存の Google Maps 版とは別フォルダで動作する独立アプリです。
 
+// === アプリ/API呼び出しを許可するホスト ===
+// OCR・住所検索などのサーバーAPIを、ここにあるホストからの呼び出しに制限します。
+// 本番ドメインを変更した場合は追加してください。
+define('APP_ALLOWED_HOSTS', ['rys-services.com', 'www.rys-services.com']);
+
 // === 伝票写真 → 住所抽出用 Gemini APIキー ===
 // Google AI Studioで作成したキーを入れてください。
 // 既存版と同じものを流用できます。

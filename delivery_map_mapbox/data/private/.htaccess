@@ -1,3 +1,5 @@
+# This directory stores server-only JSON files such as shared geocode cache.
+# Keep direct web access blocked; PHP APIs read/write these files internally.
 Require all denied
 Order allow,deny
 Deny from all

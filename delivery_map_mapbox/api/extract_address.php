@@ -15,6 +15,8 @@ if (!file_exists($configFile)) {
   exit;
 }
 require_once $configFile;
+require_once __DIR__ . '/request_guard.php';
+delivery_app_require_same_origin_request();
 
 if (!defined('GEMINI_API_KEY') || !GEMINI_API_KEY || GEMINI_API_KEY === 'AIza...ここにAPIキーを入れる...') {
   http_response_code(500);
@@ -34,18 +36,54 @@ $image = $input['image'] ?? '';
 $mimeType = $input['mimeType'] ?? 'image/jpeg';
 $allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 if (!in_array($mimeType, $allowedMimeTypes, true)) {
-  $mimeType = 'image/jpeg';
+  http_response_code(415);
+  echo json_encode(['error' => '対応していない画像形式です'], JSON_UNESCAPED_UNICODE);
+  exit;
 }
 if (!$image || !preg_match('/^[A-Za-z0-9+\/\r\n=]+$/', $image)) {
   http_response_code(400);
   echo json_encode(['error' => '画像データが不正です'], JSON_UNESCAPED_UNICODE);
   exit;
 }
+$image = preg_replace('/\s+/', '', $image);
 if (strlen($image) > 8 * 1024 * 1024) {
   http_response_code(413);
   echo json_encode(['error' => '画像が大きすぎます', 'hint' => '撮影画像を小さくするか、index.html側の圧縮サイズを下げてください。'], JSON_UNESCAPED_UNICODE);
   exit;
 }
+$decodedImage = base64_decode($image, true);
+if ($decodedImage === false) {
+  http_response_code(400);
+  echo json_encode(['error' => '画像データを読み取れません'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+function detected_image_mime_type($binary) {
+  if (strncmp($binary, "\xFF\xD8\xFF", 3) === 0) return 'image/jpeg';
+  if (strncmp($binary, "\x89PNG\r\n\x1A\n", 8) === 0) return 'image/png';
+  if (strlen($binary) >= 12 && substr($binary, 0, 4) === 'RIFF' && substr($binary, 8, 4) === 'WEBP') return 'image/webp';
+  if (strlen($binary) >= 12 && substr($binary, 4, 4) === 'ftyp') {
+    $brand = strtolower(substr($binary, 8, 4));
+    if (in_array($brand, ['heic', 'heix', 'hevc', 'hevx'], true)) return 'image/heic';
+    if (in_array($brand, ['mif1', 'msf1'], true)) return 'image/heif';
+  }
+  return '';
+}
+
+$detectedMimeType = detected_image_mime_type($decodedImage);
+if ($detectedMimeType === '') {
+  http_response_code(415);
+  echo json_encode(['error' => '画像形式を確認できませんでした'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+$declaredFamily = ($mimeType === 'image/heic' || $mimeType === 'image/heif') ? 'image/heif' : $mimeType;
+$detectedFamily = ($detectedMimeType === 'image/heic' || $detectedMimeType === 'image/heif') ? 'image/heif' : $detectedMimeType;
+if ($declaredFamily !== $detectedFamily) {
+  http_response_code(415);
+  echo json_encode(['error' => '画像形式とmimeTypeが一致しません'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+$mimeType = $detectedMimeType;
 
 $prompt = <<<TXT
 この画像は日本の配送伝票またはラベルです。お届け先(受取人)の住所だけを抽出してください。
