@@ -943,7 +943,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.04-test.4</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.04-test.5</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -986,7 +986,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.04-test.4</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.04-test.5</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1234,7 +1234,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.04-test.4';
+const APP_VERSION = 'v2026.06.04-test.5';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1282,6 +1282,7 @@ const LABEL_MODES = [
 ];
 let labelModeIndex = 1;
 const geocodeInFlight = new Map();
+const sharedGeocodeSaveInFlight = new Set();
 let geocodeCacheObj = null;
 let sharedGeocodeCacheDisabledUntil = 0;
 
@@ -2846,7 +2847,10 @@ function cleanAddressForGeocoding(addr) {
 async function geocodeAddress(rawAddress) {
   const cacheKey = geocodeCacheKey(rawAddress);
   const cached = getCachedGeocode(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    saveSharedGeocodeCache(cacheKey, rawAddress, cached);
+    return cached;
+  }
   if (cacheKey && geocodeInFlight.has(cacheKey)) return geocodeInFlight.get(cacheKey);
 
   const lookup = geocodeAddressWithSharedCache(rawAddress, cacheKey);
@@ -2899,8 +2903,10 @@ async function getSharedGeocodeCache(cacheKey) {
 }
 
 function saveSharedGeocodeCache(cacheKey, rawAddress, result) {
-  if (!cacheKey || !result || result.approx) return;
+  if (!cacheKey || !result) return;
   if (Date.now() < sharedGeocodeCacheDisabledUntil) return;
+  if (sharedGeocodeSaveInFlight.has(cacheKey)) return;
+  sharedGeocodeSaveInFlight.add(cacheKey);
   fetch(SHARED_GEOCODE_CACHE_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2915,9 +2921,13 @@ function saveSharedGeocodeCache(cacheKey, rawAddress, result) {
     })
   })
     .then(res => {
-      if (!res.ok && res.status >= 500) disableSharedGeocodeCacheTemporarily(`save status ${res.status}`);
+      if (!res.ok && res.status >= 500) {
+        sharedGeocodeSaveInFlight.delete(cacheKey);
+        disableSharedGeocodeCacheTemporarily(`save status ${res.status}`);
+      }
     })
     .catch(e => {
+      sharedGeocodeSaveInFlight.delete(cacheKey);
       disableSharedGeocodeCacheTemporarily('save failed');
       console.warn('shared geocode cache save failed', e);
     });
@@ -3168,10 +3178,8 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
           approx: !!data.approx,
           formatted: data.formatted || q
         };
-        if (cacheKey && !result.approx) {
-          setCachedGeocode(cacheKey, result);
-          saveSharedGeocodeCache(cacheKey, rawAddress, result);
-        }
+        if (cacheKey && !result.approx) setCachedGeocode(cacheKey, result);
+        if (cacheKey) saveSharedGeocodeCache(cacheKey, rawAddress, result);
         return result;
       }
     } catch (e) {
