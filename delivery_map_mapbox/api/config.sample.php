@@ -49,6 +49,17 @@ define('GOOGLE_MAPS_SERVER_KEY', 'AIza...Google Geocoding API用キー...');
 // Google Cloudで Routes API を有効化してください。
 define('GOOGLE_ROUTES_API_KEY', '');
 
+// === テスト版 共有ジオコードキャッシュ用 MySQL ===
+// お名前.comの管理画面でMySQLデータベースを作成し、接続情報を入れてください。
+// テスト版だけが api/delivery_geocode_cache_test.php 経由で使用します。
+define('GEOCODE_CACHE_TEST_DB_HOST', 'mysql.example.ne.jp');
+define('GEOCODE_CACHE_TEST_DB_PORT', 3306);
+define('GEOCODE_CACHE_TEST_DB_NAME', 'database_name');
+define('GEOCODE_CACHE_TEST_DB_USER', 'database_user');
+define('GEOCODE_CACHE_TEST_DB_PASSWORD', 'database_password');
+define('GEOCODE_CACHE_TEST_DB_TABLE', 'delivery_geocode_cache_test');
+define('GEOCODE_CACHE_TEST_DB_MAX_ITEMS', 50000);
+
 // === 集荷進捗 → Googleスプレッドシート書き戻し ===
 // apps_script/pickup_progress.gs をGoogle Apps Scriptへ貼り付けてWebアプリとしてデプロイし、
 // 発行された /exec URL を入れてください。
