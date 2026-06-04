@@ -59,6 +59,7 @@ define('GEOCODE_CACHE_TEST_DB_USER', 'database_user');
 define('GEOCODE_CACHE_TEST_DB_PASSWORD', 'database_password');
 define('GEOCODE_CACHE_TEST_DB_TABLE', 'delivery_geocode_cache_test');
 define('GEOCODE_CACHE_TEST_DB_MAX_ITEMS', 50000);
+define('GEOCODE_CACHE_TEST_ADMIN_PIN', 'change-this-db-admin-pin');
 
 // === 集荷進捗 → Googleスプレッドシート書き戻し ===
 // apps_script/pickup_progress.gs をGoogle Apps Scriptへ貼り付けてWebアプリとしてデプロイし、

@@ -736,6 +736,53 @@
     font-weight: 700;
     font-size: calc(12px * var(--text-scale));
   }
+  .cache-admin-stats {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border: 1px solid #d8d0b7;
+    border-radius: 6px;
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    font-size: calc(12px * var(--text-scale));
+    line-height: 1.5;
+  }
+  .cache-admin-row {
+    margin: 8px 0;
+    padding: 8px;
+    border: 1px solid #d8d0b7;
+    border-radius: 6px;
+    background: #fff;
+  }
+  .cache-admin-row strong {
+    display: block;
+    color: var(--ink);
+    font-size: calc(13px * var(--text-scale));
+    line-height: 1.35;
+  }
+  .cache-admin-row .meta {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: calc(11px * var(--text-scale));
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+  .cache-admin-row .row-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .cache-admin-row .row-actions button {
+    flex: 1;
+    padding: 8px;
+    border-radius: 6px;
+    border: 2px solid #111;
+    background: white;
+    font-weight: 800;
+  }
+  .cache-admin-row .row-actions button.danger {
+    background: var(--danger);
+    color: white;
+  }
 
   /* Text sizing is intentionally separate from map and marker dimensions. */
   .topbar h1,
@@ -776,6 +823,8 @@
   .modal h3 { font-size: calc(16px * var(--text-scale)); }
   .modal input[type=text],
   .modal input[type=tel],
+  .modal input[type=password],
+  .modal input[type=number],
   .modal select,
   .modal textarea { font-size: calc(15px * var(--text-scale)); }
   #usage-content { font-size: calc(13px * var(--text-scale)) !important; }
@@ -836,7 +885,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.04-test.1</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.04-test.2</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -879,7 +928,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.04-test.1</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.04-test.2</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -894,6 +943,7 @@
       <button id="menu-clear-done" type="button">✓ 完了分を削除</button>
       <button id="menu-clear-all" type="button">🗑 全件クリア</button>
       <button id="menu-usage" type="button">📊 API使用状況</button>
+      <button id="menu-cache-admin" type="button">🗄 DBキャッシュ管理</button>
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
@@ -904,6 +954,48 @@
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-cache-admin">
+  <div class="modal">
+    <h3>DBキャッシュ管理</h3>
+    <label>管理PIN</label>
+    <input type="password" id="cache-admin-pin" inputmode="numeric" autocomplete="off" placeholder="DB管理PIN">
+    <div class="modal-help">
+      テスト版の住所→緯度経度キャッシュを確認・追加・編集・削除できます。
+    </div>
+    <div class="cache-admin-stats" id="cache-admin-stats">未読み込み</div>
+    <label>検索</label>
+    <input type="text" id="cache-admin-search" placeholder="住所・建物名で検索" autocomplete="off">
+    <div class="modal-actions">
+      <button class="cancel" id="btn-cache-admin-clear-search" type="button">最近20件</button>
+      <button class="primary" id="btn-cache-admin-search" type="button">検索/再読込</button>
+    </div>
+    <div id="cache-admin-list"></div>
+    <hr>
+    <label>キャッシュキー (編集時のみ)</label>
+    <input type="text" id="cache-admin-key" readonly placeholder="新規追加時は自動作成">
+    <label>住所</label>
+    <input type="text" id="cache-admin-address" placeholder="東京都中央区...">
+    <label>表示住所 / Google整形住所</label>
+    <input type="text" id="cache-admin-formatted" placeholder="空でも可">
+    <label>緯度</label>
+    <input type="number" id="cache-admin-lat" step="0.0000001" placeholder="35.681236">
+    <label>経度</label>
+    <input type="number" id="cache-admin-lng" step="0.0000001" placeholder="139.767125">
+    <label class="checkbox-line">
+      <input type="checkbox" id="cache-admin-approx">
+      おおよその位置
+    </label>
+    <div class="modal-actions">
+      <button class="cancel" id="btn-cache-admin-new" type="button">入力クリア</button>
+      <button class="danger" id="btn-cache-admin-delete" type="button">選択を削除</button>
+      <button class="primary" id="btn-cache-admin-save" type="button">保存</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-cache-admin">閉じる</button>
     </div>
   </div>
 </div>
@@ -1078,7 +1170,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.04-test.1';
+const APP_VERSION = 'v2026.06.04-test.2';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1100,6 +1192,7 @@ const TEXT_SIZE_KEY = 'rys-mapbox-test-text-size-v1';
 const APP_VERSION_CHECK_KEY = 'rys-mapbox-test-version-check-v1';
 const APP_VERSION_PROMPTED_KEY = 'rys-mapbox-test-version-prompted-v1';
 const GEOCODE_CACHE_KEY = 'rys-mapbox-test-geocode-cache-v1';
+const GEOCODE_CACHE_ADMIN_PIN_KEY = 'rys-mapbox-test-geocode-cache-admin-pin-v1';
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
 const SHARED_GEOCODE_CACHE_RETRY_MS = 10 * 60 * 1000;
@@ -2769,6 +2862,155 @@ function saveSharedGeocodeCache(cacheKey, rawAddress, result) {
 function disableSharedGeocodeCacheTemporarily(reason) {
   sharedGeocodeCacheDisabledUntil = Date.now() + SHARED_GEOCODE_CACHE_RETRY_MS;
   console.warn(`shared geocode cache disabled temporarily: ${reason}`);
+}
+
+function getCacheAdminPin() {
+  return ($('cache-admin-pin')?.value || localStorage.getItem(GEOCODE_CACHE_ADMIN_PIN_KEY) || '').trim();
+}
+
+function rememberCacheAdminPin() {
+  const pin = ($('cache-admin-pin')?.value || '').trim();
+  if (pin) localStorage.setItem(GEOCODE_CACHE_ADMIN_PIN_KEY, pin);
+  return pin;
+}
+
+async function callCacheAdminApi(payload) {
+  const pin = rememberCacheAdminPin();
+  if (!pin) throw new Error('管理PINを入力してください');
+  const res = await fetch(SHARED_GEOCODE_CACHE_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, admin_pin: pin })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    if (res.status === 403) localStorage.removeItem(GEOCODE_CACHE_ADMIN_PIN_KEY);
+    throw new Error(data.error || `DBキャッシュAPIエラー: ${res.status}`);
+  }
+  return data;
+}
+
+function openCacheAdminModal() {
+  closeModal('modal-menu');
+  $('cache-admin-pin').value = localStorage.getItem(GEOCODE_CACHE_ADMIN_PIN_KEY) || '';
+  openModal('modal-cache-admin');
+  loadCacheAdminData().catch(e => showToast(e.message || 'DBキャッシュを読み込めません', true));
+}
+
+async function loadCacheAdminData() {
+  showLoading('DBキャッシュを確認中...');
+  try {
+    const search = $('cache-admin-search').value.trim();
+    const [stats, list] = await Promise.all([
+      callCacheAdminApi({ action: 'admin_stats' }),
+      callCacheAdminApi({ action: 'admin_list', search, limit: 20 })
+    ]);
+    renderCacheAdminStats(stats);
+    renderCacheAdminList(list.items || []);
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderCacheAdminStats(stats) {
+  $('cache-admin-stats').innerHTML = [
+    `件数: <strong>${Number(stats.item_count || 0).toLocaleString()}</strong> 件`,
+    `総ヒット: <strong>${Number(stats.total_hits || 0).toLocaleString()}</strong> 回`,
+    `最終更新: ${escapeHtml(stats.latest_updated_at || '-')}`,
+    `応答: ${Number(stats.elapsed_ms || 0)}ms`
+  ].join('<br>');
+}
+
+function renderCacheAdminList(items) {
+  const list = $('cache-admin-list');
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">DBキャッシュは見つかりませんでした</div>';
+    return;
+  }
+  list.innerHTML = items.map((item, index) => `
+    <div class="cache-admin-row">
+      <strong>${escapeHtml(item.address || '(住所なし)')}</strong>
+      <div class="meta">
+        ${escapeHtml(item.formatted || '')}<br>
+        lat/lng: ${Number(item.lat).toFixed(7)}, ${Number(item.lng).toFixed(7)} / hit: ${Number(item.hit_count || 0)} / updated: ${escapeHtml(item.updated_at || '')}<br>
+        key: ${escapeHtml(item.cache_key || '')}
+      </div>
+      <div class="row-actions">
+        <button type="button" data-cache-edit="${index}">編集</button>
+        <button class="danger" type="button" data-cache-delete="${index}">削除</button>
+      </div>
+    </div>
+  `).join('');
+  list.querySelectorAll('[data-cache-edit]').forEach(button => {
+    button.addEventListener('click', () => fillCacheAdminForm(items[Number(button.dataset.cacheEdit)]));
+  });
+  list.querySelectorAll('[data-cache-delete]').forEach(button => {
+    button.addEventListener('click', () => deleteCacheAdminItem(items[Number(button.dataset.cacheDelete)]));
+  });
+}
+
+function fillCacheAdminForm(item) {
+  $('cache-admin-key').value = item.cache_key || '';
+  $('cache-admin-address').value = item.address || '';
+  $('cache-admin-formatted').value = item.formatted || '';
+  $('cache-admin-lat').value = Number(item.lat || 0).toFixed(7);
+  $('cache-admin-lng').value = Number(item.lng || 0).toFixed(7);
+  $('cache-admin-approx').checked = !!item.approx;
+}
+
+function clearCacheAdminForm() {
+  $('cache-admin-key').value = '';
+  $('cache-admin-address').value = '';
+  $('cache-admin-formatted').value = '';
+  $('cache-admin-lat').value = '';
+  $('cache-admin-lng').value = '';
+  $('cache-admin-approx').checked = false;
+}
+
+async function saveCacheAdminItem() {
+  const address = $('cache-admin-address').value.trim();
+  const lat = Number($('cache-admin-lat').value);
+  const lng = Number($('cache-admin-lng').value);
+  if (!address) { showToast('住所を入力してください', true); return; }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) { showToast('緯度経度を入力してください', true); return; }
+  showLoading('DBキャッシュを保存中...');
+  try {
+    await callCacheAdminApi({
+      action: 'admin_upsert',
+      key: $('cache-admin-key').value.trim(),
+      address,
+      formatted: $('cache-admin-formatted').value.trim(),
+      lat,
+      lng,
+      approx: $('cache-admin-approx').checked
+    });
+    showToast('DBキャッシュを保存しました');
+    await loadCacheAdminData();
+  } catch (e) {
+    hideLoading();
+    showToast(e.message || '保存できませんでした', true);
+  }
+}
+
+async function deleteCacheAdminItem(item) {
+  if (!item || !item.cache_key) return;
+  if (!window.confirm(`このDBキャッシュを削除しますか？\n${item.address || item.cache_key}`)) return;
+  showLoading('DBキャッシュを削除中...');
+  try {
+    await callCacheAdminApi({ action: 'admin_delete', key: item.cache_key });
+    clearCacheAdminForm();
+    showToast('DBキャッシュを削除しました');
+    await loadCacheAdminData();
+  } catch (e) {
+    hideLoading();
+    showToast(e.message || '削除できませんでした', true);
+  }
+}
+
+async function deleteSelectedCacheAdminItem() {
+  const key = $('cache-admin-key').value.trim();
+  if (!key) { showToast('削除する行を選んでください', true); return; }
+  await deleteCacheAdminItem({ cache_key: key, address: $('cache-admin-address').value.trim() });
 }
 
 async function geocodeAddressUncached(rawAddress, cacheKey) {
@@ -4995,6 +5237,7 @@ $('menu-copy').addEventListener('click', copyListToClipboard);
 $('menu-clear-done').addEventListener('click', clearCompleted);
 $('menu-clear-all').addEventListener('click', clearAll);
 $('menu-usage').addEventListener('click', showUsage);
+$('menu-cache-admin').addEventListener('click', openCacheAdminModal);
 $('menu-toggle-neighborhoods').addEventListener('click', () => {
   closeModal('modal-menu');
   toggleNeighborhoods();
@@ -5016,6 +5259,14 @@ $('btn-operator-cancel').addEventListener('click', cancelOperatorModal);
 $('btn-notification-save').addEventListener('click', savePushSettings);
 $('btn-notification-disable').addEventListener('click', disablePushNotifications);
 $('btn-notification-install').addEventListener('click', installPushApp);
+$('btn-cache-admin-search').addEventListener('click', () => loadCacheAdminData().catch(e => showToast(e.message || 'DBキャッシュを読み込めません', true)));
+$('btn-cache-admin-clear-search').addEventListener('click', () => {
+  $('cache-admin-search').value = '';
+  loadCacheAdminData().catch(e => showToast(e.message || 'DBキャッシュを読み込めません', true));
+});
+$('btn-cache-admin-new').addEventListener('click', clearCacheAdminForm);
+$('btn-cache-admin-save').addEventListener('click', saveCacheAdminItem);
+$('btn-cache-admin-delete').addEventListener('click', deleteSelectedCacheAdminItem);
 document.querySelectorAll('[data-text-size]').forEach(button => {
   button.addEventListener('click', () => applyTextSize(button.dataset.textSize));
 });
