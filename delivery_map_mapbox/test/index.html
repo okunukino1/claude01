@@ -759,6 +759,30 @@
     font-size: calc(13px * var(--text-scale));
     line-height: 1.35;
   }
+  .cache-admin-row .subtitle {
+    margin-top: 3px;
+    color: var(--ink-soft);
+    font-size: calc(12px * var(--text-scale));
+    line-height: 1.35;
+  }
+  .cache-admin-row .status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .cache-admin-row .status span {
+    padding: 3px 6px;
+    border-radius: 999px;
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    font-size: calc(11px * var(--text-scale));
+    font-weight: 800;
+  }
+  .cache-admin-row .status .approx {
+    background: #fff3cd;
+    color: #8a5b00;
+  }
   .cache-admin-row .meta {
     margin-top: 4px;
     color: var(--muted);
@@ -782,6 +806,40 @@
   .cache-admin-row .row-actions button.danger {
     background: var(--danger);
     color: white;
+  }
+  .cache-admin-details {
+    margin: 8px 0;
+    border: 1px solid #d8d0b7;
+    border-radius: 6px;
+    background: #fff;
+  }
+  .cache-admin-details summary {
+    padding: 8px 10px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .cache-admin-details .meta {
+    padding: 0 10px 10px;
+    color: var(--muted);
+    font-size: calc(11px * var(--text-scale));
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .cache-admin-form-note {
+    margin: 8px 0 10px;
+    padding: 8px 10px;
+    border-left: 4px solid var(--accent);
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    font-size: calc(12px * var(--text-scale));
+    line-height: 1.5;
+  }
+  .cache-admin-map-link {
+    display: inline-block;
+    margin: 4px 0 8px;
+    color: #2563eb;
+    font-weight: 800;
+    text-decoration: underline;
   }
 
   /* Text sizing is intentionally separate from map and marker dimensions. */
@@ -885,7 +943,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.04-test.3</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.04-test.4</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -928,7 +986,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.04-test.3</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.04-test.4</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -964,7 +1022,7 @@
     <label>管理PIN</label>
     <input type="password" id="cache-admin-pin" autocomplete="off" placeholder="DB管理PIN">
     <div class="modal-help">
-      テスト版の住所→緯度経度キャッシュを確認・追加・編集・削除できます。
+      伝票撮影で一度検索した住所の位置を確認・修正できます。通常は「編集」→「住所から位置を再検索」→「保存」の順で使います。
     </div>
     <div class="cache-admin-stats" id="cache-admin-stats">未読み込み</div>
     <label>検索</label>
@@ -975,15 +1033,21 @@
     </div>
     <div id="cache-admin-list"></div>
     <hr>
-    <label>キャッシュキー (編集時のみ)</label>
-    <input type="text" id="cache-admin-key" readonly placeholder="新規追加時は自動作成">
-    <label>住所</label>
+    <input type="hidden" id="cache-admin-key">
+    <div class="cache-admin-form-note" id="cache-admin-form-note">
+      一覧から「編集」を押すか、下に住所を入力して新規追加できます。
+    </div>
+    <label>住所（検索・保存に使う）</label>
     <input type="text" id="cache-admin-address" placeholder="東京都中央区...">
-    <label>表示住所 / Google整形住所</label>
+    <label>表示名・建物名メモ</label>
     <input type="text" id="cache-admin-formatted" placeholder="空でも可">
-    <label>緯度</label>
+    <div class="modal-actions">
+      <button class="cancel" id="btn-cache-admin-geocode" type="button">住所から位置を再検索</button>
+      <button class="cancel" id="btn-cache-admin-map" type="button">地図で確認</button>
+    </div>
+    <label>緯度（位置を細かく直す時だけ編集）</label>
     <input type="number" id="cache-admin-lat" step="0.0000001" placeholder="35.681236">
-    <label>経度</label>
+    <label>経度（位置を細かく直す時だけ編集）</label>
     <input type="number" id="cache-admin-lng" step="0.0000001" placeholder="139.767125">
     <label class="checkbox-line">
       <input type="checkbox" id="cache-admin-approx">
@@ -1170,7 +1234,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.04-test.3';
+const APP_VERSION = 'v2026.06.04-test.4';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2930,13 +2994,23 @@ function renderCacheAdminList(items) {
   list.innerHTML = items.map((item, index) => `
     <div class="cache-admin-row">
       <strong>${escapeHtml(item.address || '(住所なし)')}</strong>
-      <div class="meta">
-        ${escapeHtml(item.formatted || '')}<br>
-        lat/lng: ${Number(item.lat).toFixed(7)}, ${Number(item.lng).toFixed(7)} / hit: ${Number(item.hit_count || 0)} / updated: ${escapeHtml(item.updated_at || '')}<br>
-        key: ${escapeHtml(item.cache_key || '')}
+      ${item.formatted ? `<div class="subtitle">${escapeHtml(item.formatted)}</div>` : ''}
+      <div class="status">
+        <span>使用 ${Number(item.hit_count || 0)}回</span>
+        <span>更新 ${formatCacheDate(item.updated_at)}</span>
+        ${item.approx ? '<span class="approx">おおよその位置</span>' : '<span>精度OK</span>'}
       </div>
+      <details class="cache-admin-details">
+        <summary>詳細情報を見る</summary>
+        <div class="meta">
+          緯度経度: ${Number(item.lat).toFixed(7)}, ${Number(item.lng).toFixed(7)}<br>
+          保存: ${escapeHtml(item.saved_at || '-')} / 最終使用: ${escapeHtml(item.last_used_at || '-')}<br>
+          キャッシュキー: ${escapeHtml(item.cache_key || '')}
+        </div>
+      </details>
       <div class="row-actions">
         <button type="button" data-cache-edit="${index}">編集</button>
+        <button type="button" data-cache-map="${index}">地図</button>
         <button class="danger" type="button" data-cache-delete="${index}">削除</button>
       </div>
     </div>
@@ -2944,9 +3018,17 @@ function renderCacheAdminList(items) {
   list.querySelectorAll('[data-cache-edit]').forEach(button => {
     button.addEventListener('click', () => fillCacheAdminForm(items[Number(button.dataset.cacheEdit)]));
   });
+  list.querySelectorAll('[data-cache-map]').forEach(button => {
+    button.addEventListener('click', () => openCacheAdminMap(items[Number(button.dataset.cacheMap)]));
+  });
   list.querySelectorAll('[data-cache-delete]').forEach(button => {
     button.addEventListener('click', () => deleteCacheAdminItem(items[Number(button.dataset.cacheDelete)]));
   });
+}
+
+function formatCacheDate(value) {
+  if (!value) return '-';
+  return String(value).replace('T', ' ').replace(/\.\d+Z?$/, '').slice(0, 16);
 }
 
 function fillCacheAdminForm(item) {
@@ -2956,6 +3038,11 @@ function fillCacheAdminForm(item) {
   $('cache-admin-lat').value = Number(item.lat || 0).toFixed(7);
   $('cache-admin-lng').value = Number(item.lng || 0).toFixed(7);
   $('cache-admin-approx').checked = !!item.approx;
+  $('cache-admin-form-note').innerHTML = [
+    '<strong>選択中のキャッシュを編集中です。</strong>',
+    '住所が間違っている場合は住所を直します。',
+    '位置だけずれている場合は「住所から位置を再検索」または緯度経度を直します。'
+  ].join('<br>');
 }
 
 function clearCacheAdminForm() {
@@ -2965,24 +3052,70 @@ function clearCacheAdminForm() {
   $('cache-admin-lat').value = '';
   $('cache-admin-lng').value = '';
   $('cache-admin-approx').checked = false;
+  $('cache-admin-form-note').textContent = '一覧から「編集」を押すか、下に住所を入力して新規追加できます。';
+}
+
+function currentCacheAdminItemFromForm() {
+  return {
+    cache_key: $('cache-admin-key').value.trim(),
+    address: $('cache-admin-address').value.trim(),
+    formatted: $('cache-admin-formatted').value.trim(),
+    lat: Number($('cache-admin-lat').value),
+    lng: Number($('cache-admin-lng').value),
+    approx: $('cache-admin-approx').checked
+  };
+}
+
+function openCacheAdminMap(item = null) {
+  const target = item || currentCacheAdminItemFromForm();
+  const lat = Number(target.lat);
+  const lng = Number(target.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    showToast('地図を開くには緯度経度が必要です', true);
+    return;
+  }
+  window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank', 'noopener');
+}
+
+async function geocodeCacheAdminAddress() {
+  const address = $('cache-admin-address').value.trim();
+  if (!address) { showToast('住所を入力してください', true); return; }
+  showLoading('住所から位置を再検索中...');
+  try {
+    const result = await geocodeAddressUncached(address, null);
+    if (!result) {
+      showToast('住所から位置を取得できませんでした', true);
+      return;
+    }
+    $('cache-admin-lat').value = Number(result.lat).toFixed(7);
+    $('cache-admin-lng').value = Number(result.lng).toFixed(7);
+    $('cache-admin-formatted').value = result.formatted || $('cache-admin-formatted').value;
+    $('cache-admin-approx').checked = !!result.approx;
+    showToast(result.approx ? 'おおよその位置を取得しました' : '位置を取得しました');
+  } catch (e) {
+    showToast(e.message || '住所再検索に失敗しました', true);
+  } finally {
+    hideLoading();
+  }
 }
 
 async function saveCacheAdminItem() {
-  const address = $('cache-admin-address').value.trim();
-  const lat = Number($('cache-admin-lat').value);
-  const lng = Number($('cache-admin-lng').value);
+  const item = currentCacheAdminItemFromForm();
+  const address = item.address;
+  const lat = item.lat;
+  const lng = item.lng;
   if (!address) { showToast('住所を入力してください', true); return; }
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) { showToast('緯度経度を入力してください', true); return; }
   showLoading('DBキャッシュを保存中...');
   try {
     await callCacheAdminApi({
       action: 'admin_upsert',
-      key: $('cache-admin-key').value.trim(),
+      key: item.cache_key,
       address,
-      formatted: $('cache-admin-formatted').value.trim(),
+      formatted: item.formatted,
       lat,
       lng,
-      approx: $('cache-admin-approx').checked
+      approx: item.approx
     });
     showToast('DBキャッシュを保存しました');
     await loadCacheAdminData();
@@ -5265,6 +5398,8 @@ $('btn-cache-admin-clear-search').addEventListener('click', () => {
   loadCacheAdminData().catch(e => showToast(e.message || 'DBキャッシュを読み込めません', true));
 });
 $('btn-cache-admin-new').addEventListener('click', clearCacheAdminForm);
+$('btn-cache-admin-geocode').addEventListener('click', geocodeCacheAdminAddress);
+$('btn-cache-admin-map').addEventListener('click', () => openCacheAdminMap());
 $('btn-cache-admin-save').addEventListener('click', saveCacheAdminItem);
 $('btn-cache-admin-delete').addEventListener('click', deleteSelectedCacheAdminItem);
 document.querySelectorAll('[data-text-size]').forEach(button => {
