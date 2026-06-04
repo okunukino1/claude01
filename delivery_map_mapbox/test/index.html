@@ -943,7 +943,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.04-test.5</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.04-test.6</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -986,7 +986,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.04-test.5</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.04-test.6</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1234,7 +1234,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.04-test.5';
+const APP_VERSION = 'v2026.06.04-test.6';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2844,6 +2844,55 @@ function cleanAddressForGeocoding(addr) {
   return a;
 }
 
+function normalizeKanjiDigitsForAddress(value) {
+  const map = { '〇': 0, '零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
+  return String(value || '').replace(/[〇零一二三四五六七八九十百千]+/g, token => {
+    if (!/[十百千]/.test(token)) {
+      return token.split('').map(ch => map[ch]).join('');
+    }
+    let total = 0;
+    let current = 0;
+    for (const ch of token) {
+      if (Object.prototype.hasOwnProperty.call(map, ch)) {
+        current = map[ch];
+      } else if (ch === '千') {
+        total += (current || 1) * 1000;
+        current = 0;
+      } else if (ch === '百') {
+        total += (current || 1) * 100;
+        current = 0;
+      } else if (ch === '十') {
+        total += (current || 1) * 10;
+        current = 0;
+      }
+    }
+    total += current;
+    return total ? String(total) : token;
+  });
+}
+
+function canonicalAddressForCache(rawAddress) {
+  let a = normalizeAddress(rawAddress || '');
+  a = a.replace(/郵便番号[:：]?\s*/g, '');
+  a = a.replace(/〒?\s*\d{3}\s*[-ー－‐―−]?\s*\d{4}\s*/g, '');
+  a = a.replace(/\b\d{3}\s*[-ー－‐―−]\s*\d{4}\b/g, '');
+  a = a.replace(/[一-鿿々ー]{1,15}\s*様\s*$/g, '');
+  a = normalizeKanjiDigitsForAddress(a);
+  a = a.replace(/[‐－―ー−]/g, '-');
+  a = a.replace(/(\d+)\s*丁目/g, '$1-');
+  a = a.replace(/(\d+)\s*番地?/g, '$1-');
+  a = a.replace(/(\d+)\s*号/g, '$1');
+  a = a.replace(/[-\s]*(\d+)\s*(F|階|階建|号室|室)\b.*$/i, '-$1');
+  const m = a.match(/^(.*?\d+(?:-\d+){0,3})/);
+  if (m && m[1].length >= 6) a = m[1];
+  return a
+    .replace(/[、，,。]/g, '')
+    .replace(/\s+/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+}
+
 async function geocodeAddress(rawAddress) {
   const cacheKey = geocodeCacheKey(rawAddress);
   const cached = getCachedGeocode(cacheKey);
@@ -3196,7 +3245,7 @@ function prefetchGeocodeAddress(rawAddress) {
 }
 
 function geocodeCacheKey(rawAddress) {
-  return normalizeAddress(cleanAddressForGeocoding(rawAddress || '')).replace(/\s+/g, '');
+  return canonicalAddressForCache(rawAddress || '');
 }
 
 function getGeocodeCacheObject() {
