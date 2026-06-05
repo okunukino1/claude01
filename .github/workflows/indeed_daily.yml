@@ -1,0 +1,50 @@
+name: Indeed 日次アナリティクス取得
+
+on:
+  schedule:
+    # 毎朝10:00 JST (01:00 UTC) に実行
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "対象日 (YYYY-MM-DD)。省略すると前日"
+        required: false
+        default: ""
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 依存ライブラリのインストール
+        run: |
+          pip install -r requirements-indeed.txt
+          playwright install chromium --with-deps
+
+      - name: Indeed データ取得 → スプレッドシート転記
+        env:
+          INDEED_EMAIL:                ${{ secrets.INDEED_EMAIL }}
+          INDEED_PASSWORD:             ${{ secrets.INDEED_PASSWORD }}
+          SPREADSHEET_ID:              ${{ secrets.INDEED_SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEET_GID:                   "1404155345"
+          TARGET_DATE:                 ${{ github.event.inputs.target_date }}
+        run: python scripts/indeed_scraper.py
+
+      - name: デバッグ成果物を保存（失敗時のみ）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-artifacts-${{ github.run_id }}
+          path: |
+            debug_*.png
+            debug_*.json
+          retention-days: 7
