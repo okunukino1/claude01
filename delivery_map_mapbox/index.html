@@ -836,7 +836,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.06.04-1</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">Mapbox版</span><span class="app-version" id="app-version-label">v2026.06.07-1</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -879,7 +879,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.04-1</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.07-1</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.04-1';
+const APP_VERSION = 'v2026.06.07-1';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -1551,6 +1551,7 @@ function isPickupStorageRecord(d) {
 }
 
 function isVisibleInCurrentMode(d) {
+  if (appMode === 'pickup' && shouldHideRegularPickupOnWeekend() && !isPickupListSpotDelivery(d)) return false;
   return !(appMode === 'delivery' && isPickupStorageRecord(d));
 }
 
@@ -1654,8 +1655,8 @@ function saveRegularPickupCache(sheetName, source = deliveries) {
 }
 
 function showCachedRegularPickupCourse(sheetName) {
-  const cached = loadRegularPickupCache(sheetName);
-  if (cached.length === 0) return false;
+  const hideRegular = shouldHideRegularPickupOnWeekend();
+  const cached = hideRegular ? [] : loadRegularPickupCache(sheetName);
   const todayDigits = localDateKey().replace(/\D/g, '');
   const spotSheet = spotSheetForPickupCourse(sheetName);
   const knownTodaySpots = dedupeStoredSpotPickups(deliveries.filter(item =>
@@ -1663,7 +1664,8 @@ function showCachedRegularPickupCourse(sheetName) {
     item.pickupSheet === spotSheet &&
     String(item.spotPickupDate || '').replace(/\D/g, '').slice(0, 8) === todayDigits
   ));
-  deliveries = [...cached, ...knownTodaySpots];
+  if (cached.length === 0 && knownTodaySpots.length === 0) return false;
+  deliveries = hideRegular ? [...knownTodaySpots] : [...cached, ...knownTodaySpots];
   activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
@@ -1698,6 +1700,17 @@ function localDateKey(value = Date.now()) {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function isWeekendDate(value = Date.now()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+function shouldHideRegularPickupOnWeekend() {
+  return isWeekendDate();
 }
 
 function localIsoString(value = Date.now()) {
@@ -1768,7 +1781,9 @@ function normalizePickupListTab(value) {
 }
 
 function currentPickupListTab() {
-  return normalizePickupListTab(localStorage.getItem(PICKUP_LIST_TAB_KEY));
+  return shouldHideRegularPickupOnWeekend()
+    ? PICKUP_LIST_TAB_SPOT
+    : normalizePickupListTab(localStorage.getItem(PICKUP_LIST_TAB_KEY));
 }
 
 function isPickupListSpotDelivery(d) {
@@ -1776,7 +1791,10 @@ function isPickupListSpotDelivery(d) {
 }
 
 function setPickupListTab(tab) {
-  localStorage.setItem(PICKUP_LIST_TAB_KEY, normalizePickupListTab(tab));
+  const normalized = shouldHideRegularPickupOnWeekend()
+    ? PICKUP_LIST_TAB_SPOT
+    : normalizePickupListTab(tab);
+  localStorage.setItem(PICKUP_LIST_TAB_KEY, normalized);
   renderList();
 }
 
@@ -1787,10 +1805,17 @@ function updatePickupListTabs() {
   tabs.classList.toggle('show', visible);
   if (!visible) return;
 
+  const hideRegular = shouldHideRegularPickupOnWeekend();
   const selectedTab = currentPickupListTab();
-  const regularCount = deliveries.filter(d => !isPickupListSpotDelivery(d)).length;
-  const spotCount = deliveries.filter(d => isPickupListSpotDelivery(d)).length;
-  $('pickup-tab-regular-count').textContent = `(${regularCount})`;
+  const visiblePickupDeliveries = deliveries.filter(d => isVisibleInCurrentMode(d));
+  const regularCount = hideRegular ? 0 : visiblePickupDeliveries.filter(d => !isPickupListSpotDelivery(d)).length;
+  const spotCount = visiblePickupDeliveries.filter(d => isPickupListSpotDelivery(d)).length;
+  const regularTab = $('pickup-tab-regular');
+  if (regularTab) {
+    regularTab.hidden = hideRegular;
+    regularTab.disabled = hideRegular;
+  }
+  $('pickup-tab-regular-count').textContent = hideRegular ? '' : `(${regularCount})`;
   $('pickup-tab-spot-count').textContent = `(${spotCount})`;
   document.querySelectorAll('[data-pickup-list-tab]').forEach(button => {
     const selected = button.dataset.pickupListTab === selectedTab;
@@ -4303,22 +4328,25 @@ async function importPickupItems(items, replaceList, options = {}) {
 }
 
 async function fetchPickupCourseItems(sheetName, refreshSpots = true) {
-  const sourceSheets = [sheetName];
+  const includeRegular = !shouldHideRegularPickupOnWeekend();
+  const sourceSheets = includeRegular
+    ? [{ name: sheetName, required: true }]
+    : [];
   const spotSheet = spotSheetForPickupCourse(sheetName);
   if (spotSheet) {
     if (refreshSpots) await triggerSpotPickupTouch({ silent: true });
-    sourceSheets.push(spotSheet);
+    sourceSheets.push({ name: spotSheet, required: false });
   }
 
   const items = [];
   const warnings = [];
-  for (const sourceSheet of sourceSheets) {
+  for (const source of sourceSheets) {
     try {
-      const data = await fetchPickupItems(sourceSheet);
+      const data = await fetchPickupItems(source.name);
       items.push(...(data.items || []));
     } catch (e) {
-      if (sourceSheet === sheetName) throw e;
-      warnings.push(e.message || `${sourceSheet}の取得に失敗しました`);
+      if (source.required) throw e;
+      warnings.push(e.message || `${source.name}の取得に失敗しました`);
     }
   }
   return { items, warnings };
