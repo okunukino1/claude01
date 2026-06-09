@@ -260,6 +260,99 @@ function cache_path() {
   return dirname(__DIR__) . '/data/spot_pickups_cache.json';
 }
 
+function geocode_api_key() {
+  $serverKey = defined('GOOGLE_MAPS_SERVER_KEY') ? trim((string)GOOGLE_MAPS_SERVER_KEY) : '';
+  if ($serverKey !== '' && $serverKey !== 'AIza...Google Geocoding API用キー...') return $serverKey;
+  $browserKey = defined('GOOGLE_MAPS_BROWSER_KEY') ? trim((string)GOOGLE_MAPS_BROWSER_KEY) : '';
+  if ($browserKey !== '' && $browserKey !== 'AIza...Google Maps JavaScript API用キー...') return $browserKey;
+  return '';
+}
+
+function finite_number($value) {
+  if ($value === null || $value === '') return null;
+  $n = (float)$value;
+  return is_finite($n) ? $n : null;
+}
+
+function pickup_location_from_item($item) {
+  if (!is_array($item)) return null;
+  $lat = finite_number($item['lat'] ?? null);
+  $lng = finite_number($item['lng'] ?? null);
+  if ($lat === null || $lng === null || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) return null;
+  return [
+    'lat' => $lat,
+    'lng' => $lng,
+    'approx' => !empty($item['approx']) && strtoupper((string)$item['approx']) !== 'FALSE',
+    'formatted' => (string)($item['formatted'] ?? ''),
+  ];
+}
+
+function geocode_spot_address($address) {
+  $key = geocode_api_key();
+  $address = trim((string)$address);
+  if ($key === '' || $address === '') return null;
+
+  $params = http_build_query([
+    'address' => $address,
+    'region' => 'jp',
+    'language' => 'ja',
+    'key' => $key,
+  ]);
+  $ch = curl_init('https://maps.googleapis.com/maps/api/geocode/json?' . $params);
+  curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CONNECTTIMEOUT => 8,
+    CURLOPT_TIMEOUT => 20,
+  ]);
+  $response = curl_exec($ch);
+  $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  curl_close($ch);
+  if ($response === false || $httpCode < 200 || $httpCode >= 300) return null;
+
+  $data = json_decode((string)$response, true);
+  if (!is_array($data) || ($data['status'] ?? '') !== 'OK') return null;
+  $result = $data['results'][0] ?? null;
+  $loc = $result['geometry']['location'] ?? null;
+  if (!$loc || !isset($loc['lat'], $loc['lng'])) return null;
+
+  $locType = (string)($result['geometry']['location_type'] ?? '');
+  return [
+    'lat' => (float)$loc['lat'],
+    'lng' => (float)$loc['lng'],
+    'approx' => !empty($result['partial_match']) || in_array($locType, ['APPROXIMATE', 'GEOMETRIC_CENTER'], true),
+    'formatted' => (string)($result['formatted_address'] ?? ''),
+  ];
+}
+
+function prefetch_spot_locations($items, $existingById) {
+  $stats = ['reused' => 0, 'geocoded' => 0, 'failed' => 0, 'skipped' => 0];
+  foreach ($items as &$item) {
+    if (!is_array($item)) {
+      $stats['skipped']++;
+      continue;
+    }
+    $existing = $existingById[(string)($item['id'] ?? '')] ?? null;
+    $sameAddress = is_array($existing) && trim((string)($existing['address'] ?? '')) === trim((string)($item['address'] ?? ''));
+    $location = $sameAddress ? pickup_location_from_item($existing) : null;
+    if ($location) {
+      $stats['reused']++;
+    } else {
+      $location = geocode_spot_address($item['address'] ?? '');
+      if ($location) $stats['geocoded']++;
+      else $stats['failed']++;
+    }
+    if (!$location) continue;
+    $item['lat'] = $location['lat'];
+    $item['lng'] = $location['lng'];
+    $item['approx'] = $location['approx'];
+    $item['formatted'] = $location['formatted'];
+    $item['prefetched_location'] = true;
+    $item['prefetched_at'] = date('c');
+  }
+  unset($item);
+  return [$items, $stats];
+}
+
 function read_cache($path) {
   if (!file_exists($path)) return ['date' => '', 'items' => []];
   $data = json_decode((string)file_get_contents($path), true);
@@ -311,6 +404,10 @@ function sync_spot_pickup_sheet($items, $date, $sheetName) {
       'phone' => $phone,
       'date' => (string)($item['date'] ?? $date),
       'source' => 'ecohai-spot',
+      'lat' => isset($item['lat']) ? (string)$item['lat'] : '',
+      'lng' => isset($item['lng']) ? (string)$item['lng'] : '',
+      'approx' => !empty($item['approx']),
+      'formatted' => (string)($item['formatted'] ?? ''),
       'spot_sheet' => (string)($item['spot_sheet'] ?? $sheetName),
       'cancelled' => $cancelled,
       'collected' => $cancelled,
@@ -431,6 +528,7 @@ try {
   foreach ($cache['items'] as $old) {
     if (is_array($old) && isset($old['id'])) $byId[(string)$old['id']] = $old;
   }
+  [$items, $prefetchStats] = prefetch_spot_locations($items, $byId);
   foreach ($items as $item) {
     $byId[(string)$item['id']] = $item;
   }
@@ -467,6 +565,7 @@ try {
     'fetch_results' => $fetchResults,
     'fetched' => count($items),
     'cached' => count($cache['items']),
+    'prefetch' => $prefetchStats,
     'sheet_sync' => $sheetSync,
     'notifications' => $notifications,
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

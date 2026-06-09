@@ -943,7 +943,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.09-test.1</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.10-test.1</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -986,7 +986,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.09-test.1</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.10-test.1</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1234,7 +1234,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.09-test.1';
+const APP_VERSION = 'v2026.06.10-test.1';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1259,6 +1259,7 @@ const GEOCODE_CACHE_KEY = 'rys-mapbox-test-geocode-cache-v1';
 const GEOCODE_CACHE_ADMIN_PIN_KEY = 'rys-mapbox-test-geocode-cache-admin-pin-v1';
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
+const SPOT_PICKUP_PREFETCH_API = '../api/spot_pickups.php';
 const SHARED_GEOCODE_CACHE_RETRY_MS = 10 * 60 * 1000;
 const PICKUP_GEOCODE_CONCURRENCY = 3;
 const PHOTO_OCR_MAX_SIZE = 1120;
@@ -4476,7 +4477,7 @@ function resetPickupCompletionsManually() {
   );
 }
 
-async function fetchPickupItems(sheetName) {
+async function fetchPickupSheetItems(sheetName) {
   const params = new URLSearchParams({
     sheet: sheetName,
     refresh: String(Date.now())
@@ -4489,6 +4490,38 @@ async function fetchPickupItems(sheetName) {
     throw new Error(((data && data.error) || '集荷リストの取得に失敗しました') + detail);
   }
   return data;
+}
+
+async function fetchPrefetchedSpotPickupItems(sheetName) {
+  const params = new URLSearchParams({
+    sheet: sheetName,
+    refresh: String(Date.now())
+  });
+  const res = await fetch(`${SPOT_PICKUP_PREFETCH_API}?${params.toString()}`, { cache: 'no-store' });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || data.error || !Array.isArray(data.items) || data.items.length === 0) return null;
+  return {
+    spreadsheetId: '',
+    sheet: sheetName,
+    dateFilter: data.date || '',
+    count: data.items.length,
+    prefetched: true,
+    prefetchedUpdatedAt: data.updated_at || '',
+    items: data.items
+  };
+}
+
+async function fetchPickupItems(sheetName, options = {}) {
+  if (isSpotPickupSheet(sheetName) && options.preferPrefetch !== false) {
+    try {
+      const prefetched = await fetchPrefetchedSpotPickupItems(sheetName);
+      if (prefetched) return prefetched;
+    } catch (e) {
+      console.warn('prefetched spot pickups failed', e);
+    }
+  }
+  return fetchPickupSheetItems(sheetName);
 }
 
 async function triggerSpotPickupTouch(options = {}) {
@@ -4710,7 +4743,7 @@ async function syncPickupProgressFromSheets(silent = true) {
     }
 
     const fetchedSheets = await Promise.all(
-      sheets.map(sheet => fetchPickupItems(sheet).then(data => ({ sheet, data })))
+      sheets.map(sheet => fetchPickupItems(sheet, { preferPrefetch: false }).then(data => ({ sheet, data })))
     );
 
     let changed = false;
@@ -4761,9 +4794,18 @@ async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
-async function resolvePickupImportItem(item, index, total, cachedRegular, options) {
+function pickupImportCacheKey(item) {
+  if (isSpotPickupItem(item)) {
+    return `spot:${spotPickupNaturalKey(item) || String(item.id || '')}`;
+  }
+  return `pickup:${regularPickupIdentity(item)}`;
+}
+
+async function resolvePickupImportItem(item, index, total, cachedRegular, cachedExisting, options) {
   const spotItem = isSpotPickupItem(item);
-  const cachedItem = !spotItem ? cachedRegular.get(regularPickupIdentity(item)) : null;
+  const cachedItem = spotItem
+    ? cachedExisting.get(pickupImportCacheKey(item))
+    : (cachedExisting.get(pickupImportCacheKey(item)) || cachedRegular.get(regularPickupIdentity(item)));
   const cachedLocation = cachedItem && cachedItem.address === item.address
     ? pickupLocationFromItem(cachedItem)
     : null;
@@ -4786,6 +4828,12 @@ async function importPickupItems(items, replaceList, options = {}) {
   const cachedRegular = new Map(
     loadRegularPickupCache(courseName).map(item => [regularPickupIdentity(item), item])
   );
+  const cachedExisting = new Map(
+    deliveries
+      .filter(item => item && (isPickupBackedDelivery(item) || isSpotPickupDelivery(item)))
+      .map(item => [storedPickupIdentity(item), item])
+      .filter(entry => entry[0])
+  );
   if (replaceList) {
     deliveries = [];
     activeDeliveryId = null;
@@ -4796,7 +4844,7 @@ async function importPickupItems(items, replaceList, options = {}) {
   const resolvedItems = await mapWithConcurrency(
     items,
     PICKUP_GEOCODE_CONCURRENCY,
-    (item, index) => resolvePickupImportItem(item, index, items.length, cachedRegular, options)
+    (item, index) => resolvePickupImportItem(item, index, items.length, cachedRegular, cachedExisting, options)
   );
 
   for (const resolved of resolvedItems) {
@@ -4806,7 +4854,8 @@ async function importPickupItems(items, replaceList, options = {}) {
       continue;
     }
     const pickupId = String(item.id || '');
-    const collected = isTruthyValue(item.collected);
+    const preserveCachedProgress = !!item.prefetched && cachedItem && cachedItem.completed && !isTruthyValue(item.collected);
+    const collected = isTruthyValue(item.collected) || preserveCachedProgress;
     const d = {
       id: spotItem && pickupId ? `spot-${pickupId}` : (cachedItem && cachedItem.id ? cachedItem.id : uid()),
       address: item.address,
@@ -4816,12 +4865,12 @@ async function importPickupItems(items, replaceList, options = {}) {
       approx: result.approx,
       formatted: result.formatted,
       completed: collected,
-      completedAt: collected && item.collected_at ? Date.parse(item.collected_at) || Date.now() : null,
-      completedBy: collected ? (item.collected_by || '') : '',
-      completedAtLabel: collected ? formatTime(item.collected_at || Date.now()) : '',
+      completedAt: preserveCachedProgress ? (cachedItem.completedAt || Date.now()) : (collected && item.collected_at ? Date.parse(item.collected_at) || Date.now() : null),
+      completedBy: preserveCachedProgress ? (cachedItem.completedBy || '') : (collected ? (item.collected_by || '') : ''),
+      completedAtLabel: preserveCachedProgress ? (cachedItem.completedAtLabel || '') : (collected ? formatTime(item.collected_at || Date.now()) : ''),
       createdAt: Date.now(),
       pickupSheet: item.sheet || '',
-      pickupRow: item.row || null,
+      pickupRow: item.row || (cachedItem && cachedItem.pickupRow) || null,
       pickupId,
       pickupSource: spotItem ? 'ecohai-spot' : '',
       pickupListTab: spotItem ? PICKUP_LIST_TAB_SPOT : normalizePickupListTab(item.list_tab),
@@ -4865,6 +4914,7 @@ async function importPickupItems(items, replaceList, options = {}) {
 async function fetchPickupCourseItems(sheetName, options = {}) {
   if (typeof options === 'boolean') options = { refreshSpots: options };
   const refreshSpots = options.refreshSpots !== false;
+  const preferPrefetch = options.preferPrefetch !== false;
   const includeRegular = !shouldHideRegularPickupOnWeekend();
   const sourceSheets = includeRegular
     ? [{ name: sheetName, required: true }]
@@ -4879,7 +4929,7 @@ async function fetchPickupCourseItems(sheetName, options = {}) {
   const warnings = [];
   for (const source of sourceSheets) {
     try {
-      const data = await fetchPickupItems(source.name);
+      const data = await fetchPickupItems(source.name, { preferPrefetch });
       items.push(...(data.items || []));
     } catch (e) {
       if (source.required) throw e;
@@ -4900,7 +4950,7 @@ async function refreshSelectedPickupCourseInBackground() {
   const sheetName = getSelectedPickupSheet();
   if (appMode !== 'pickup' || !PICKUP_SHEETS.includes(sheetName)) return;
   try {
-    const result = await fetchPickupCourseItems(sheetName, false);
+    const result = await fetchPickupCourseItems(sheetName, { refreshSpots: false, preferPrefetch: false });
     if (result.items.length === 0) return;
     await importPickupItems(result.items, true, {
       courseName: sheetName,
