@@ -943,7 +943,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.07-test.1</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.09-test.1</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -986,7 +986,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.07-test.1</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.09-test.1</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1234,7 +1234,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.07-test.1';
+const APP_VERSION = 'v2026.06.09-test.1';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -4840,7 +4840,11 @@ async function importPickupItems(items, replaceList, options = {}) {
 
   saveDeliveries();
   saveRegularPickupCache(courseName);
-  await resetStalePickupCompletions();
+  if (options.deferStaleReset) {
+    resetStalePickupCompletions().catch(e => console.warn('deferred pickup reset failed', e));
+  } else {
+    await resetStalePickupCompletions();
+  }
   renderMarkers();
   renderList();
   restartPickupAutoSync();
@@ -4858,7 +4862,9 @@ async function importPickupItems(items, replaceList, options = {}) {
   if (!options.background) showToast(`${imported.length}件 取り込みました${failMsg}`, failed.length > 0);
 }
 
-async function fetchPickupCourseItems(sheetName, refreshSpots = true) {
+async function fetchPickupCourseItems(sheetName, options = {}) {
+  if (typeof options === 'boolean') options = { refreshSpots: options };
+  const refreshSpots = options.refreshSpots !== false;
   const includeRegular = !shouldHideRegularPickupOnWeekend();
   const sourceSheets = includeRegular
     ? [{ name: sheetName, required: true }]
@@ -4881,6 +4887,13 @@ async function fetchPickupCourseItems(sheetName, refreshSpots = true) {
     }
   }
   return { items, warnings };
+}
+
+function refreshSelectedPickupCourseAfterSpotTouch(sheetName) {
+  triggerSpotPickupTouch({ silent: true }).then(() => {
+    if (appMode !== 'pickup' || getSelectedPickupSheet() !== sheetName) return;
+    return refreshSelectedPickupCourseInBackground();
+  }).catch(e => console.warn('background spot pickup refresh failed', e));
 }
 
 async function refreshSelectedPickupCourseInBackground() {
@@ -4920,7 +4933,7 @@ async function importPickupSheet() {
     } else {
       showLoading(`${sheetName}の集荷コースを読み込み中...`);
     }
-    const { items, warnings } = await fetchPickupCourseItems(sheetName);
+    const { items, warnings } = await fetchPickupCourseItems(sheetName, { refreshSpots: false });
 
     if (items.length === 0) {
       hideLoading();
@@ -4928,9 +4941,10 @@ async function importPickupSheet() {
       return;
     }
 
-    await importPickupItems(items, replaceList, { courseName: sheetName, cacheVisible });
+    await importPickupItems(items, replaceList, { courseName: sheetName, cacheVisible, deferStaleReset: true });
     updateModeUi();
     if (warnings.length > 0) showToast(`スポット集荷の取得に失敗しました: ${warnings[0]}`, true);
+    refreshSelectedPickupCourseAfterSpotTouch(sheetName);
   } catch (e) {
     hideLoading();
     showToast(e.message || '集荷リストの取得に失敗しました', true);
@@ -5549,15 +5563,16 @@ document.addEventListener('visibilitychange', () => {
       showCachedRegularPickupCourse(selectedCourse);
     }
     await mapReady;
-    await resetStalePickupCompletions();
     renderMarkers();
     renderList();
     updateGpsButton();
     updateModeUi();
-    restartPickupAutoSync();
     ensureGpsWatching();
     updateGpsButton();
     hideLoading();
+    resetStalePickupCompletions()
+      .catch(e => console.warn('startup pickup reset failed', e))
+      .finally(() => restartPickupAutoSync());
     checkAppVersionUpdate({ force: true });
     ensurePushServiceWorker().catch(e => console.warn('push service worker registration failed', e));
     const openedFromNotification = await openPickupCourseFromNotification();
