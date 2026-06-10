@@ -3560,8 +3560,8 @@ function setupPickupSheetOptions() {
   if (!select) return;
   if (select.options.length === 0) {
     select.innerHTML = [
-      `<option value="${PICKUP_DELIVERY_MODE_VALUE}">配送モード</option>`,
-      ...PICKUP_SHEETS.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+      `<option value="${PICKUP_DELIVERY_MODE_VALUE}">モード: 配送</option>`,
+      ...PICKUP_SHEETS.map(name => `<option value="${escapeHtml(name)}">集荷 (${escapeHtml(name)})</option>`)
     ].join('');
   }
   const saved = getSelectedPickupSheet();
