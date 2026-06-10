@@ -943,7 +943,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.10-test.2</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.10-test.3</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -986,7 +986,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.10-test.2</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.10-test.3</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1234,7 +1234,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.10-test.2';
+const APP_VERSION = 'v2026.06.10-test.3';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -4810,7 +4810,10 @@ async function resolvePickupImportItem(item, index, total, cachedRegular, cached
   const cachedLocation = cachedItem && cachedItem.address === item.address
     ? pickupLocationFromItem(cachedItem)
     : null;
-  const savedLocation = pickupLocationFromItem(item) || cachedLocation;
+  const itemLocation = pickupLocationFromItem(item);
+  const savedLocation = cachedLocation && !cachedLocation.approx && (!itemLocation || itemLocation.approx)
+    ? cachedLocation
+    : (itemLocation || cachedLocation);
   let result = savedLocation;
   if (result) {
     if (!options.background && !options.cacheVisible) {
