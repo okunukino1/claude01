@@ -849,7 +849,7 @@
 </div>
 
 <div class="map-control-left">
-  <button id="btn-app-mode" type="button">モード: 配送</button>
+  <button id="btn-app-mode" type="button">配送</button>
   <button id="btn-label-mode" type="button">表示: 番地+建物</button>
 </div>
 
@@ -1078,7 +1078,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.07-1';
+const APP_VERSION = 'v2026.06.10-1';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -3560,7 +3560,7 @@ function setupPickupSheetOptions() {
   if (!select) return;
   if (select.options.length === 0) {
     select.innerHTML = [
-      `<option value="${PICKUP_DELIVERY_MODE_VALUE}">モード: 配送</option>`,
+      `<option value="${PICKUP_DELIVERY_MODE_VALUE}">配送</option>`,
       ...PICKUP_SHEETS.map(name => `<option value="${escapeHtml(name)}">集荷 (${escapeHtml(name)})</option>`)
     ].join('');
   }
