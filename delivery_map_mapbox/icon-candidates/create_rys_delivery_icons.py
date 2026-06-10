@@ -62,24 +62,37 @@ def draw_wheels(draw, centers, r, fill=NAVY, inner=WHITE):
         draw.ellipse((cx - r * 0.48, cy - r * 0.48, cx + r * 0.48, cy + r * 0.48), fill=inner)
 
 
-def draw_van(draw, x, y, w, h, body=CHARCOAL, accent=ORANGE, light=WHITE, outline=None):
-    cab_w = int(w * 0.28)
-    cargo_w = w - cab_w
-    round_rect(draw, (x, y + h * 0.16, x + cargo_w, y + h * 0.76), int(h * 0.12), body, outline, 4 if outline else 1)
-    round_rect(draw, (x + cargo_w - 2, y + h * 0.2, x + w, y + h * 0.76), int(h * 0.1), body, outline, 4 if outline else 1)
+def draw_kei_van(draw, x, y, w, h, body=CHARCOAL, accent=ORANGE, glass=(235, 241, 244, 255), outline=NAVY):
+    stroke = max(3, int(w * 0.018))
+    wheel_r = max(7, int(h * 0.14))
+    base_y = y + h * 0.74
+    roof_y = y + h * 0.18
+
+    # A compact one-box silhouette so the vehicle reads as a kei van, not a truck.
+    body_box = (x + w * 0.08, y + h * 0.25, x + w * 0.92, base_y)
+    draw.rounded_rectangle(body_box, radius=int(h * 0.12), fill=body, outline=outline, width=stroke)
+    roof = [
+        (x + w * 0.18, y + h * 0.28),
+        (x + w * 0.28, roof_y),
+        (x + w * 0.68, roof_y),
+        (x + w * 0.84, y + h * 0.3),
+        (x + w * 0.88, y + h * 0.49),
+        (x + w * 0.15, y + h * 0.49),
+    ]
+    draw.polygon(roof, fill=body)
+    draw.line(roof + [roof[0]], fill=outline, width=stroke, joint="curve")
+
+    draw.rounded_rectangle((x + w * 0.22, y + h * 0.29, x + w * 0.45, y + h * 0.48), radius=int(h * 0.05), fill=glass)
+    draw.rounded_rectangle((x + w * 0.49, y + h * 0.29, x + w * 0.68, y + h * 0.48), radius=int(h * 0.05), fill=glass)
     draw.polygon(
-        [
-            (x + cargo_w + cab_w * 0.18, y + h * 0.22),
-            (x + w - 4, y + h * 0.5),
-            (x + cargo_w + cab_w * 0.18, y + h * 0.66),
-        ],
-        fill=light,
+        [(x + w * 0.71, y + h * 0.3), (x + w * 0.83, y + h * 0.42), (x + w * 0.72, y + h * 0.49)],
+        fill=glass,
     )
-    round_rect(draw, (x + w * 0.08, y + h * 0.28, x + w * 0.48, y + h * 0.58), int(h * 0.07), (45, 55, 63, 255))
-    round_rect(draw, (x + w * 0.58, y + h * 0.28, x + w * 0.78, y + h * 0.58), int(h * 0.07), (245, 242, 235, 255))
-    draw.rounded_rectangle((x + w * 0.09, y + h * 0.68, x + w * 0.88, y + h * 0.8), radius=int(h * 0.05), fill=accent)
-    draw.rounded_rectangle((x + w - 26, y + h * 0.54, x + w - 5, y + h * 0.66), radius=5, fill=(255, 190, 0, 255))
-    draw_wheels(draw, [(x + w * 0.26, y + h * 0.82), (x + w * 0.77, y + h * 0.82)], int(h * 0.16))
+    draw.line((x + w * 0.47, y + h * 0.27, x + w * 0.47, y + h * 0.68), fill=outline, width=max(2, stroke - 1))
+    draw.rounded_rectangle((x + w * 0.18, y + h * 0.6, x + w * 0.84, y + h * 0.72), radius=int(h * 0.05), fill=accent)
+    draw.rounded_rectangle((x + w * 0.88, y + h * 0.5, x + w * 0.94, y + h * 0.61), radius=4, fill=(255, 190, 0, 255))
+    draw.rounded_rectangle((x + w * 0.08, y + h * 0.54, x + w * 0.14, y + h * 0.62), radius=4, fill=(255, 255, 255, 210))
+    draw_wheels(draw, [(x + w * 0.3, y + h * 0.77), (x + w * 0.73, y + h * 0.77)], wheel_r, fill=outline, inner=WHITE)
 
 
 def draw_delivery_truck(draw, x, y, w, h, body=WHITE, accent=ORANGE, outline=NAVY):
@@ -106,11 +119,11 @@ def add_border(im, fill=ORANGE, bg=CREAM):
 def candidate_a():
     im = Image.new("RGBA", (SIZE, SIZE), CREAM)
     d = ImageDraw.Draw(im)
-    d.rounded_rectangle((36, 330, 476, 424), radius=45, fill=(255, 226, 215, 255))
-    for y, length, alpha in [(330, 350, 255), (358, 310, 230), (387, 250, 160), (423, 170, 120)]:
-        d.rounded_rectangle((52, y, 52 + length, y + 9), radius=5, fill=(255, 87, 34, alpha))
+    d.rounded_rectangle((58, 338, 454, 412), radius=37, fill=(255, 226, 215, 255))
+    for y, length, alpha in [(342, 310, 255), (365, 260, 220), (390, 200, 140)]:
+        d.rounded_rectangle((70, y, 70 + length, y + 7), radius=4, fill=(255, 87, 34, alpha))
     paste_center(im, logo_image(450, 160), 54)
-    draw_van(d, 135, 286, 260, 140, body=(39, 49, 58, 255), accent=ORANGE)
+    draw_kei_van(d, 166, 314, 180, 92, body=(39, 49, 58, 255), accent=ORANGE, outline=(16, 22, 28, 255))
     return add_border(im)
 
 
@@ -120,9 +133,9 @@ def candidate_b():
     for r, alpha in [(220, 32), (170, 42), (120, 62)]:
         d.ellipse((256 - r, 318 - r, 256 + r, 318 + r), fill=(255, 87, 34, alpha))
     paste_center(im, logo_image(445, 150, shadow=True), 58)
-    d.line((54, 352, 456, 298), fill=(255, 87, 34, 255), width=18)
-    d.line((78, 394, 430, 348), fill=(255, 139, 90, 210), width=8)
-    draw_delivery_truck(d, 116, 278, 286, 142, body=(250, 250, 247, 255), accent=ORANGE, outline=(20, 25, 31, 255))
+    d.line((72, 365, 440, 315), fill=(255, 87, 34, 255), width=13)
+    d.line((92, 398, 408, 358), fill=(255, 139, 90, 210), width=6)
+    draw_kei_van(d, 161, 316, 190, 90, body=(250, 250, 247, 255), accent=ORANGE, outline=(20, 25, 31, 255))
     d.rounded_rectangle((18, 18, SIZE - 18, SIZE - 18), radius=72, outline=ORANGE, width=7)
     return im
 
@@ -131,10 +144,10 @@ def candidate_c():
     im = Image.new("RGBA", (SIZE, SIZE), (255, 253, 248, 255))
     d = ImageDraw.Draw(im)
     paste_center(im, logo_image(432, 142), 52)
-    d.line((96, 346, 178, 300, 256, 360, 354, 300, 432, 350), fill=(255, 87, 34, 255), width=13, joint="curve")
-    for p in [(96, 346), (256, 360), (432, 350)]:
-        d.ellipse((p[0] - 14, p[1] - 14, p[0] + 14, p[1] + 14), fill=WHITE, outline=ORANGE, width=7)
-    draw_delivery_truck(d, 155, 272, 230, 118, body=WHITE, accent=ORANGE, outline=CHARCOAL)
+    d.line((104, 354, 188, 318, 256, 368, 346, 318, 424, 356), fill=(255, 87, 34, 255), width=10, joint="curve")
+    for p in [(104, 354), (256, 368), (424, 356)]:
+        d.ellipse((p[0] - 10, p[1] - 10, p[0] + 10, p[1] + 10), fill=WHITE, outline=ORANGE, width=5)
+    draw_kei_van(d, 178, 307, 158, 78, body=WHITE, accent=ORANGE, outline=CHARCOAL)
     d.rounded_rectangle((69, 230, 443, 430), radius=48, outline=(230, 224, 213, 255), width=4)
     return add_border(im, fill=CHARCOAL)
 
@@ -142,12 +155,12 @@ def candidate_c():
 def candidate_d():
     im = Image.new("RGBA", (SIZE, SIZE), CREAM)
     d = ImageDraw.Draw(im)
-    d.rounded_rectangle((52, 238, 460, 420), radius=58, fill=ORANGE)
-    d.rounded_rectangle((86, 280, 426, 398), radius=42, fill=(255, 255, 255, 245))
+    d.rounded_rectangle((64, 252, 448, 414), radius=58, fill=ORANGE)
+    d.rounded_rectangle((100, 294, 412, 392), radius=42, fill=(255, 255, 255, 245))
     paste_center(im, logo_image(440, 150), 54)
     for x, h in [(92, 28), (126, 45), (162, 34), (348, 50), (388, 36)]:
         d.rounded_rectangle((x, 262 - h, x + 22, 262), radius=4, fill=(86, 93, 101, 90))
-    draw_van(d, 134, 284, 255, 132, body=(24, 31, 39, 255), accent=ORANGE)
+    draw_kei_van(d, 169, 316, 174, 84, body=(24, 31, 39, 255), accent=ORANGE, outline=(14, 18, 23, 255))
     d.rounded_rectangle((18, 18, SIZE - 18, SIZE - 18), radius=72, outline=(255, 87, 34, 255), width=7)
     return im
 
@@ -174,7 +187,7 @@ def main():
     d = ImageDraw.Draw(sheet)
     title_font = load_font(34, bold=True)
     label_font = load_font(28, bold=True)
-    d.text((34, 24), "RYS delivery app icon candidates", fill=NAVY, font=title_font)
+    d.text((34, 24), "RYS kei-van delivery app icon candidates", fill=NAVY, font=title_font)
     positions = [(40, 92), (570, 92), (40, 370), (570, 370)]
     thumbs = []
     for path in paths:
@@ -182,10 +195,10 @@ def main():
         thumb.thumbnail((220, 220), Image.Resampling.LANCZOS)
         thumbs.append(thumb)
     captions = [
-        ("A Clean", "white base / speed lines"),
-        ("B Dark", "dark / high contrast"),
-        ("C Route", "delivery route image"),
-        ("D Badge", "orange badge / app-like"),
+        ("A Clean", "small kei van / speed lines"),
+        ("B Dark", "dark / small kei van"),
+        ("C Route", "route line / small kei van"),
+        ("D Badge", "orange badge / kei van"),
     ]
     for (x, y), thumb, (label, desc) in zip(positions, thumbs, captions):
         d.rounded_rectangle((x, y, x + 490, y + 235), radius=28, fill=WHITE, outline=MUTED, width=3)
