@@ -3,6 +3,15 @@ header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
+$apiStartedAt = microtime(true);
+
+$configFile = __DIR__ . '/config.php';
+if (!file_exists($configFile)) {
+  http_response_code(503);
+  echo json_encode(['error' => 'DB設定ファイルがありません'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+require_once $configFile;
 require_once __DIR__ . '/request_guard.php';
 delivery_app_require_same_origin_request();
 
@@ -12,34 +21,102 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
   exit;
 }
 
-function cache_path() {
-  return dirname(__DIR__) . '/data/private/delivery_geocode_cache.json';
+function api_started_at() {
+  global $apiStartedAt;
+  return $apiStartedAt;
 }
 
-function read_cache() {
-  $path = cache_path();
-  if (!file_exists($path)) return ['items' => []];
-  $data = json_decode((string)file_get_contents($path), true);
-  if (!is_array($data)) return ['items' => []];
-  if (!isset($data['items']) || !is_array($data['items'])) $data['items'] = [];
-  return $data;
+function response_elapsed_ms() {
+  return (int)round((microtime(true) - api_started_at()) * 1000);
 }
 
-function write_cache($data) {
-  $path = cache_path();
-  $dir = dirname($path);
-  if (!is_dir($dir) && !mkdir($dir, 0775, true)) {
-    throw new RuntimeException('キャッシュ保存先を作成できません');
+function mysql_cache_table() {
+  $table = defined('GEOCODE_CACHE_DB_TABLE') ? (string)GEOCODE_CACHE_DB_TABLE : (defined('GEOCODE_CACHE_TEST_DB_TABLE') ? (string)GEOCODE_CACHE_TEST_DB_TABLE : 'delivery_geocode_cache');
+  if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) {
+    throw new RuntimeException('DBテーブル名が不正です');
   }
-  $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-  if ($json === false || file_put_contents($path, $json, LOCK_EX) === false) {
-    throw new RuntimeException('キャッシュを書き込めません');
+  return $table;
+}
+
+function mysql_cache_max_items() {
+  $max = defined('GEOCODE_CACHE_DB_MAX_ITEMS') ? (int)GEOCODE_CACHE_DB_MAX_ITEMS : (defined('GEOCODE_CACHE_TEST_DB_MAX_ITEMS') ? (int)GEOCODE_CACHE_TEST_DB_MAX_ITEMS : 50000);
+  return max(1000, min($max, 500000));
+}
+
+function geocode_cache_admin_pin() {
+  if (defined('GEOCODE_CACHE_ADMIN_PIN') && (string)GEOCODE_CACHE_ADMIN_PIN !== '') {
+    return (string)GEOCODE_CACHE_ADMIN_PIN;
   }
+  if (defined('GEOCODE_CACHE_TEST_ADMIN_PIN') && (string)GEOCODE_CACHE_TEST_ADMIN_PIN !== '') {
+    return (string)GEOCODE_CACHE_TEST_ADMIN_PIN;
+  }
+  if (defined('PICKUP_LOCATION_ADMIN_PIN') && (string)PICKUP_LOCATION_ADMIN_PIN !== '') {
+    return (string)PICKUP_LOCATION_ADMIN_PIN;
+  }
+  return '';
+}
+
+function require_admin_pin($input) {
+  $expected = geocode_cache_admin_pin();
+  $actual = trim((string)($input['admin_pin'] ?? ''));
+  if ($expected === '' || $actual === '' || !hash_equals($expected, $actual)) {
+    http_response_code(403);
+    echo json_encode(['error' => 'DBキャッシュ管理PINが違います'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+}
+
+function mysql_cache_pdo() {
+  $host = defined('GEOCODE_CACHE_DB_HOST') ? (string)GEOCODE_CACHE_DB_HOST : (defined('GEOCODE_CACHE_TEST_DB_HOST') ? (string)GEOCODE_CACHE_TEST_DB_HOST : '');
+  $db = defined('GEOCODE_CACHE_DB_NAME') ? (string)GEOCODE_CACHE_DB_NAME : (defined('GEOCODE_CACHE_TEST_DB_NAME') ? (string)GEOCODE_CACHE_TEST_DB_NAME : '');
+  $user = defined('GEOCODE_CACHE_DB_USER') ? (string)GEOCODE_CACHE_DB_USER : (defined('GEOCODE_CACHE_TEST_DB_USER') ? (string)GEOCODE_CACHE_TEST_DB_USER : '');
+  $pass = defined('GEOCODE_CACHE_DB_PASSWORD') ? (string)GEOCODE_CACHE_DB_PASSWORD : (defined('GEOCODE_CACHE_TEST_DB_PASSWORD') ? (string)GEOCODE_CACHE_TEST_DB_PASSWORD : '');
+  foreach (['host' => $host, 'name' => $db, 'user' => $user, 'password' => $pass] as $name => $value) {
+    if ($value === '') {
+      throw new RuntimeException('DB接続情報が未設定です: ' . $name);
+    }
+  }
+
+  if (!extension_loaded('pdo_mysql')) {
+    throw new RuntimeException('サーバーのPHPで pdo_mysql が有効ではありません');
+  }
+
+  $port = defined('GEOCODE_CACHE_DB_PORT') ? (int)GEOCODE_CACHE_DB_PORT : (defined('GEOCODE_CACHE_TEST_DB_PORT') ? (int)GEOCODE_CACHE_TEST_DB_PORT : 3306);
+  $charset = 'utf8mb4';
+  $dsn = "mysql:host={$host};port={$port};dbname={$db};charset={$charset}";
+
+  return new PDO($dsn, $user, $pass, [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    PDO::ATTR_EMULATE_PREPARES => false,
+  ]);
+}
+
+function ensure_mysql_cache_table($pdo, $table) {
+  $sql = "
+    CREATE TABLE IF NOT EXISTS `{$table}` (
+      `cache_key` CHAR(64) NOT NULL,
+      `address` VARCHAR(300) NOT NULL DEFAULT '',
+      `lat` DECIMAL(10,7) NOT NULL,
+      `lng` DECIMAL(10,7) NOT NULL,
+      `approx` TINYINT(1) NOT NULL DEFAULT 0,
+      `formatted` VARCHAR(300) NOT NULL DEFAULT '',
+      `hit_count` INT UNSIGNED NOT NULL DEFAULT 0,
+      `saved_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      `last_used_at` TIMESTAMP NULL DEFAULT NULL,
+      PRIMARY KEY (`cache_key`),
+      KEY `idx_last_used_at` (`last_used_at`),
+      KEY `idx_updated_at` (`updated_at`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  ";
+  $pdo->exec($sql);
 }
 
 function normalized_key($value) {
   $key = trim((string)$value);
   if ($key === '' || mb_strlen($key, 'UTF-8') > 300) return '';
+  if (preg_match('/^[a-f0-9]{64}$/i', $key)) return strtolower($key);
   return hash('sha256', $key);
 }
 
@@ -47,6 +124,26 @@ function finite_float($value) {
   if ($value === null || $value === '') return null;
   $n = (float)$value;
   return is_finite($n) ? $n : null;
+}
+
+function prune_mysql_cache($pdo, $table) {
+  $max = mysql_cache_max_items();
+  $count = (int)$pdo->query("SELECT COUNT(*) FROM `{$table}`")->fetchColumn();
+  if ($count <= $max) return;
+
+  $deleteCount = $count - $max;
+  $sql = "
+    DELETE FROM `{$table}`
+    WHERE `cache_key` IN (
+      SELECT `cache_key` FROM (
+        SELECT `cache_key`
+        FROM `{$table}`
+        ORDER BY COALESCE(`last_used_at`, `updated_at`, `saved_at`) ASC
+        LIMIT {$deleteCount}
+      ) AS old_rows
+    )
+  ";
+  $pdo->exec($sql);
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
@@ -58,48 +155,60 @@ if (!is_array($input)) {
 
 $action = trim((string)($input['action'] ?? 'lookup'));
 $key = normalized_key($input['key'] ?? '');
-if ($key === '') {
-  http_response_code(400);
-  echo json_encode(['error' => 'キャッシュキーが不正です'], JSON_UNESCAPED_UNICODE);
-  exit;
-}
 
 try {
-  $cache = read_cache();
+  $pdo = mysql_cache_pdo();
+  $table = mysql_cache_table();
+  ensure_mysql_cache_table($pdo, $table);
 
   if ($action === 'lookup') {
-    $item = $cache['items'][$key] ?? null;
-    if (!is_array($item)) {
-      echo json_encode(['hit' => false], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($key === '') {
+      http_response_code(400);
+      echo json_encode(['error' => 'キャッシュキーが不正です'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $stmt = $pdo->prepare("SELECT `lat`, `lng`, `approx`, `formatted`, `hit_count` FROM `{$table}` WHERE `cache_key` = ?");
+    $stmt->execute([$key]);
+    $item = $stmt->fetch();
+    if (!$item) {
+      echo json_encode(['hit' => false, 'backend' => 'mysql', 'elapsed_ms' => response_elapsed_ms()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
       exit;
     }
 
     $lat = finite_float($item['lat'] ?? null);
     $lng = finite_float($item['lng'] ?? null);
     if ($lat === null || $lng === null) {
-      unset($cache['items'][$key]);
-      write_cache($cache);
-      echo json_encode(['hit' => false], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      $delete = $pdo->prepare("DELETE FROM `{$table}` WHERE `cache_key` = ?");
+      $delete->execute([$key]);
+      echo json_encode(['hit' => false, 'backend' => 'mysql', 'elapsed_ms' => response_elapsed_ms()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
       exit;
     }
 
-    $item['hit_count'] = (int)($item['hit_count'] ?? 0) + 1;
-    $item['last_used_at'] = date('c');
-    $cache['items'][$key] = $item;
-    write_cache($cache);
+    $hitCount = (int)($item['hit_count'] ?? 0) + 1;
+    $update = $pdo->prepare("UPDATE `{$table}` SET `hit_count` = `hit_count` + 1, `last_used_at` = NOW() WHERE `cache_key` = ?");
+    $update->execute([$key]);
 
     echo json_encode([
       'hit' => true,
+      'backend' => 'mysql',
+      'elapsed_ms' => response_elapsed_ms(),
       'lat' => $lat,
       'lng' => $lng,
       'approx' => !empty($item['approx']),
       'formatted' => (string)($item['formatted'] ?? ''),
-      'hit_count' => (int)$item['hit_count'],
+      'hit_count' => $hitCount,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
   }
 
   if ($action === 'save') {
+    if ($key === '') {
+      http_response_code(400);
+      echo json_encode(['error' => 'キャッシュキーが不正です'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
     $lat = finite_float($input['lat'] ?? null);
     $lng = finite_float($input['lng'] ?? null);
     if ($lat === null || $lng === null || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
@@ -116,35 +225,185 @@ try {
       exit;
     }
 
-    $now = date('c');
-    $existing = isset($cache['items'][$key]) && is_array($cache['items'][$key]) ? $cache['items'][$key] : [];
-    $cache['items'][$key] = [
-      'address' => $address,
-      'lat' => $lat,
-      'lng' => $lng,
-      'approx' => !empty($input['approx']),
-      'formatted' => $formatted,
-      'saved_at' => (string)($existing['saved_at'] ?? $now),
-      'updated_at' => $now,
-      'last_used_at' => $now,
-      'hit_count' => (int)($existing['hit_count'] ?? 0),
-    ];
+    $sql = "
+      INSERT INTO `{$table}` (`cache_key`, `address`, `lat`, `lng`, `approx`, `formatted`, `hit_count`, `saved_at`, `updated_at`, `last_used_at`)
+      VALUES (?, ?, ?, ?, ?, ?, 0, NOW(), NOW(), NOW())
+      ON DUPLICATE KEY UPDATE
+        `address` = VALUES(`address`),
+        `lat` = VALUES(`lat`),
+        `lng` = VALUES(`lng`),
+        `approx` = VALUES(`approx`),
+        `formatted` = VALUES(`formatted`),
+        `updated_at` = NOW(),
+        `last_used_at` = NOW()
+    ";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$key, $address, $lat, $lng, !empty($input['approx']) ? 1 : 0, $formatted]);
 
-    if (count($cache['items']) > 2000) {
-      uasort($cache['items'], function($a, $b) {
-        return strcmp((string)($a['last_used_at'] ?? $a['updated_at'] ?? ''), (string)($b['last_used_at'] ?? $b['updated_at'] ?? ''));
-      });
-      $cache['items'] = array_slice($cache['items'], -2000, null, true);
+    if (random_int(1, 20) === 1) {
+      prune_mysql_cache($pdo, $table);
     }
 
-    write_cache($cache);
-    echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    echo json_encode(['ok' => true, 'backend' => 'mysql', 'elapsed_ms' => response_elapsed_ms()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+
+  if ($action === 'admin_stats') {
+    require_admin_pin($input);
+    $stats = $pdo->query("
+      SELECT
+        COUNT(*) AS item_count,
+        COALESCE(SUM(`hit_count`), 0) AS total_hits,
+        MAX(`updated_at`) AS latest_updated_at,
+        MAX(`last_used_at`) AS latest_used_at
+      FROM `{$table}`
+    ")->fetch();
+    echo json_encode([
+      'ok' => true,
+      'backend' => 'mysql',
+      'elapsed_ms' => response_elapsed_ms(),
+      'item_count' => (int)($stats['item_count'] ?? 0),
+      'total_hits' => (int)($stats['total_hits'] ?? 0),
+      'latest_updated_at' => (string)($stats['latest_updated_at'] ?? ''),
+      'latest_used_at' => (string)($stats['latest_used_at'] ?? ''),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+
+  if ($action === 'admin_list') {
+    require_admin_pin($input);
+    $limit = max(1, min((int)($input['limit'] ?? 20), 100));
+    $search = trim((string)($input['search'] ?? ''));
+    if (mb_strlen($search, 'UTF-8') > 100) {
+      http_response_code(400);
+      echo json_encode(['error' => '検索文字列が長すぎます'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    if ($search !== '') {
+      $like = '%' . $search . '%';
+      $stmt = $pdo->prepare("
+        SELECT `cache_key`, `address`, `lat`, `lng`, `approx`, `formatted`, `hit_count`, `saved_at`, `updated_at`, `last_used_at`
+        FROM `{$table}`
+        WHERE `address` LIKE ? OR `formatted` LIKE ?
+        ORDER BY `updated_at` DESC
+        LIMIT {$limit}
+      ");
+      $stmt->execute([$like, $like]);
+    } else {
+      $stmt = $pdo->query("
+        SELECT `cache_key`, `address`, `lat`, `lng`, `approx`, `formatted`, `hit_count`, `saved_at`, `updated_at`, `last_used_at`
+        FROM `{$table}`
+        ORDER BY `updated_at` DESC
+        LIMIT {$limit}
+      ");
+    }
+
+    $items = [];
+    foreach ($stmt->fetchAll() as $row) {
+      $items[] = [
+        'cache_key' => (string)$row['cache_key'],
+        'address' => (string)$row['address'],
+        'lat' => (float)$row['lat'],
+        'lng' => (float)$row['lng'],
+        'approx' => !empty($row['approx']),
+        'formatted' => (string)$row['formatted'],
+        'hit_count' => (int)$row['hit_count'],
+        'saved_at' => (string)$row['saved_at'],
+        'updated_at' => (string)$row['updated_at'],
+        'last_used_at' => (string)($row['last_used_at'] ?? ''),
+      ];
+    }
+
+    echo json_encode([
+      'ok' => true,
+      'backend' => 'mysql',
+      'elapsed_ms' => response_elapsed_ms(),
+      'items' => $items,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+
+  if ($action === 'admin_upsert') {
+    require_admin_pin($input);
+    $address = trim((string)($input['address'] ?? ''));
+    $formatted = trim((string)($input['formatted'] ?? ''));
+    if ($address === '') {
+      http_response_code(400);
+      echo json_encode(['error' => '住所が空です'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (mb_strlen($address, 'UTF-8') > 300 || mb_strlen($formatted, 'UTF-8') > 300) {
+      http_response_code(400);
+      echo json_encode(['error' => '住所文字列が長すぎます'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $saveKey = $key !== '' ? $key : normalized_key($address);
+    if ($saveKey === '') {
+      http_response_code(400);
+      echo json_encode(['error' => 'キャッシュキーが不正です'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $lat = finite_float($input['lat'] ?? null);
+    $lng = finite_float($input['lng'] ?? null);
+    if ($lat === null || $lng === null || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+      http_response_code(400);
+      echo json_encode(['error' => '緯度経度が不正です'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $sql = "
+      INSERT INTO `{$table}` (`cache_key`, `address`, `lat`, `lng`, `approx`, `formatted`, `hit_count`, `saved_at`, `updated_at`, `last_used_at`)
+      VALUES (?, ?, ?, ?, ?, ?, 0, NOW(), NOW(), NOW())
+      ON DUPLICATE KEY UPDATE
+        `address` = VALUES(`address`),
+        `lat` = VALUES(`lat`),
+        `lng` = VALUES(`lng`),
+        `approx` = VALUES(`approx`),
+        `formatted` = VALUES(`formatted`),
+        `updated_at` = NOW(),
+        `last_used_at` = NOW()
+    ";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$saveKey, $address, $lat, $lng, !empty($input['approx']) ? 1 : 0, $formatted]);
+
+    echo json_encode([
+      'ok' => true,
+      'backend' => 'mysql',
+      'elapsed_ms' => response_elapsed_ms(),
+      'cache_key' => $saveKey,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+
+  if ($action === 'admin_delete') {
+    require_admin_pin($input);
+    if ($key === '') {
+      http_response_code(400);
+      echo json_encode(['error' => 'キャッシュキーが不正です'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $stmt = $pdo->prepare("DELETE FROM `{$table}` WHERE `cache_key` = ?");
+    $stmt->execute([$key]);
+    echo json_encode([
+      'ok' => true,
+      'backend' => 'mysql',
+      'elapsed_ms' => response_elapsed_ms(),
+      'deleted' => $stmt->rowCount(),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
   }
 
   http_response_code(400);
   echo json_encode(['error' => '未対応の操作です'], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
-  http_response_code(500);
-  echo json_encode(['error' => '共有キャッシュ処理に失敗しました', 'detail' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+  http_response_code(503);
+  echo json_encode([
+    'error' => 'テストDBキャッシュ処理に失敗しました',
+    'detail' => $e->getMessage(),
+    'backend' => 'mysql',
+    'elapsed_ms' => response_elapsed_ms(),
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }

@@ -49,9 +49,20 @@ define('GOOGLE_MAPS_SERVER_KEY', 'AIza...Google Geocoding API用キー...');
 // Google Cloudで Routes API を有効化してください。
 define('GOOGLE_ROUTES_API_KEY', '');
 
-// === テスト版 共有ジオコードキャッシュ用 MySQL ===
+// === 共有ジオコードキャッシュ用 MySQL ===
 // お名前.comの管理画面でMySQLデータベースを作成し、接続情報を入れてください。
-// テスト版だけが api/delivery_geocode_cache_test.php 経由で使用します。
+// 通常版は GEOCODE_CACHE_DB_* を優先します。未設定の場合は下の TEST 設定を使います。
+define('GEOCODE_CACHE_DB_HOST', 'mysql.example.ne.jp');
+define('GEOCODE_CACHE_DB_PORT', 3306);
+define('GEOCODE_CACHE_DB_NAME', 'database_name');
+define('GEOCODE_CACHE_DB_USER', 'database_user');
+define('GEOCODE_CACHE_DB_PASSWORD', 'database_password');
+define('GEOCODE_CACHE_DB_TABLE', 'delivery_geocode_cache');
+define('GEOCODE_CACHE_DB_MAX_ITEMS', 50000);
+define('GEOCODE_CACHE_ADMIN_PIN', 'change-this-db-admin-pin');
+
+// === テスト版 共有ジオコードキャッシュ用 MySQL ===
+// テスト版は api/delivery_geocode_cache_test.php 経由で使用します。
 define('GEOCODE_CACHE_TEST_DB_HOST', 'mysql.example.ne.jp');
 define('GEOCODE_CACHE_TEST_DB_PORT', 3306);
 define('GEOCODE_CACHE_TEST_DB_NAME', 'database_name');
