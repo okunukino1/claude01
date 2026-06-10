@@ -62,37 +62,59 @@ def draw_wheels(draw, centers, r, fill=NAVY, inner=WHITE):
         draw.ellipse((cx - r * 0.48, cy - r * 0.48, cx + r * 0.48, cy + r * 0.48), fill=inner)
 
 
-def draw_kei_van(draw, x, y, w, h, body=CHARCOAL, accent=ORANGE, glass=(235, 241, 244, 255), outline=NAVY):
+def draw_kei_van(draw, x, y, w, h, body=WHITE, accent=ORANGE, glass=(183, 207, 216, 255), outline=NAVY):
     stroke = max(3, int(w * 0.018))
     wheel_r = max(7, int(h * 0.14))
-    base_y = y + h * 0.74
-    roof_y = y + h * 0.18
+    shadow = (x + w * 0.12, y + h * 0.76, x + w * 0.92, y + h * 0.94)
+    draw.ellipse(shadow, fill=(0, 0, 0, 38))
 
-    # A compact one-box silhouette so the vehicle reads as a kei van, not a truck.
-    body_box = (x + w * 0.08, y + h * 0.25, x + w * 0.92, base_y)
-    draw.rounded_rectangle(body_box, radius=int(h * 0.12), fill=body, outline=outline, width=stroke)
-    roof = [
-        (x + w * 0.18, y + h * 0.28),
-        (x + w * 0.28, roof_y),
-        (x + w * 0.68, roof_y),
-        (x + w * 0.84, y + h * 0.3),
-        (x + w * 0.88, y + h * 0.49),
-        (x + w * 0.15, y + h * 0.49),
+    side = [
+        (x + w * 0.21, y + h * 0.23),
+        (x + w * 0.82, y + h * 0.23),
+        (x + w * 0.93, y + h * 0.39),
+        (x + w * 0.91, y + h * 0.68),
+        (x + w * 0.19, y + h * 0.73),
+        (x + w * 0.08, y + h * 0.62),
+        (x + w * 0.11, y + h * 0.39),
     ]
-    draw.polygon(roof, fill=body)
-    draw.line(roof + [roof[0]], fill=outline, width=stroke, joint="curve")
+    front = [
+        (x + w * 0.08, y + h * 0.39),
+        (x + w * 0.21, y + h * 0.23),
+        (x + w * 0.31, y + h * 0.31),
+        (x + w * 0.28, y + h * 0.71),
+        (x + w * 0.08, y + h * 0.62),
+    ]
+    draw.polygon(side, fill=body)
+    draw.line(side + [side[0]], fill=outline, width=stroke, joint="curve")
+    draw.polygon(front, fill=(244, 241, 234, 255))
+    draw.line(front + [front[0]], fill=outline, width=stroke, joint="curve")
 
-    draw.rounded_rectangle((x + w * 0.22, y + h * 0.29, x + w * 0.45, y + h * 0.48), radius=int(h * 0.05), fill=glass)
-    draw.rounded_rectangle((x + w * 0.49, y + h * 0.29, x + w * 0.68, y + h * 0.48), radius=int(h * 0.05), fill=glass)
-    draw.polygon(
-        [(x + w * 0.71, y + h * 0.3), (x + w * 0.83, y + h * 0.42), (x + w * 0.72, y + h * 0.49)],
-        fill=glass,
-    )
-    draw.line((x + w * 0.47, y + h * 0.27, x + w * 0.47, y + h * 0.68), fill=outline, width=max(2, stroke - 1))
-    draw.rounded_rectangle((x + w * 0.18, y + h * 0.6, x + w * 0.84, y + h * 0.72), radius=int(h * 0.05), fill=accent)
-    draw.rounded_rectangle((x + w * 0.88, y + h * 0.5, x + w * 0.94, y + h * 0.61), radius=4, fill=(255, 190, 0, 255))
-    draw.rounded_rectangle((x + w * 0.08, y + h * 0.54, x + w * 0.14, y + h * 0.62), radius=4, fill=(255, 255, 255, 210))
-    draw_wheels(draw, [(x + w * 0.3, y + h * 0.77), (x + w * 0.73, y + h * 0.77)], wheel_r, fill=outline, inner=WHITE)
+    windscreen = [
+        (x + w * 0.15, y + h * 0.34),
+        (x + w * 0.24, y + h * 0.25),
+        (x + w * 0.34, y + h * 0.32),
+        (x + w * 0.29, y + h * 0.51),
+        (x + w * 0.13, y + h * 0.51),
+    ]
+    draw.polygon(windscreen, fill=glass)
+    draw.line(windscreen + [windscreen[0]], fill=outline, width=max(2, stroke - 1), joint="curve")
+    draw.rounded_rectangle((x + w * 0.36, y + h * 0.31, x + w * 0.51, y + h * 0.5), radius=int(h * 0.04), fill=glass, outline=outline, width=max(2, stroke - 1))
+    draw.rounded_rectangle((x + w * 0.55, y + h * 0.31, x + w * 0.7, y + h * 0.5), radius=int(h * 0.04), fill=glass, outline=outline, width=max(2, stroke - 1))
+    draw.rounded_rectangle((x + w * 0.74, y + h * 0.31, x + w * 0.86, y + h * 0.5), radius=int(h * 0.04), fill=glass, outline=outline, width=max(2, stroke - 1))
+
+    draw.line((x + w * 0.52, y + h * 0.3, x + w * 0.52, y + h * 0.69), fill=(188, 185, 176, 255), width=max(2, stroke - 1))
+    draw.line((x + w * 0.72, y + h * 0.31, x + w * 0.72, y + h * 0.67), fill=(188, 185, 176, 255), width=max(2, stroke - 1))
+    draw.rounded_rectangle((x + w * 0.36, y + h * 0.56, x + w * 0.4, y + h * 0.61), radius=2, fill=outline)
+    draw.rounded_rectangle((x + w * 0.55, y + h * 0.56, x + w * 0.59, y + h * 0.61), radius=2, fill=outline)
+    draw.line((x + w * 0.32, y + h * 0.62, x + w * 0.87, y + h * 0.62), fill=(58, 61, 63, 255), width=max(2, stroke - 1))
+
+    draw.rounded_rectangle((x + w * 0.1, y + h * 0.56, x + w * 0.25, y + h * 0.63), radius=3, fill=(34, 38, 42, 255))
+    draw.rounded_rectangle((x + w * 0.12, y + h * 0.65, x + w * 0.24, y + h * 0.72), radius=2, fill=(255, 208, 0, 255))
+    draw.rounded_rectangle((x + w * 0.16, y + h * 0.49, x + w * 0.25, y + h * 0.57), radius=3, fill=(245, 249, 250, 255), outline=(190, 190, 184, 255), width=1)
+    draw.line((x + w * 0.11, y + h * 0.68, x + w * 0.25, y + h * 0.7), fill=(38, 41, 44, 255), width=max(2, stroke - 1))
+    draw_wheels(draw, [(x + w * 0.31, y + h * 0.75), (x + w * 0.79, y + h * 0.75)], wheel_r, fill=outline, inner=(212, 209, 202, 255))
+    draw.ellipse((x + w * 0.31 - wheel_r * 0.32, y + h * 0.75 - wheel_r * 0.32, x + w * 0.31 + wheel_r * 0.32, y + h * 0.75 + wheel_r * 0.32), fill=(82, 82, 78, 255))
+    draw.ellipse((x + w * 0.79 - wheel_r * 0.32, y + h * 0.75 - wheel_r * 0.32, x + w * 0.79 + wheel_r * 0.32, y + h * 0.75 + wheel_r * 0.32), fill=(82, 82, 78, 255))
 
 
 def draw_delivery_truck(draw, x, y, w, h, body=WHITE, accent=ORANGE, outline=NAVY):
@@ -123,7 +145,7 @@ def candidate_a():
     for y, length, alpha in [(342, 310, 255), (365, 260, 220), (390, 200, 140)]:
         d.rounded_rectangle((70, y, 70 + length, y + 7), radius=4, fill=(255, 87, 34, alpha))
     paste_center(im, logo_image(450, 160), 54)
-    draw_kei_van(d, 166, 314, 180, 92, body=(39, 49, 58, 255), accent=ORANGE, outline=(16, 22, 28, 255))
+    draw_kei_van(d, 157, 312, 198, 96, body=WHITE, accent=ORANGE, outline=(36, 42, 48, 255))
     return add_border(im)
 
 
@@ -135,7 +157,7 @@ def candidate_b():
     paste_center(im, logo_image(445, 150, shadow=True), 58)
     d.line((72, 365, 440, 315), fill=(255, 87, 34, 255), width=13)
     d.line((92, 398, 408, 358), fill=(255, 139, 90, 210), width=6)
-    draw_kei_van(d, 161, 316, 190, 90, body=(250, 250, 247, 255), accent=ORANGE, outline=(20, 25, 31, 255))
+    draw_kei_van(d, 153, 314, 204, 96, body=(250, 250, 247, 255), accent=ORANGE, outline=(20, 25, 31, 255))
     d.rounded_rectangle((18, 18, SIZE - 18, SIZE - 18), radius=72, outline=ORANGE, width=7)
     return im
 
@@ -147,7 +169,7 @@ def candidate_c():
     d.line((104, 354, 188, 318, 256, 368, 346, 318, 424, 356), fill=(255, 87, 34, 255), width=10, joint="curve")
     for p in [(104, 354), (256, 368), (424, 356)]:
         d.ellipse((p[0] - 10, p[1] - 10, p[0] + 10, p[1] + 10), fill=WHITE, outline=ORANGE, width=5)
-    draw_kei_van(d, 178, 307, 158, 78, body=WHITE, accent=ORANGE, outline=CHARCOAL)
+    draw_kei_van(d, 166, 306, 184, 88, body=WHITE, accent=ORANGE, outline=CHARCOAL)
     d.rounded_rectangle((69, 230, 443, 430), radius=48, outline=(230, 224, 213, 255), width=4)
     return add_border(im, fill=CHARCOAL)
 
@@ -160,7 +182,7 @@ def candidate_d():
     paste_center(im, logo_image(440, 150), 54)
     for x, h in [(92, 28), (126, 45), (162, 34), (348, 50), (388, 36)]:
         d.rounded_rectangle((x, 262 - h, x + 22, 262), radius=4, fill=(86, 93, 101, 90))
-    draw_kei_van(d, 169, 316, 174, 84, body=(24, 31, 39, 255), accent=ORANGE, outline=(14, 18, 23, 255))
+    draw_kei_van(d, 158, 314, 198, 94, body=WHITE, accent=ORANGE, outline=(20, 25, 31, 255))
     d.rounded_rectangle((18, 18, SIZE - 18, SIZE - 18), radius=72, outline=(255, 87, 34, 255), width=7)
     return im
 
