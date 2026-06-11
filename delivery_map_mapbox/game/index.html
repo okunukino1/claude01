@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#ff5722">
+<title>配達員検定 | RYS</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0d1117;
+    --ink-soft: #2a2f3a;
+    --paper: #f6f4ee;
+    --paper-soft: #ecead9;
+    --accent: #ff5722;
+    --accent-soft: #ffe0d6;
+    --good: #16a34a;
+    --danger: #d32f2f;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%; height: 100dvh;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Meiryo", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  #map { position: absolute; inset: 0; }
+
+  /* ===== 全画面スクリーン(タイトル・結果) ===== */
+  .screen {
+    position: absolute; inset: 0;
+    background: var(--paper);
+    z-index: 100;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: calc(20px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
+    display: none;
+  }
+  .screen.active { display: block; }
+  .screen-inner { max-width: 480px; margin: 0 auto; }
+
+  .game-logo { text-align: center; margin: 24px 0 6px; font-size: 54px; line-height: 1; }
+  h1.game-title {
+    text-align: center; margin: 0 0 4px;
+    font-size: 28px; font-weight: 800; letter-spacing: 0.08em;
+  }
+  .game-subtitle { text-align: center; color: var(--ink-soft); font-size: 13px; margin: 0 0 24px; }
+
+  .card {
+    background: #fff; border-radius: 14px;
+    box-shadow: 0 2px 10px rgba(13,17,23,0.10);
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  .card h2 { margin: 0 0 8px; font-size: 15px; }
+  .card p { margin: 6px 0; font-size: 13px; line-height: 1.7; color: var(--ink-soft); }
+
+  .btn {
+    display: block; width: 100%;
+    border: none; border-radius: 12px;
+    padding: 14px; margin: 10px 0;
+    font-size: 16px; font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    background: var(--paper-soft); color: var(--ink);
+  }
+  .btn.primary { background: var(--accent); color: #fff; box-shadow: 0 3px 10px rgba(255,87,34,0.35); }
+  .btn.ghost { background: transparent; border: 2px solid var(--ink-soft); }
+  .btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+  .btn:active:not(:disabled) { transform: scale(0.98); }
+
+  .best-line { text-align: center; font-size: 13px; color: var(--ink-soft); margin: 14px 0 4px; }
+  .footer-note { text-align: center; font-size: 10px; color: #9aa0a6; margin-top: 22px; line-height: 1.7; }
+  .footer-note a { color: inherit; }
+
+  /* ===== ステージ用HUD ===== */
+  .hud-top {
+    position: absolute; top: 0; left: 0; right: 0;
+    z-index: 60;
+    padding: calc(10px + env(safe-area-inset-top)) 12px 0;
+    pointer-events: none;
+    display: none;
+  }
+  .hud-top.active { display: block; }
+  .hud-card {
+    pointer-events: auto;
+    max-width: 480px; margin: 0 auto;
+    background: rgba(255,255,255,0.96);
+    border-radius: 14px;
+    box-shadow: 0 2px 12px rgba(13,17,23,0.18);
+    border-top: 3px solid var(--accent);
+    padding: 10px 14px;
+  }
+  .hud-card .q-no { font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: 0.06em; }
+  .hud-card .q-addr { font-size: 20px; font-weight: 800; margin: 2px 0; }
+  .hud-card .q-hint { font-size: 12px; color: var(--ink-soft); }
+
+  .hud-bottom {
+    position: absolute; left: 0; right: 0;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: 60;
+    padding: 0 12px;
+    display: none;
+  }
+  .hud-bottom.active { display: block; }
+  .hud-bottom .row { max-width: 480px; margin: 0 auto; display: flex; gap: 10px; }
+  .hud-bottom .btn { margin: 0; box-shadow: 0 3px 12px rgba(13,17,23,0.25); }
+
+  /* ===== 結果シート(ステージ内) ===== */
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    z-index: 80;
+    background: var(--paper);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -4px 18px rgba(13,17,23,0.30);
+    padding: 16px 18px calc(18px + env(safe-area-inset-bottom));
+    max-height: 62dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    display: none;
+  }
+  .sheet.active { display: block; }
+  .sheet-inner { max-width: 480px; margin: 0 auto; }
+  .sheet .result-headline { font-size: 22px; font-weight: 800; margin: 0 0 2px; }
+  .sheet .result-sub { font-size: 14px; color: var(--ink-soft); margin: 0 0 10px; }
+  .sheet .result-sub b { color: var(--accent); font-size: 18px; }
+
+  .trivia {
+    background: var(--accent-soft);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin: 10px 0;
+    font-size: 13px; line-height: 1.75;
+  }
+  .trivia .trivia-tag { font-size: 11px; font-weight: 800; color: var(--accent); display: block; margin-bottom: 2px; }
+
+  /* ===== 結果画面 ===== */
+  .rank-big { text-align: center; font-size: 56px; margin: 10px 0 0; line-height: 1; }
+  .rank-name { text-align: center; font-size: 26px; font-weight: 800; margin: 6px 0 0; }
+  .score-big { text-align: center; font-size: 16px; color: var(--ink-soft); margin: 4px 0 16px; }
+  .score-big b { font-size: 26px; color: var(--accent); }
+  .breakdown { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .breakdown td { padding: 6px 4px; border-bottom: 1px solid var(--paper-soft); }
+  .breakdown td:last-child { text-align: right; font-weight: 700; white-space: nowrap; }
+  .new-best { text-align: center; color: var(--good); font-weight: 800; font-size: 14px; margin: 6px 0; }
+
+  /* ===== マーカー ===== */
+  .mk { display: flex; align-items: center; justify-content: center; font-weight: 800; cursor: pointer; }
+  .mk-guess {
+    width: 30px; height: 30px; border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    background: var(--accent); border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(13,17,23,0.4);
+  }
+  .mk-guess::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+  .mk-answer { font-size: 30px; text-shadow: 0 1px 4px rgba(13,17,23,0.4); }
+  .mk-start {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: var(--ink); color: #fff; font-size: 16px;
+    border: 2px solid #fff; box-shadow: 0 2px 8px rgba(13,17,23,0.4);
+  }
+  .mk-dest {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: #fff; border: 3px solid var(--accent);
+    font-size: 17px; color: var(--accent);
+    box-shadow: 0 2px 8px rgba(13,17,23,0.4);
+    transition: transform 0.1s;
+  }
+  .mk-dest.numbered { background: var(--accent); color: #fff; font-size: 18px; }
+  .mk-dest:active { transform: scale(1.15); }
+
+  /* ===== ローディング ===== */
+  #loading {
+    position: absolute; inset: 0; z-index: 200;
+    background: rgba(246,244,238,0.92);
+    display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px;
+    text-align: center; padding: 0 30px;
+  }
+  #loading.active { display: flex; }
+  .spinner {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 4px solid var(--accent-soft); border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading-msg { font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+
+  #toast {
+    position: absolute; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 300;
+    background: var(--ink); color: #fff;
+    padding: 10px 18px; border-radius: 22px;
+    font-size: 13px; font-weight: 700;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s;
+    white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- タイトル画面 -->
+<div id="screen-title" class="screen active">
+  <div class="screen-inner">
+    <div class="game-logo">🚚</div>
+    <h1 class="game-title">配達員検定</h1>
+    <p class="game-subtitle">RYSの配達員になって、日本橋の街を駆けろ!</p>
+
+    <button id="btn-daily" class="btn primary">📅 デイリーチャレンジ</button>
+    <button id="btn-free" class="btn">🎲 フリープレイ</button>
+    <div class="best-line" id="best-line"></div>
+
+    <div class="card">
+      <h2>🎮 遊び方</h2>
+      <p><b>ステージ1: 住所ピン当て(5問)</b><br>
+        実在の住所が出題されます。地図をタップして「ここだ!」と思う場所にピンを刺そう。正解に近いほど高得点。</p>
+      <p><b>ステージ2: ルート組み立て</b><br>
+        当てた5つの配達先を、お店から最短で回る順番を考えよう。AIが計算した最適ルートと勝負!</p>
+      <p><b>段位認定</b><br>
+        総合スコアで「見習い → 配達士 → 達人 → 伝説の配達員」の段位を認定。デイリーチャレンジは毎日全員に同じ問題が出ます。</p>
+    </div>
+
+    <div class="card">
+      <h2>📚 遊ぶと身につくこと</h2>
+      <p>日本独特の住所のしくみ(丁目・番・号)、日本橋エリアの地理、そして配送の現場で実際に使われている「ルート最適化」の考え方が、遊びながら自然に学べます。</p>
+    </div>
+
+    <p class="footer-note">
+      地図: 国土地理院(淡色地図) / 住所データ: <a href="https://geolonia.github.io/japanese-addresses/" target="_blank" rel="noopener">Geolonia 住所データ</a>・デジタル庁 アドレス・ベース・レジストリ<br>
+      © RYS
+    </p>
+  </div>
+</div>
+
+<!-- ステージ1 HUD -->
+<div id="hud-stage1" class="hud-top">
+  <div class="hud-card">
+    <div class="q-no" id="s1-qno">Q1 / 5</div>
+    <div class="q-addr" id="s1-addr"></div>
+    <div class="q-hint">地図をタップしてピンを刺そう</div>
+  </div>
+</div>
+<div id="hud-stage1-actions" class="hud-bottom">
+  <div class="row">
+    <button id="btn-s1-confirm" class="btn primary" disabled>📍 ここに配達!</button>
+  </div>
+</div>
+
+<!-- ステージ1 問題結果シート -->
+<div id="sheet-s1" class="sheet">
+  <div class="sheet-inner">
+    <p class="result-headline" id="s1r-headline"></p>
+    <p class="result-sub" id="s1r-sub"></p>
+    <div class="trivia"><span class="trivia-tag">📚 配達員のまめ知識</span><span id="s1r-trivia"></span></div>
+    <button id="btn-s1-next" class="btn primary"></button>
+  </div>
+</div>
+
+<!-- ステージ2 HUD -->
+<div id="hud-stage2" class="hud-top">
+  <div class="hud-card">
+    <div class="q-no">ステージ2: ルート組み立て</div>
+    <div class="q-addr" style="font-size:15px;" id="s2-status">お店 🏪 から5件を回る順番にタップ!</div>
+    <div class="q-hint">荷物ピン 📦 を配達する順にタップ(最後のピンはもう一度タップで取り消し)</div>
+  </div>
+</div>
+<div id="hud-stage2-actions" class="hud-bottom">
+  <div class="row">
+    <button id="btn-s2-reset" class="btn" style="flex:1;">やり直し</button>
+    <button id="btn-s2-confirm" class="btn primary" style="flex:2;" disabled>🚚 出発!</button>
+  </div>
+</div>
+
+<!-- ステージ2 結果シート -->
+<div id="sheet-s2" class="sheet">
+  <div class="sheet-inner">
+    <p class="result-headline" id="s2r-headline"></p>
+    <p class="result-sub" id="s2r-sub"></p>
+    <div class="trivia"><span class="trivia-tag">📚 配達員のまめ知識</span><span id="s2r-trivia"></span></div>
+    <button id="btn-s2-result" class="btn primary">🏅 検定結果を見る</button>
+  </div>
+</div>
+
+<!-- 結果画面 -->
+<div id="screen-result" class="screen">
+  <div class="screen-inner">
+    <div class="rank-big" id="r-emoji"></div>
+    <div class="rank-name" id="r-rank"></div>
+    <p class="score-big">総合スコア <b id="r-score"></b> / 1000点</p>
+    <div class="new-best" id="r-newbest" style="display:none;">🎉 自己ベスト更新!</div>
+    <div class="card">
+      <table class="breakdown" id="r-table"></table>
+    </div>
+    <button id="btn-share" class="btn primary">📋 結果をコピーして自慢する</button>
+    <button id="btn-again" class="btn">🎲 フリープレイでもう一回</button>
+    <button id="btn-title" class="btn ghost">タイトルへ戻る</button>
+    <p class="footer-note">スコアの計算は直線距離です。実際の配達は道路に沿って走ります🚚</p>
+  </div>
+</div>
+
+<div id="loading"><div class="spinner"></div><div id="loading-msg">読み込み中...</div></div>
+<div id="toast"></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+'use strict';
+
+/* ===================== 定数 ===================== */
+
+const GSI_TILE_URL = 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png';
+const MAP_CENTER = [139.784, 35.687];   // 日本橋エリア(小舟町〜浜町の中間)
+const MAP_ZOOM = 15;
+const MAP_MAX_ZOOM = 17;                // 号レベルの読み取り防止
+const QUESTION_COUNT = 5;
+
+// 住所データ(questions.json が無い場合のライブ取得設定。業務アプリと同じAPI)
+const ADDR_API_BASE = 'https://japanese-addresses-v2.geoloniamaps.com/api/ja';
+const ADDR_PREF = '東京都';
+const ADDR_CITY = '中央区';
+const TARGET_OAZA = [
+  '日本橋小舟町', '日本橋小網町', '日本橋人形町', '日本橋堀留町',
+  '日本橋富沢町', '日本橋久松町', '日本橋浜町', '日本橋蛎殻町',
+  '日本橋大伝馬町', '日本橋小伝馬町', '日本橋横山町', '日本橋中洲', '東日本橋',
+];
+const AREA_CENTER = { lng: 139.778364, lat: 35.686672 };  // 日本橋小舟町の中心
+const MAX_DIST_FROM_CENTER_M = 2500;
+const START_FALLBACK = { name: 'RYS 小舟町店', addr: '日本橋小舟町8-6', lng: AREA_CENTER.lng, lat: AREA_CENTER.lat };
+
+// ステージ1採点: [誤差上限m, 得点]
+const SCORE_TABLE = [[50, 100], [100, 70], [200, 40], [400, 10]];
+const PTS_EMOJI = { 100: '🟩', 70: '🟨', 40: '🟧', 10: '🟥', 0: '⬜' };
+
+// 段位(総合1000点満点)
+const RANKS = [
+  { min: 900, name: '伝説の配達員', emoji: '🏆' },
+  { min: 700, name: '達人', emoji: '🥇' },
+  { min: 450, name: '配達士', emoji: '🥈' },
+  { min: 0,   name: '見習い', emoji: '🔰' },
+];
+
+const TRIVIA = [
+  '日本の住所は「街区方式」。「2丁目8-6」は「2丁目の8番街区(ブロック)の6号」という意味で、道路名ではなくブロック単位で場所が決まります。これは世界でも少数派のしくみです。',
+  '「号」は街区の周囲を一定間隔(多くは10〜15m)で区切り、角から順に時計回りに振られます。だから「8-6」の隣が必ず「8-7」とは限らないのが配達員泣かせ。',
+  'ふだん使う住所(住居表示)とは別に、土地の登記には「地番」という別の番号があります。同じ場所に2種類の番号があるのです。',
+  '今の「番・号」方式は1962年(昭和37年)の「住居表示に関する法律」で生まれました。それまでは地番が住所代わりで、順番がバラバラ。配達は今よりずっと大変でした。',
+  '日本橋小舟町は、江戸時代に日本橋川の舟運で栄えた町。小舟が集まる河岸(かし)があったことが町名の由来とされます。',
+  '日本橋浜町は隅田川沿いの「浜」に由来する町名。明治座があることでも有名で、芝居見物の人で賑わってきました。',
+  '日本橋人形町は、江戸時代に人形浄瑠璃の人形師たちが多く住んだことが名前の由来。甘酒横丁など下町情緒が今も残ります。',
+  '中央区には「日本橋○○町」を冠する町が20以上残っています。江戸以来の歴史ある町名が今も現役で使われている貴重なエリアです。',
+  '同じ日本でも京都市内は街区方式ではなく「通り名方式」。「御池通烏丸東入ル」のように交差点からの方向で場所を表します。',
+  'ベテラン配達員は街区の「角の号」を覚えておき、番地から建物のだいたいの位置を頭の中で逆算します。このゲームはまさにその訓練です。',
+];
+
+const TSP_TRIVIA = '配達先を最短で回る順番を求める問題は「巡回セールスマン問題」と呼ばれる有名な難問。訪問先が増えると組み合わせが爆発的に増え、10件なら約36万通り、15件なら約870億通りにもなります。実際の配送現場では、コンピュータが近似アルゴリズムで一瞬にして良いルートを計算しています。RYSの配送でも同じ技術が活躍中!';
+
+const LS_BEST = 'rys_game_best';
+const LS_DAILY_PREFIX = 'rys_game_daily_';
+const LS_ADDR_CACHE = 'rys_game_addr_v1';
+
+/* ===================== ユーティリティ ===================== */
+
+const $ = id => document.getElementById(id);
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function distanceMeters(a, b) {
+  const toRad = deg => deg * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const h = sinLat * sinLat + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLng * sinLng;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function formatDist(m) {
+  return m >= 1000 ? (m / 1000).toFixed(2) + 'km' : Math.round(m) + 'm';
+}
+
+// シード付きPRNG(デイリーチャレンジの決定性のため)
+function xmur3(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h ^= h >>> 16) >>> 0;
+  };
+}
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function seededShuffle(arr, rand) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function jstDateStr() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+function showLoading(msg) { $('loading-msg').textContent = msg; $('loading').classList.add('active'); }
+function hideLoading() { $('loading').classList.remove('active'); }
+
+function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+function lsSet(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+
+/* ===================== 住所データ読み込み ===================== */
+
+// 1) 同梱 questions.json → 2) localStorageキャッシュ → 3) Geolonia APIライブ取得
+let addrData = null;  // { version, start, addresses: [{a, l, lng, lat}] }
+
+async function loadAddressData() {
+  if (addrData) return addrData;
+
+  try {
+    const res = await fetch('questions.json', { cache: 'no-cache' });
+    if (res.ok) {
+      const json = await res.json();
+      if (json && Array.isArray(json.addresses) && json.addresses.length >= QUESTION_COUNT * 3) {
+        addrData = json;
+        return addrData;
+      }
+    }
+  } catch (e) {}
+
+  const cached = lsGet(LS_ADDR_CACHE);
+  if (cached) {
+    try {
+      const json = JSON.parse(cached);
+      if (json && Array.isArray(json.addresses) && json.addresses.length >= QUESTION_COUNT * 3) {
+        addrData = json;
+        return addrData;
+      }
+    } catch (e) {}
+  }
+
+  showLoading('住所データを取得中...');
+  const live = await fetchLiveAddressData((c, t) => {
+    $('loading-msg').textContent = `住所データを取得中... ${c}/${t} エリア`;
+  });
+  hideLoading();
+  addrData = live;
+  lsSet(LS_ADDR_CACHE, JSON.stringify(live));
+  return addrData;
+}
+
+async function fetchLiveAddressData(onProgress) {
+  const baseUrl = `${ADDR_API_BASE}/${encodeURIComponent(ADDR_PREF)}/${encodeURIComponent(ADDR_CITY)}`;
+  const cityRes = await fetch(`${baseUrl}.json`);
+  if (!cityRes.ok) throw new Error(`住所データ取得失敗 (HTTP ${cityRes.status})`);
+  const cityJson = await cityRes.json();
+
+  const ranges = (cityJson.data || [])
+    .filter(m => m.rsdt && m.csv_ranges && m.csv_ranges['住居表示'])
+    .map(m => ({
+      machiazaName: (m.oaza_cho || '') + (m.chome || ''),
+      start: m.csv_ranges['住居表示'].start,
+      length: m.csv_ranges['住居表示'].length,
+    }))
+    .filter(r => TARGET_OAZA.some(o => r.machiazaName.startsWith(o)));
+  if (!ranges.length) throw new Error('対象エリアの住所データがありません');
+
+  const txtUrl = `${baseUrl}-住居表示.txt`;
+  const points = [];
+  let completed = 0;
+  let nextIdx = 0;
+  async function worker() {
+    while (nextIdx < ranges.length) {
+      const r = ranges[nextIdx++];
+      try {
+        const res = await fetch(txtUrl, {
+          headers: { Range: `bytes=${r.start}-${r.start + r.length - 1}` },
+        });
+        if (res.ok || res.status === 206) parseAddrSection(await res.text(), r.machiazaName, points);
+      } catch (e) {}
+      completed++;
+      if (onProgress) onProgress(completed, ranges.length);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(6, ranges.length) }, () => worker()));
+  if (points.length < QUESTION_COUNT * 3) throw new Error('住所データが取得できませんでした');
+
+  const seen = new Set();
+  const addresses = points.filter(p => {
+    const key = `${p.a}|${p.l}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return distanceMeters(p, AREA_CENTER) <= MAX_DIST_FROM_CENTER_M;
+  });
+  // 正規ソート: 同じ日に取得した全員が同じ並び→同じデイリー問題になる
+  addresses.sort((x, y) => (x.a + x.l).localeCompare(y.a + y.l, 'ja'));
+
+  const startHit = addresses.find(p => p.a === '日本橋小舟町' && p.l === '8-6');
+  const start = startHit
+    ? { name: START_FALLBACK.name, addr: START_FALLBACK.addr, lng: startHit.lng, lat: startHit.lat }
+    : { ...START_FALLBACK };
+
+  return { version: 0, start, addresses };
+}
+
+// 業務アプリ(index.html)と同じ住居表示CSVのパース
+function parseAddrSection(text, machiazaName, out) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 3) return;
+  const cols = lines[1].split(',').map(s => s.trim());
+  const idx = n => cols.indexOf(n);
+  const iBlk = idx('blk_num');
+  const iRsdt = idx('rsdt_num');
+  const iRsdt2 = idx('rsdt_num2');
+  const iLng = idx('lng');
+  const iLat = idx('lat');
+  if (iBlk < 0 || iLng < 0 || iLat < 0) return;
+  for (let i = 2; i < lines.length; i++) {
+    const v = lines[i].split(',');
+    const n1 = (v[iBlk] || '').trim();
+    const n2 = (v[iRsdt] || '').trim();
+    const n3 = (v[iRsdt2] || '').trim();
+    const lng = parseFloat(v[iLng]);
+    const lat = parseFloat(v[iLat]);
+    if (!isFinite(lng) || !isFinite(lat) || !n1) continue;
+    let label = n1;
+    if (n2) label += '-' + n2;
+    if (n3) label += '-' + n3;
+    out.push({ a: machiazaName, l: label, lng, lat });
+  }
+}
+
+/* ===================== 出題選択 ===================== */
+
+function pickQuestions(data, seedStr) {
+  const rand = mulberry32(xmur3(seedStr)());
+  const indices = seededShuffle(data.addresses.map((_, i) => i), rand);
+  const picked = [];
+  const usedMachiaza = new Set();
+  for (const i of indices) {
+    const p = data.addresses[i];
+    if (usedMachiaza.has(p.a)) continue;
+    usedMachiaza.add(p.a);
+    picked.push(p);
+    if (picked.length >= QUESTION_COUNT) break;
+  }
+  // 町丁目が足りない場合は重複を許して埋める
+  for (const i of indices) {
+    if (picked.length >= QUESTION_COUNT) break;
+    const p = data.addresses[i];
+    if (!picked.includes(p)) picked.push(p);
+  }
+  return picked;
+}
+
+/* ===================== 地図 ===================== */
+
+let map = null;
+let mapReady = false;
+
+function initMap() {
+  map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      sources: {
+        gsi: {
+          type: 'raster',
+          tiles: [GSI_TILE_URL],
+          tileSize: 256,
+          maxzoom: 18,
+          attribution: '地理院タイル(淡色地図) | 住所データ: Geolonia / アドレス・ベース・レジストリ',
+        },
+      },
+      layers: [{ id: 'gsi', type: 'raster', source: 'gsi' }],
+    },
+    center: MAP_CENTER,
+    zoom: MAP_ZOOM,
+    maxZoom: MAP_MAX_ZOOM,
+    attributionControl: { compact: true },
+  });
+  map.on('load', () => {
+    for (const id of ['guess-line', 'player-route', 'optimal-route']) {
+      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+    map.addLayer({
+      id: 'guess-line', type: 'line', source: 'guess-line',
+      paint: { 'line-color': '#2a2f3a', 'line-width': 2.5, 'line-dasharray': [2, 2] },
+    });
+    map.addLayer({
+      id: 'optimal-route', type: 'line', source: 'optimal-route',
+      paint: { 'line-color': '#16a34a', 'line-width': 4, 'line-dasharray': [2, 1.5], 'line-opacity': 0.9 },
+    });
+    map.addLayer({
+      id: 'player-route', type: 'line', source: 'player-route',
+      paint: { 'line-color': '#ff5722', 'line-width': 4, 'line-opacity': 0.85 },
+    });
+    mapReady = true;
+  });
+}
+
+function setLine(sourceId, coords) {
+  if (!mapReady) return;
+  map.getSource(sourceId).setData(coords.length >= 2
+    ? { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } }
+    : { type: 'FeatureCollection', features: [] });
+}
+
+function fitBoundsSafe(bounds, padding) {
+  // 画面が極端に小さいとpaddingがキャンバスを超えてエラーになるため抑制する
+  try {
+    map.fitBounds(bounds, { padding, maxZoom: MAP_MAX_ZOOM, duration: 600 });
+  } catch (e) {
+    map.fitBounds(bounds, { padding: 20, maxZoom: MAP_MAX_ZOOM, duration: 600 });
+  }
+}
+
+function makeMarker(className, html, lngLat) {
+  const el = document.createElement('div');
+  el.className = 'mk ' + className;
+  if (html) el.innerHTML = html;
+  return new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
+}
+
+/* ===================== ゲーム状態 ===================== */
+
+const state = {
+  mode: null,        // 'daily' | 'free'
+  dateStr: '',
+  questions: [],
+  qIndex: 0,
+  results: [],       // {dist, pts}
+  s2: { order: [], playerDist: 0, optDist: 0, score: 0 },
+};
+
+let guessMarker = null;
+let answerMarker = null;
+let s2Markers = [];   // {marker, el, idx}
+let startMarker = null;
+
+function clearStageMarkers() {
+  if (guessMarker) { guessMarker.remove(); guessMarker = null; }
+  if (answerMarker) { answerMarker.remove(); answerMarker = null; }
+  for (const m of s2Markers) m.marker.remove();
+  s2Markers = [];
+  if (startMarker) { startMarker.remove(); startMarker = null; }
+  setLine('guess-line', []);
+  setLine('player-route', []);
+  setLine('optimal-route', []);
+}
+
+function show(id, on) { $(id).classList.toggle('active', on); }
+
+function showScreens(ids) {
+  for (const id of ['screen-title', 'screen-result', 'hud-stage1', 'hud-stage1-actions',
+    'sheet-s1', 'hud-stage2', 'hud-stage2-actions', 'sheet-s2']) {
+    show(id, ids.includes(id));
+  }
+}
+
+/* ===================== ステージ1 ===================== */
+
+async function startGame(mode) {
+  let data;
+  try {
+    data = await loadAddressData();
+  } catch (e) {
+    hideLoading();
+    showToast('データ取得に失敗しました: ' + e.message);
+    return;
+  }
+
+  state.mode = mode;
+  state.dateStr = jstDateStr();
+
+  if (mode === 'daily') {
+    const saved = lsGet(LS_DAILY_PREFIX + state.dateStr);
+    if (saved) {
+      try {
+        showResultScreen(JSON.parse(saved), true);
+        return;
+      } catch (e) {}
+    }
+  }
+
+  const seedStr = mode === 'daily'
+    ? `rys-kentei-v${data.version}-${state.dateStr}`
+    : `free-${Date.now()}-${Math.random()}`;
+  state.questions = pickQuestions(data, seedStr);
+  state.qIndex = 0;
+  state.results = [];
+  state.s2 = { order: [], playerDist: 0, optDist: 0, score: 0 };
+
+  clearStageMarkers();
+  showScreens(['hud-stage1', 'hud-stage1-actions']);
+  map.jumpTo({ center: MAP_CENTER, zoom: MAP_ZOOM });
+  showQuestion();
+}
+
+function showQuestion() {
+  const q = state.questions[state.qIndex];
+  $('s1-qno').textContent = `Q${state.qIndex + 1} / ${QUESTION_COUNT}`;
+  $('s1-addr').textContent = `${q.a} ${q.l}`;
+  $('btn-s1-confirm').disabled = true;
+  if (guessMarker) { guessMarker.remove(); guessMarker = null; }
+  if (answerMarker) { answerMarker.remove(); answerMarker = null; }
+  setLine('guess-line', []);
+}
+
+function onMapClick(e) {
+  // ステージ1のピン刺しモード中のみ反応
+  if (!$('hud-stage1').classList.contains('active') || $('sheet-s1').classList.contains('active')) return;
+  if (guessMarker) guessMarker.setLngLat(e.lngLat);
+  else guessMarker = makeMarker('mk-guess', '', e.lngLat);
+  $('btn-s1-confirm').disabled = false;
+}
+
+function scoreForDist(dist) {
+  for (const [limit, pts] of SCORE_TABLE) if (dist <= limit) return pts;
+  return 0;
+}
+
+function confirmGuess() {
+  const q = state.questions[state.qIndex];
+  const g = guessMarker.getLngLat();
+  const dist = distanceMeters({ lng: g.lng, lat: g.lat }, q);
+  const pts = scoreForDist(dist);
+  state.results.push({ dist, pts });
+
+  answerMarker = makeMarker('mk-answer', '🏠', [q.lng, q.lat]);
+  setLine('guess-line', [[g.lng, g.lat], [q.lng, q.lat]]);
+  fitBoundsSafe([[Math.min(g.lng, q.lng), Math.min(g.lat, q.lat)], [Math.max(g.lng, q.lng), Math.max(g.lat, q.lat)]],
+    { top: 140, bottom: Math.round(window.innerHeight * 0.5), left: 50, right: 50 });
+
+  const headline = pts === 100 ? '🎯 お見事!' : pts >= 70 ? '✨ おしい!' : pts >= 40 ? '👍 まずまず' : pts >= 10 ? '💦 もう少し!' : '🗺 大はずれ…';
+  $('s1r-headline').textContent = headline;
+  $('s1r-sub').innerHTML = `誤差 <b>${escapeHtml(formatDist(dist))}</b> ${PTS_EMOJI[pts]} <b>+${pts}点</b>`;
+  $('s1r-trivia').textContent = TRIVIA[(xmur3(state.dateStr + state.qIndex)() % TRIVIA.length + state.qIndex) % TRIVIA.length];
+  $('btn-s1-next').textContent = state.qIndex + 1 < QUESTION_COUNT ? '次の配達へ ▶' : '🚚 ステージ2: ルート組み立てへ';
+  show('hud-stage1-actions', false);
+  show('sheet-s1', true);
+}
+
+function nextQuestion() {
+  show('sheet-s1', false);
+  state.qIndex++;
+  if (state.qIndex < QUESTION_COUNT) {
+    show('hud-stage1-actions', true);
+    map.flyTo({ center: MAP_CENTER, zoom: MAP_ZOOM, duration: 500 });
+    showQuestion();
+  } else {
+    startStage2();
+  }
+}
+
+/* ===================== ステージ2 ===================== */
+
+function startStage2() {
+  clearStageMarkers();
+  showScreens(['hud-stage2', 'hud-stage2-actions']);
+
+  const start = addrData.start;
+  startMarker = makeMarker('mk-start', '🏪', [start.lng, start.lat]);
+
+  state.questions.forEach((q, idx) => {
+    const marker = makeMarker('mk-dest', '📦', [q.lng, q.lat]);
+    const rec = { marker, el: marker.getElement(), idx };
+    rec.el.addEventListener('click', ev => { ev.stopPropagation(); onDestTap(rec); });
+    s2Markers.push(rec);
+  });
+
+  const lngs = [start.lng, ...state.questions.map(q => q.lng)];
+  const lats = [start.lat, ...state.questions.map(q => q.lat)];
+  fitBoundsSafe([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+    { top: 150, bottom: 110, left: 50, right: 50 });
+
+  updateStage2Ui();
+}
+
+function onDestTap(rec) {
+  const order = state.s2.order;
+  const pos = order.indexOf(rec.idx);
+  if (pos >= 0) {
+    if (pos === order.length - 1) order.pop();  // 最後のピンのみ取り消し可
+    else { showToast('途中のピンは外せません(やり直しを使ってね)'); return; }
+  } else {
+    if (order.length >= QUESTION_COUNT) return;
+    order.push(rec.idx);
+  }
+  updateStage2Ui();
+}
+
+function updateStage2Ui() {
+  const order = state.s2.order;
+  for (const rec of s2Markers) {
+    const pos = order.indexOf(rec.idx);
+    rec.el.classList.toggle('numbered', pos >= 0);
+    rec.el.textContent = pos >= 0 ? String(pos + 1) : '📦';
+  }
+  const start = addrData.start;
+  setLine('player-route', [[start.lng, start.lat], ...order.map(i => [state.questions[i].lng, state.questions[i].lat])]);
+  $('s2-status').textContent = order.length >= QUESTION_COUNT
+    ? '順番が決まった!「出発!」を押そう'
+    : `お店 🏪 から回る順にタップ! (${order.length} / ${QUESTION_COUNT})`;
+  $('btn-s2-confirm').disabled = order.length < QUESTION_COUNT;
+}
+
+function routeDist(orderIdxs) {
+  const start = addrData.start;
+  let total = 0;
+  let prev = start;
+  for (const i of orderIdxs) {
+    total += distanceMeters(prev, state.questions[i]);
+    prev = state.questions[i];
+  }
+  return total;
+}
+
+function permutations(arr) {
+  if (arr.length <= 1) return [arr];
+  const out = [];
+  for (let i = 0; i < arr.length; i++) {
+    const rest = arr.slice(0, i).concat(arr.slice(i + 1));
+    for (const p of permutations(rest)) out.push([arr[i], ...p]);
+  }
+  return out;
+}
+
+function confirmRoute() {
+  const playerDist = routeDist(state.s2.order);
+  let optDist = Infinity;
+  let optOrder = null;
+  for (const perm of permutations(Array.from({ length: QUESTION_COUNT }, (_, i) => i))) {
+    const d = routeDist(perm);
+    if (d < optDist) { optDist = d; optOrder = perm; }
+  }
+  const score = Math.min(500, Math.round(500 * optDist / Math.max(playerDist, 1)));
+  state.s2.playerDist = playerDist;
+  state.s2.optDist = optDist;
+  state.s2.score = score;
+
+  const start = addrData.start;
+  setLine('optimal-route', [[start.lng, start.lat], ...optOrder.map(i => [state.questions[i].lng, state.questions[i].lat])]);
+
+  const eff = Math.round(100 * optDist / Math.max(playerDist, 1));
+  const headline = eff >= 100 ? '🏆 最適ルートと一致!' : eff >= 90 ? '🚀 ほぼ完璧なルート!' : eff >= 75 ? '🚚 なかなかのルート!' : '🐢 遠回りしちゃった…';
+  $('s2r-headline').textContent = headline;
+  $('s2r-sub').innerHTML =
+    `あなた: <b>${escapeHtml(formatDist(playerDist))}</b> / AIの最適ルート(緑の点線): ${escapeHtml(formatDist(optDist))}<br>` +
+    `ルート効率 <b>${eff}%</b> → <b>+${score}点</b>(500点満点)`;
+  $('s2r-trivia').textContent = TSP_TRIVIA;
+  show('hud-stage2-actions', false);
+  show('sheet-s2', true);
+}
+
+function resetRoute() {
+  state.s2.order = [];
+  setLine('optimal-route', []);
+  updateStage2Ui();
+}
+
+/* ===================== 結果画面 ===================== */
+
+function buildRecord() {
+  const s1Total = state.results.reduce((s, r) => s + r.pts, 0);
+  const total = s1Total + state.s2.score;
+  const rank = RANKS.find(r => total >= r.min);
+  const eff = Math.round(100 * state.s2.optDist / Math.max(state.s2.playerDist, 1));
+  const ver = addrData ? addrData.version : 0;
+  const pinLine = state.results.map(r => PTS_EMOJI[r.pts]).join('');
+  const modeLabel = state.mode === 'daily' ? `デイリー ${state.dateStr}` : 'フリープレイ';
+  const share = `🚚配達員検定 ${modeLabel}\n📍${pinLine}\n🛣ルート効率 ${eff}%\n${rank.emoji}段位: ${rank.name} (${total}点/1000点)\n#RYS配達員検定 v${ver}`;
+  return {
+    mode: state.mode,
+    date: state.dateStr,
+    total,
+    rank: rank.name,
+    emoji: rank.emoji,
+    eff,
+    share,
+    qs: state.questions.map((q, i) => ({ addr: `${q.a} ${q.l}`, dist: Math.round(state.results[i].dist), pts: state.results[i].pts })),
+    s2: { score: state.s2.score, player: Math.round(state.s2.playerDist), opt: Math.round(state.s2.optDist) },
+  };
+}
+
+function finishGame() {
+  const record = buildRecord();
+
+  let newBest = false;
+  const best = parseInt(lsGet(LS_BEST) || '0', 10);
+  if (record.total > best) { lsSet(LS_BEST, String(record.total)); newBest = true; }
+  if (state.mode === 'daily') lsSet(LS_DAILY_PREFIX + state.dateStr, JSON.stringify(record));
+
+  showResultScreen(record, false, newBest);
+}
+
+function showResultScreen(record, isReplayView, newBest) {
+  clearStageMarkers();
+  showScreens([]);
+
+  $('r-emoji').textContent = record.emoji;
+  $('r-rank').textContent = record.rank;
+  $('r-score').textContent = record.total;
+  $('r-newbest').style.display = newBest ? 'block' : 'none';
+
+  let rows = '';
+  record.qs.forEach((q, i) => {
+    rows += `<tr><td>Q${i + 1} ${escapeHtml(q.addr)}</td><td>誤差${escapeHtml(formatDist(q.dist))} ${PTS_EMOJI[q.pts]} ${q.pts}点</td></tr>`;
+  });
+  rows += `<tr><td>🚚 ルート組み立て(効率${record.eff}%)</td><td>${record.s2.score}点</td></tr>`;
+  if (isReplayView) {
+    rows += `<tr><td colspan="2" style="text-align:center;color:#9aa0a6;">本日のデイリーはプレイ済みです。明日また挑戦してね!</td></tr>`;
+  }
+  $('r-table').innerHTML = rows;
+
+  $('btn-share').onclick = () => copyShareText(record.share);
+  show('screen-result', true);
+}
+
+function copyShareText(text) {
+  const done = () => showToast('結果をコピーしました!SNSでシェアしよう📣');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text) && done());
+  } else if (fallbackCopy(text)) {
+    done();
+  } else {
+    showToast('コピーできませんでした');
+  }
+}
+
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) { return false; }
+}
+
+/* ===================== 初期化 ===================== */
+
+function updateBestLine() {
+  const best = parseInt(lsGet(LS_BEST) || '0', 10);
+  $('best-line').textContent = best > 0 ? `🏅 自己ベスト: ${best}点` : 'はじめての方は「遊び方」を読んでね';
+}
+
+function goTitle() {
+  clearStageMarkers();
+  showScreens(['screen-title']);
+  updateBestLine();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initMap();
+  map.on('click', onMapClick);
+
+  $('btn-daily').addEventListener('click', () => startGame('daily'));
+  $('btn-free').addEventListener('click', () => startGame('free'));
+  $('btn-s1-confirm').addEventListener('click', confirmGuess);
+  $('btn-s1-next').addEventListener('click', nextQuestion);
+  $('btn-s2-reset').addEventListener('click', resetRoute);
+  $('btn-s2-confirm').addEventListener('click', confirmRoute);
+  $('btn-s2-result').addEventListener('click', () => { show('sheet-s2', false); finishGame(); });
+  $('btn-again').addEventListener('click', () => startGame('free'));
+  $('btn-title').addEventListener('click', goTitle);
+
+  updateBestLine();
+});
+</script>
+</body>
+</html>

@@ -37,6 +37,7 @@ jobs:
             **/.git*
             **/node_modules/**
             **/data/private/*.json
+            **/game/tools/**
             **/vendor/**/.github/**
             **/vendor/**/docs/**
             **/vendor/**/test/**
