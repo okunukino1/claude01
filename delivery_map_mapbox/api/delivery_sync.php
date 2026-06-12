@@ -65,7 +65,7 @@ function ensure_sync_table($pdo, $table) {
   $pdo->exec("
     CREATE TABLE IF NOT EXISTS `{$table}` (
       `room_code`  CHAR(64)     NOT NULL,
-      `payload`    MEDIUMTEXT   NOT NULL DEFAULT '',
+      `payload`    MEDIUMTEXT   NOT NULL,
       `device_id`  VARCHAR(64)  NOT NULL DEFAULT '',
       `updated_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
                                 ON UPDATE CURRENT_TIMESTAMP,

@@ -1331,7 +1331,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.6';
+const APP_VERSION = 'v2026.06.12-test.7';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1445,6 +1445,7 @@ let deliverySyncTimer = null;
 let deliverySyncPushTimer = null;
 let deliverySyncInFlight = false;
 let deliverySyncLastServerAt = '';
+let deliverySyncLastError = '';
 let deliverySyncLastPushedAt = '';
 let pickupPendingRetryInFlight = false;
 let pickupLastSyncedAt = null;
@@ -2571,9 +2572,9 @@ function addOptimizedRouteLayer() {
     slot: 'top',
     layout: { 'line-join': 'round', 'line-cap': 'round' },
     paint: {
-      'line-color': '#93c5fd',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2, 16, 3, 19, 5],
-      'line-opacity': 0.65
+      'line-color': '#2563eb',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3, 16, 5, 19, 7],
+      'line-opacity': 0.8
     }
   };
   try {
@@ -3838,6 +3839,7 @@ async function toggleEditedItemDone() {
   d.completedAt = d.completed ? Date.now() : null;
   d.completedBy = d.completed ? operatorName : '';
   d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
+  d.updatedAt = Date.now();
   if (d.completed && activeDeliveryId === editingItemId) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
@@ -3846,6 +3848,7 @@ async function toggleEditedItemDone() {
   editingItemId = null;
   showToast(d.completed ? '完了にしました' : '未完了に戻しました');
   syncPickupProgress(d, operatorName);
+  if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
 }
 
 async function reGeocodeEditedItem() {
@@ -5047,6 +5050,12 @@ function updateDeliverySyncStatusUI() {
   const lastAtEl = $('delivery-sync-last-at');
   if (!statusEl) return;
   if (deliverySyncEnabled) {
+    if (deliverySyncLastError) {
+      statusEl.textContent = `同期エラー: ${deliverySyncLastError}`;
+      statusEl.className = 'delivery-sync-status disconnected';
+      lastAtEl.textContent = '';
+      return;
+    }
     statusEl.textContent = `接続中 (コード設定済み)`;
     statusEl.className = 'delivery-sync-status connected';
     if (deliverySyncLastServerAt) {
@@ -5102,15 +5111,23 @@ async function pushDeliverySync() {
         payload
       })
     });
-    if (!resp.ok) return;
-    const data = await resp.json();
-    if (data.ok && data.updated_at) {
+    let data = null;
+    try { data = await resp.json(); } catch (e) {}
+    if (!resp.ok || !data || !data.ok) {
+      deliverySyncLastError = (data && (data.detail || data.error)) || `HTTP ${resp.status}`;
+      updateDeliverySyncStatusUI();
+      return;
+    }
+    deliverySyncLastError = '';
+    if (data.updated_at) {
       deliverySyncLastPushedAt = data.updated_at;
       deliverySyncLastServerAt = data.updated_at;
-      updateDeliverySyncStatusUI();
     }
+    updateDeliverySyncStatusUI();
   } catch (e) {
     console.warn('delivery sync push failed', e);
+    deliverySyncLastError = '通信エラー';
+    updateDeliverySyncStatusUI();
   } finally {
     deliverySyncInFlight = false;
   }
@@ -5129,9 +5146,18 @@ async function pullDeliverySync() {
         device_id: deliverySyncDeviceId
       })
     });
-    if (!resp.ok) return;
-    const data = await resp.json();
-    if (!data.ok || !data.found) return;
+    let data = null;
+    try { data = await resp.json(); } catch (e) {}
+    if (!resp.ok || !data || !data.ok) {
+      deliverySyncLastError = (data && (data.detail || data.error)) || `HTTP ${resp.status}`;
+      updateDeliverySyncStatusUI();
+      return;
+    }
+    if (deliverySyncLastError) {
+      deliverySyncLastError = '';
+      updateDeliverySyncStatusUI();
+    }
+    if (!data.found) return;
 
     const serverAt = data.updated_at;
     if (serverAt === deliverySyncLastServerAt) return;
@@ -5188,6 +5214,7 @@ function connectDeliverySync() {
   deliverySyncEnabled = true;
   deliverySyncLastServerAt = '';
   deliverySyncLastPushedAt = '';
+  deliverySyncLastError = '';
   localStorage.setItem(DELIVERY_SYNC_CODE_KEY, code);
   updateDeliverySyncStatusUI();
   restartDeliverySyncTimer();
@@ -5204,6 +5231,7 @@ function disconnectDeliverySync() {
   deliverySyncCode = '';
   deliverySyncLastServerAt = '';
   deliverySyncLastPushedAt = '';
+  deliverySyncLastError = '';
   localStorage.removeItem(DELIVERY_SYNC_CODE_KEY);
   $('delivery-sync-code-input').value = '';
   updateDeliverySyncStatusUI();
