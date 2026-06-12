@@ -2697,9 +2697,15 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   wrapper.classList.toggle('approx', !!d.approx);
   wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
   wrapper.style.zIndex = String(markerZIndex(d, idx));
-  wrapper.innerHTML = '';
 
+  // 中身に影響する値が前回 render と同じなら DOM 再構築をスキップ（差分更新）
   const labelText = buildLabelText(d, num, modeKey);
+  const overlapCount = overlap && overlap.index === 0 ? overlap.count : 0;
+  const contentSig = `${num}|${d.approx ? 1 : 0}|${labelText}|${overlapCount}`;
+  if (wrapper.dataset.contentSig === contentSig) return;
+  wrapper.dataset.contentSig = contentSig;
+
+  wrapper.innerHTML = '';
   if (labelText) {
     const lbl = document.createElement('div');
     lbl.className = 'delivery-label';
@@ -2710,10 +2716,10 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   const pin = document.createElement('div');
   pin.className = 'delivery-pin';
   pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${escapeHtml(num)}${d.approx ? '?' : ''}</div>`;
-  if (overlap && overlap.index === 0) {
+  if (overlapCount > 0) {
     const overlapLabel = document.createElement('div');
     overlapLabel.className = 'overlap-count-label';
-    overlapLabel.textContent = `${overlap.count}件`;
+    overlapLabel.textContent = `${overlapCount}件`;
     pin.appendChild(overlapLabel);
   }
   wrapper.appendChild(pin);
