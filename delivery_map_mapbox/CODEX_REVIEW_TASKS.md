@@ -9,6 +9,22 @@
 
 ---
 
+## ⚠️ 実装状況アップデート (2026-06-12) — 必読
+
+**`CODEX_CHANGES.md` を先に読んでください。** Claude がテスト版 (`test/index.html`, v2026.06.12-test.1) に以下を実装済みです。**二重実装しないこと:**
+
+| 項目 | 状態 |
+|---|---|
+| TASK-T1（テスト版ピンずれ / `mapboxgl-marker` クラス消失） | ✅ Codex `942bafc` で解決済み |
+| マーカー innerHTML 全再構築の差分更新化（TASK-P1関連） | ✅ Claude `7134fd9` で実装済み |
+| リスト検索ボックス + 非ヒットピンの薄表示 | ✅ Claude `88aa4c1` で実装済み |
+| 国土地理院ジオコーダのフォールバック（Google失敗時） | ✅ Claude `e6b1f4d` で実装済み |
+| 未使用 `addLocalNeighborhoodLayers` / `GSI_BOUNDARY_TILES` 削除 | ✅ Claude `bd4fcc4` で実装済み |
+| ルート最適化3関数の共通化（`confirmAndApplyRouteOrder` 等） | ✅ Claude `bd4fcc4` で実装済み |
+| サーバ側ジオコードキャッシュ | ✅ Codex `a93d84e`（MySQL共有キャッシュ）で実装済み |
+
+---
+
 ## 優先度凡例
 - 🔴 **P1 — すぐ修正**（セキュリティ・データ破壊リスク）
 - 🟡 **P2 — 近日中に修正**（バグ・パフォーマンス・保守性）
