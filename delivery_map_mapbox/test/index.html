@@ -3212,7 +3212,44 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
       console.warn('geocode failed for', q, e);
     }
   }
+
+  // Googleで見つからない場合は国土地理院API（無料）で概算位置を取得
+  for (const q of candidates) {
+    try {
+      const result = await geocodeAddressViaGsi(q);
+      if (result) {
+        if (cacheKey) saveSharedGeocodeCache(cacheKey, rawAddress, result);
+        console.info('geocode fallback via GSI for', q);
+        return result;
+      }
+    } catch (e) {
+      console.warn('gsi geocode failed for', q, e);
+    }
+  }
   return null;
+}
+
+// 国土地理院 住所検索API（無料・キー不要）。
+// 精度保証がないため結果は常に approx=true で返し、ピンの位置確認を促す。
+const GSI_GEOCODE_API = 'https://msearch.gsi.go.jp/address-search/AddressSearch';
+
+async function geocodeAddressViaGsi(query) {
+  const res = await fetch(`${GSI_GEOCODE_API}?q=${encodeURIComponent(query)}`);
+  if (!res.ok) return null;
+  const features = await res.json();
+  if (!Array.isArray(features) || features.length === 0) return null;
+  const f = features[0];
+  const coords = f && f.geometry && Array.isArray(f.geometry.coordinates) ? f.geometry.coordinates : null;
+  const lng = coords ? Number(coords[0]) : NaN;
+  const lat = coords ? Number(coords[1]) : NaN;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return {
+    lat,
+    lng,
+    approx: true,
+    formatted: (f.properties && f.properties.title) || query,
+    source: 'gsi'
+  };
 }
 
 function prefetchGeocodeAddress(rawAddress) {
