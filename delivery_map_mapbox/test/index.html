@@ -323,6 +323,51 @@
   body.list-collapsed .pickup-list-tabs {
     display: none !important;
   }
+  body.list-collapsed .list-search {
+    display: none;
+  }
+  .list-search {
+    display: flex;
+    gap: 6px;
+    padding: 6px 10px;
+    background: white;
+    border-bottom: 1px solid #e0dac4;
+    flex-shrink: 0;
+  }
+  .list-search input {
+    flex: 1;
+    min-width: 0;
+    min-height: 36px;
+    border: 1.5px solid #b8b29f;
+    border-radius: 6px;
+    padding: 0 10px;
+    font-size: 14px;
+    background: #f7f5ec;
+    color: var(--ink);
+  }
+  .list-search input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: white;
+  }
+  .list-search .search-clear {
+    width: 40px;
+    min-height: 36px;
+    border: 1.5px solid #b8b29f;
+    background: #f7f5ec;
+    color: var(--ink);
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 700;
+    flex-shrink: 0;
+    display: none;
+  }
+  .list-search.has-query .search-clear {
+    display: block;
+  }
+  .delivery-marker.search-dim {
+    opacity: 0.25;
+  }
   .pickup-list-tabs {
     display: none;
     gap: 6px;
@@ -978,6 +1023,10 @@
     <button class="pickup-list-tab selected" id="pickup-tab-regular" type="button" role="tab" data-pickup-list-tab="regular" aria-selected="true">定期集荷 <span class="tab-count" id="pickup-tab-regular-count"></span></button>
     <button class="pickup-list-tab" id="pickup-tab-spot" type="button" role="tab" data-pickup-list-tab="spot" aria-selected="false">スポット集荷 <span class="tab-count" id="pickup-tab-spot-count"></span></button>
   </div>
+  <div class="list-search" id="list-search">
+    <input type="text" id="list-search-input" placeholder="🔍 リスト内検索（住所・名前・メモ・番号）" autocomplete="off" enterkeyhint="search" aria-label="リスト内検索">
+    <button class="search-clear" id="btn-list-search-clear" type="button" aria-label="検索をクリア">✕</button>
+  </div>
   <div class="list-body" id="list-body"></div>
 </div>
 
@@ -986,7 +1035,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.10-test.4</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.12-test.1</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1234,7 +1283,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.10-test.6';
+const APP_VERSION = 'v2026.06.12-test.1';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1347,6 +1396,7 @@ let gpsWatchId = null;
 let gpsActive = false;
 let gpsAutoFollow = false;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
+let listSearchQuery = '';
 let recognition = null;
 let mapStyleLoaded = false;
 
@@ -2040,6 +2090,7 @@ async function switchAppMode(mode, showMessage = true, options = {}) {
   appMode = mode;
   localStorage.setItem(APP_MODE_KEY, appMode);
   activeDeliveryId = null;
+  clearListSearch();
   clearOptimizedRouteGeometry();
   loadDeliveries();
   renderMarkers();
@@ -2746,6 +2797,7 @@ function createDeliveryMarker(d) {
 function renderMarkers() {
   if (!map) return;
   const modeKey = LABEL_MODES[labelModeIndex].key;
+  const searchQuery = currentListSearchQuery();
   const visibleDeliveries = deliveries.filter(isVisibleInCurrentMode);
   lastVisibleDeliveries = visibleDeliveries;
   const overlapInfo = buildMarkerOverlapInfo(visibleDeliveries);
@@ -2772,7 +2824,9 @@ function renderMarkers() {
     } else {
       marker.setLngLat([d.lng, d.lat]);
     }
-    updateDeliveryMarkerElement(marker.getElement(), d, idx, modeKey, overlap);
+    const wrapper = marker.getElement();
+    wrapper.classList.toggle('search-dim', searchQuery ? !deliveryMatchesSearch(d, idx, searchQuery) : false);
+    updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap);
   });
 }
 
@@ -3359,6 +3413,45 @@ function pickupListDisplay(d) {
   };
 }
 
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+function currentListSearchQuery() {
+  return normalizeSearchText(listSearchQuery);
+}
+
+function deliveryMatchesSearch(d, idx, query) {
+  if (!query) return true;
+  const parts = [d.address, d.formatted, d.note, d.completedBy, displayNumber(d, idx)];
+  if (isPickupBackedDelivery(d)) {
+    const disp = pickupListDisplay(d);
+    if (disp) parts.push(disp.company, disp.detail);
+  }
+  return normalizeSearchText(parts.filter(Boolean).join(' ')).includes(query);
+}
+
+function setListSearchQuery(value) {
+  const next = String(value || '');
+  if (next === listSearchQuery) return;
+  listSearchQuery = next;
+  const box = $('list-search');
+  if (box) box.classList.toggle('has-query', !!currentListSearchQuery());
+  renderList();
+  renderMarkers();
+}
+
+function clearListSearch() {
+  const input = $('list-search-input');
+  if (input) input.value = '';
+  listSearchQuery = '';
+  const box = $('list-search');
+  if (box) box.classList.remove('has-query');
+}
+
 function renderList() {
   const body = $('list-body');
   const stat = $('list-stat');
@@ -3374,10 +3467,17 @@ function renderList() {
         .map((delivery, index) => ({ delivery, index }))
         .filter(entry => isVisibleInCurrentMode(entry.delivery));
 
-  if (listItems.length === 0) {
-    const emptyMessage = appMode === 'pickup'
-      ? (selectedPickupTab === PICKUP_LIST_TAB_SPOT ? 'スポット集荷はありません' : '定期集荷はありません')
-      : '配送先がありません<br>下のボタンから追加してください';
+  const query = currentListSearchQuery();
+  const searchedItems = query
+    ? listItems.filter(entry => deliveryMatchesSearch(entry.delivery, entry.index, query))
+    : listItems;
+
+  if (searchedItems.length === 0) {
+    const emptyMessage = query
+      ? `「${escapeHtml(listSearchQuery.trim())}」に一致する項目がありません`
+      : appMode === 'pickup'
+        ? (selectedPickupTab === PICKUP_LIST_TAB_SPOT ? 'スポット集荷はありません' : '定期集荷はありません')
+        : '配送先がありません<br>下のボタンから追加してください';
     body.innerHTML = `<div class="empty">${emptyMessage}</div>`;
     stat.textContent = '';
     return;
@@ -3386,9 +3486,11 @@ function renderList() {
   const syncText = appMode === 'pickup' && pickupLastSyncedAt
     ? ` / 同期 ${formatTime(pickupLastSyncedAt)}`
     : '';
-  stat.textContent = `${done}/${listItems.length}件 完了${syncText}`;
+  stat.textContent = query
+    ? `検索 ${searchedItems.length}件 / 全${listItems.length}件`
+    : `${done}/${listItems.length}件 完了${syncText}`;
 
-  body.innerHTML = listItems.map(({ delivery: d, index: idx }) => {
+  body.innerHTML = searchedItems.map(({ delivery: d, index: idx }) => {
     const num = displayNumber(d, idx);
     const cls = 'delivery-item'
       + (d.completed ? ' done' : '')
@@ -5529,6 +5631,19 @@ document.querySelectorAll('[data-close]').forEach(btn => {
 });
 
 $('list-body').addEventListener('click', handleListBodyClick);
+let listSearchDebounceTimer = null;
+$('list-search-input').addEventListener('input', (e) => {
+  clearTimeout(listSearchDebounceTimer);
+  listSearchDebounceTimer = setTimeout(() => setListSearchQuery(e.target.value), 150);
+});
+$('list-search-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') e.target.blur();
+});
+$('btn-list-search-clear').addEventListener('click', () => {
+  clearListSearch();
+  renderList();
+  renderMarkers();
+});
 document.querySelector('.placement-banner').addEventListener('click', cancelPlacement);
 window.addEventListener('online', () => retryPendingPickupProgress({ silent: false }));
 window.addEventListener('beforeinstallprompt', event => {
