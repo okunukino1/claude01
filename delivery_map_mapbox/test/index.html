@@ -1337,7 +1337,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.9';
+const APP_VERSION = 'v2026.06.12-test.10';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -3430,7 +3430,8 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
     try {
       const result = await geocodeAddressViaGsi(q);
       if (result) {
-        if (cacheKey) saveSharedGeocodeCache(cacheKey, rawAddress, result);
+        // 概算位置(approx)は共有キャッシュに保存しない。
+        // 保存するとapprox結果が固定され、次回syncでGoogleを再試行できなくなる。
         console.info('geocode fallback via GSI for', q);
         return result;
       }
@@ -4871,7 +4872,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
     const spotKey = spotPickupNaturalKey(item);
     const existing = deliveries.find(d => isSpotPickupDelivery(d) &&
       (String(d.spotPickupId || '') === spotId || (spotKey && spotPickupNaturalKey(d) === spotKey)));
-    if (!existing || existing.address !== item.address || existing.lat == null || existing.lng == null) {
+    if (!existing || existing.address !== item.address || existing.lat == null || existing.lng == null || existing.approx) {
       geocodeTargets.push({ item, index });
     }
   });
@@ -4930,7 +4931,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
         existing.lng = savedLocation.lng;
         existing.approx = savedLocation.approx;
         existing.formatted = savedLocation.formatted;
-      } else if (addressChanged || existing.lat == null || existing.lng == null) {
+      } else if (addressChanged || existing.lat == null || existing.lng == null || existing.approx) {
         const result = geocodedSpotLocations.get(item);
         if (!result) continue;
         existing.lat = result.lat;
