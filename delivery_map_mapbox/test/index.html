@@ -1049,7 +1049,7 @@
     <button class="pickup-list-tab" id="pickup-tab-spot" type="button" role="tab" data-pickup-list-tab="spot" aria-selected="false">スポット集荷 <span class="tab-count" id="pickup-tab-spot-count"></span></button>
   </div>
   <div class="list-search" id="list-search">
-    <input type="text" id="list-search-input" placeholder="🔍 リスト内検索（住所・名前・メモ・番号）" autocomplete="off" enterkeyhint="search" aria-label="リスト内検索">
+    <input type="search" id="list-search-input" placeholder="🔍 リスト内検索（住所・名前・メモ・番号）" autocomplete="off" enterkeyhint="search" aria-label="リスト内検索">
     <button class="search-clear" id="btn-list-search-clear" type="button" aria-label="検索をクリア">✕</button>
   </div>
   <div class="list-body" id="list-body"></div>
@@ -1331,7 +1331,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.7';
+const APP_VERSION = 'v2026.06.12-test.8';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
