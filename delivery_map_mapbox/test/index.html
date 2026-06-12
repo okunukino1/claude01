@@ -1085,6 +1085,7 @@
       <button id="menu-cache-admin" type="button">🗄 DBキャッシュ管理</button>
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
+      <button id="menu-toggle-gsi" type="button">🗺 番地ライン(地理院) ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
       <button id="menu-text-size" type="button">Aa 文字サイズ</button>
       <button id="menu-notifications" type="button">🔔 通知設定</button>
@@ -1337,13 +1338,14 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.11';
+const APP_VERSION = 'v2026.06.12-test.12';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
 const APP_MODE_KEY = 'rys-mapbox-test-app-mode';
 const USAGE_KEY = 'rys-mapbox-test-usage-v1';
 const NEIGHBORHOOD_KEY = 'rys-mapbox-test-neighborhoods-visible';
+const GSI_OVERLAY_KEY = 'rys-mapbox-test-gsi-overlay-visible';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-test-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-test-addr-visible';
@@ -1464,6 +1466,7 @@ let gpsWatchId = null;
 let gpsActive = false;
 let gpsAutoFollow = false;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
+let gsiOverlayVisible = localStorage.getItem(GSI_OVERLAY_KEY) !== '0';
 let listSearchQuery = '';
 let optimizedRouteOrderedIds = [];
 let recognition = null;
@@ -2241,6 +2244,7 @@ function initMap() {
       mapStyleLoaded = true;
       try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
       addGeoshapeNeighborhoodLayers();
+      addGsiOverlayLayer();
       if (pendingAddrData) {
         addAddressLayer(pendingAddrData);
         pendingAddrData = null;
@@ -2399,6 +2403,56 @@ function updateNeighborhoodButton() {
   if (!btn) return;
   btn.textContent = neighborhoodVisible ? '🗾 町丁目境界: ON' : '🗾 町丁目境界: OFF';
   btn.classList.toggle('on', neighborhoodVisible);
+}
+
+// 地理院標準地図の半透明オーバーレイ。ズーム16以上で街区の輪郭線と
+// 街区番号(○番)が見える。ラスター画像のため文字の重なりは許容する。
+const GSI_OVERLAY_SOURCE_ID = 'gsi-std';
+const GSI_OVERLAY_LAYER_ID = 'gsi-std-overlay';
+
+function addGsiOverlayLayer() {
+  if (!map || map.getSource(GSI_OVERLAY_SOURCE_ID)) return;
+  map.addSource(GSI_OVERLAY_SOURCE_ID, {
+    type: 'raster',
+    tiles: ['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'],
+    tileSize: 256,
+    minzoom: 5,
+    maxzoom: 18,
+    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>'
+  });
+  const layerDef = {
+    id: GSI_OVERLAY_LAYER_ID,
+    type: 'raster',
+    source: GSI_OVERLAY_SOURCE_ID,
+    minzoom: 16,
+    slot: 'middle',
+    layout: { 'visibility': gsiOverlayVisible ? 'visible' : 'none' },
+    paint: {
+      'raster-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.2, 17, 0.5]
+    }
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+  }
+}
+
+function toggleGsiOverlay() {
+  gsiOverlayVisible = !gsiOverlayVisible;
+  localStorage.setItem(GSI_OVERLAY_KEY, gsiOverlayVisible ? '1' : '0');
+  if (map && map.getLayer(GSI_OVERLAY_LAYER_ID)) {
+    map.setLayoutProperty(GSI_OVERLAY_LAYER_ID, 'visibility', gsiOverlayVisible ? 'visible' : 'none');
+  }
+  updateGsiOverlayButton();
+  showToast(gsiOverlayVisible ? '番地ライン(地理院)をON（地図を拡大すると表示）' : '番地ライン(地理院)をOFF');
+}
+
+function updateGsiOverlayButton() {
+  const btn = $('menu-toggle-gsi');
+  if (!btn) return;
+  btn.textContent = gsiOverlayVisible ? '🗺 番地ライン(地理院): ON' : '🗺 番地ライン(地理院): OFF';
+  btn.classList.toggle('on', gsiOverlayVisible);
 }
 
 async function fetchAddressData(onProgress) {
@@ -5983,6 +6037,10 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
   toggleNeighborhoods();
 });
 $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
+$('menu-toggle-gsi').addEventListener('click', () => {
+  closeModal('modal-menu');
+  toggleGsiOverlay();
+});
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
 $('menu-text-size').addEventListener('click', openTextSizeSettings);
 $('menu-notifications').addEventListener('click', openNotificationSettings);
@@ -6076,6 +6134,7 @@ document.addEventListener('visibilitychange', () => {
     updateLabelModeButton();
     updateNeighborhoodButton();
     updateAddrButton();
+    updateGsiOverlayButton();
     showLoading('地図を読み込み中...');
     mapboxConfig = await loadMapboxConfig();
     const mapReady = initMap();
