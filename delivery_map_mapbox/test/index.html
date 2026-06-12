@@ -6,10 +6,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#ff5722">
-<title>RYS配送マップ</title>
-<link rel="manifest" href="manifest.webmanifest?v=20260610-3">
-<link rel="icon" href="app-icon-192.png?v=20260610-3" type="image/png">
-<link rel="apple-touch-icon" href="app-icon-512.png?v=20260610-3">
+<title>RYS配送マップ (テスト版)</title>
+<link rel="manifest" href="manifest.webmanifest?v=20260610-test-6">
+<link rel="icon" href="app-icon-192.png?v=20260610-test-6" type="image/png">
+<link rel="apple-touch-icon" href="app-icon-512.png?v=20260610-test-6">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
 <style>
   :root {
@@ -943,7 +943,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="app-version" id="app-version-label">v2026.06.10-3</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.10-test.4</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -986,7 +986,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.10-3</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.10-test.4</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1009,7 +1009,6 @@
       <button id="menu-notifications" type="button">🔔 通知設定</button>
       <button id="menu-reload-app" type="button">🔄 アプリを更新</button>
       <button id="menu-manual" type="button">📖 使い方マニュアル</button>
-      <button id="menu-game" type="button">🎮 配達員検定で遊ぶ</button>
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
@@ -1089,11 +1088,11 @@
       <ol id="notification-install-ios-steps" hidden>
         <li>このページをSafariで開く</li>
         <li>共有ボタンから「ホーム画面に追加」を選ぶ</li>
-        <li>ホーム画面のRYS配送マップを開き、もう一度通知設定を行う</li>
+        <li>ホーム画面のRYS配送マップ テスト版を開き、もう一度通知設定を行う</li>
       </ol>
       <ol id="notification-install-android-steps" hidden>
         <li>この画面のボタン、またはChromeのメニューからアプリをインストール</li>
-        <li>ホーム画面のRYS配送マップを開き、通知を有効化</li>
+        <li>ホーム画面のRYS配送マップ テスト版を開き、通知を有効化</li>
       </ol>
       <button id="btn-notification-install" type="button" hidden>アプリをインストール</button>
     </div>
@@ -1235,32 +1234,32 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.10-3';
-const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
-const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
-const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
-const APP_MODE_KEY = 'rys-mapbox-app-mode';
-const USAGE_KEY = 'rys-mapbox-usage-v1';
-const NEIGHBORHOOD_KEY = 'rys-mapbox-neighborhoods-visible';
-const LIST_COLLAPSED_KEY = 'rys-mapbox-list-collapsed';
-const LABEL_MODE_KEY = 'rys-mapbox-label-mode';
-const ADDR_VISIBLE_KEY = 'rys-mapbox-addr-visible';
-const ADDR_DATA_KEY = 'rys-mapbox-addr-data-v1';
-const OPERATOR_NAME_KEY = 'rys-mapbox-operator-name';
-const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-pickup-last-reset-date';
-const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-pickup-selected-sheet';
-const PICKUP_PENDING_SYNC_KEY = 'rys-mapbox-pickup-pending-sync-v1';
-const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-pickup-location-admin-pin-v1';
-const PICKUP_LIST_TAB_KEY = 'rys-mapbox-pickup-list-tab-v1';
-const PUSH_SELECTED_COURSES_KEY = 'rys-mapbox-push-selected-courses-v1';
-const TEXT_SIZE_KEY = 'rys-mapbox-text-size-v1';
-const APP_VERSION_CHECK_KEY = 'rys-mapbox-version-check-v1';
-const APP_VERSION_PROMPTED_KEY = 'rys-mapbox-version-prompted-v1';
-const GEOCODE_CACHE_KEY = 'rys-mapbox-geocode-cache-v1';
-const GEOCODE_CACHE_ADMIN_PIN_KEY = 'rys-mapbox-geocode-cache-admin-pin-v1';
+const APP_VERSION = 'v2026.06.10-test.6';
+const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
+const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
+const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
+const APP_MODE_KEY = 'rys-mapbox-test-app-mode';
+const USAGE_KEY = 'rys-mapbox-test-usage-v1';
+const NEIGHBORHOOD_KEY = 'rys-mapbox-test-neighborhoods-visible';
+const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
+const LABEL_MODE_KEY = 'rys-mapbox-test-label-mode';
+const ADDR_VISIBLE_KEY = 'rys-mapbox-test-addr-visible';
+const ADDR_DATA_KEY = 'rys-mapbox-test-addr-data-v1';
+const OPERATOR_NAME_KEY = 'rys-mapbox-test-operator-name';
+const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-test-pickup-last-reset-date';
+const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-test-pickup-selected-sheet';
+const PICKUP_PENDING_SYNC_KEY = 'rys-mapbox-test-pickup-pending-sync-v1';
+const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-test-pickup-location-admin-pin-v1';
+const PICKUP_LIST_TAB_KEY = 'rys-mapbox-test-pickup-list-tab-v1';
+const PUSH_SELECTED_COURSES_KEY = 'rys-mapbox-test-push-selected-courses-v1';
+const TEXT_SIZE_KEY = 'rys-mapbox-test-text-size-v1';
+const APP_VERSION_CHECK_KEY = 'rys-mapbox-test-version-check-v1';
+const APP_VERSION_PROMPTED_KEY = 'rys-mapbox-test-version-prompted-v1';
+const GEOCODE_CACHE_KEY = 'rys-mapbox-test-geocode-cache-v1';
+const GEOCODE_CACHE_ADMIN_PIN_KEY = 'rys-mapbox-test-geocode-cache-admin-pin-v1';
 const GEOCODE_CACHE_MAX_ITEMS = 500;
-const SHARED_GEOCODE_CACHE_API = 'api/delivery_geocode_cache.php';
-const SPOT_PICKUP_PREFETCH_API = 'api/spot_pickups.php';
+const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
+const SPOT_PICKUP_PREFETCH_API = '../api/spot_pickups.php';
 const SHARED_GEOCODE_CACHE_RETRY_MS = 10 * 60 * 1000;
 const PICKUP_GEOCODE_CONCURRENCY = 3;
 const PHOTO_OCR_MAX_SIZE = 1120;
@@ -1564,7 +1563,7 @@ async function ensurePushServiceWorker() {
 }
 
 async function fetchPushConfig() {
-  const res = await fetch('api/push_config.php', { cache: 'no-store' });
+  const res = await fetch('../api/push_config.php', { cache: 'no-store' });
   let data = null;
   try { data = await res.json(); } catch (e) {}
   if (!res.ok || !data || data.error) throw new Error((data && data.error) || '通知設定を取得できませんでした');
@@ -1639,7 +1638,7 @@ async function savePushSettings() {
         applicationServerKey: urlBase64ToUint8Array(config.publicKey)
       });
     }
-    const res = await fetch('api/push_subscriptions.php', {
+    const res = await fetch('../api/push_subscriptions.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'save', subscription: subscription.toJSON(), courses })
@@ -1658,7 +1657,7 @@ async function disablePushNotifications() {
   try {
     const subscription = await currentPushSubscription();
     if (subscription) {
-      await fetch('api/push_subscriptions.php', {
+      await fetch('../api/push_subscriptions.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'remove', endpoint: subscription.endpoint })
@@ -2064,7 +2063,7 @@ function escapeHtml(s) {
 }
 
 async function loadMapboxConfig() {
-  const res = await fetch('api/maps_config.php');
+  const res = await fetch('../api/maps_config.php');
   if (!res.ok) throw new Error('地図設定の取得に失敗しました');
   const cfg = await res.json();
   if (!cfg.mapboxAccessToken) {
@@ -2135,7 +2134,7 @@ function initMap() {
 const GEOSHAPE_ADMIN_TILE_SOURCES = [
   {
     id: 'proxy',
-    tiles: ['api/tile_proxy.php?z={z}&x={x}&y={y}'],
+    tiles: ['../api/tile_proxy.php?z={z}&x={x}&y={y}'],
     attribution: '町丁目境界: Geoshape 行政境界データセット'
   },
   {
@@ -3241,7 +3240,7 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
   for (const q of candidates) {
     try {
       bumpUsage('geocode');
-      const res = await fetch('api/geocode_address.php', {
+      const res = await fetch('../api/geocode_address.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address: q })
@@ -3859,7 +3858,7 @@ async function readPendingPhoto() {
     showLoading('画像を変換中...');
     const base64 = await blobToBase64(compressed);
     showLoading('AI で住所を読み取り中...');
-    const res = await fetch('api/extract_address.php', {
+    const res = await fetch('../api/extract_address.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' })
@@ -4270,7 +4269,7 @@ function removePendingPickupProgress(key) {
 
 async function postPickupProgressPayload(payload) {
   try {
-    const res = await fetch('api/pickup_progress.php', {
+    const res = await fetch('../api/pickup_progress.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -4322,7 +4321,7 @@ function pickupLocationPayloadForDelivery(d, adminPin = '') {
 }
 
 async function postPickupLocationPayload(payload) {
-  const res = await fetch('api/pickup_location.php', {
+  const res = await fetch('../api/pickup_location.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -4484,7 +4483,7 @@ async function fetchPickupSheetItems(sheetName) {
     sheet: sheetName,
     refresh: String(Date.now())
   });
-  const res = await fetch(`api/pickup_sheet.php?${params.toString()}`, { cache: 'no-store' });
+  const res = await fetch(`../api/pickup_sheet.php?${params.toString()}`, { cache: 'no-store' });
   let data = null;
   try { data = await res.json(); } catch (e) {}
   if (!res.ok || !data || data.error) {
@@ -4529,7 +4528,7 @@ async function fetchPickupItems(sheetName, options = {}) {
 async function triggerSpotPickupTouch(options = {}) {
   pickupLastSpotTouchAt = Date.now();
   try {
-    const res = await fetch('api/spot_pickups_touch.php', { method: 'POST' });
+    const res = await fetch('../api/spot_pickups_touch.php', { method: 'POST' });
     let data = null;
     try { data = await res.json(); } catch (e) {}
     if (!res.ok || !data || data.error) {
@@ -5201,7 +5200,7 @@ async function optimizeCarRouteOrder() {
   showLoading('車用ルートを検索中...');
   try {
     bumpUsage('routeOptimize');
-    const res = await fetch('api/optimize_route.php', {
+    const res = await fetch('../api/optimize_route.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -5279,7 +5278,7 @@ async function optimizeGoogleCarRouteOrder() {
   showLoading('Google車用ルートを検索中...');
   try {
     bumpUsage('googleRouteOptimize');
-    const res = await fetch('api/google_route.php', {
+    const res = await fetch('../api/google_route.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -5537,10 +5536,6 @@ $('menu-reload-app').addEventListener('click', reloadLatestApp);
 $('menu-manual').addEventListener('click', () => {
   closeModal('modal-menu');
   window.open('manual.html', '_blank', 'noopener');
-});
-$('menu-game').addEventListener('click', () => {
-  closeModal('modal-menu');
-  window.open('game/', '_blank', 'noopener');
 });
 
 $('btn-reset-usage').addEventListener('click', resetUsage);

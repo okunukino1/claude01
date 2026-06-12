@@ -15,6 +15,8 @@ if (!file_exists($configFile)) {
   exit;
 }
 require_once $configFile;
+require_once __DIR__ . '/request_guard.php';
+delivery_app_require_same_origin_request();
 
 $key = '';
 if (defined('GOOGLE_MAPS_SERVER_KEY') && GOOGLE_MAPS_SERVER_KEY && GOOGLE_MAPS_SERVER_KEY !== 'AIza...Google Geocoding API用キー...') {

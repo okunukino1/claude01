@@ -1,6 +1,9 @@
 <?php
-header('Access-Control-Allow-Origin: *');
 header('X-Content-Type-Options: nosniff');
+
+require_once __DIR__ . '/request_guard.php';
+delivery_app_set_cors_headers('GET,OPTIONS');
+delivery_app_reject_disallowed_browser_origin();
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);

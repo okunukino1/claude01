@@ -5,6 +5,11 @@
 // === Mapbox版 (delivery_map_mapbox) の設定 ===
 // 既存の Google Maps 版とは別フォルダで動作する独立アプリです。
 
+// === アプリ/API呼び出しを許可するホスト ===
+// OCR・住所検索などのサーバーAPIを、ここにあるホストからの呼び出しに制限します。
+// 本番ドメインを変更した場合は追加してください。
+define('APP_ALLOWED_HOSTS', ['rys-services.com', 'www.rys-services.com']);
+
 // === 伝票写真 → 住所抽出用 Gemini APIキー ===
 // Google AI Studioで作成したキーを入れてください。
 // 既存版と同じものを流用できます。
@@ -43,6 +48,29 @@ define('GOOGLE_MAPS_SERVER_KEY', 'AIza...Google Geocoding API用キー...');
 // 未設定の場合は GOOGLE_MAPS_SERVER_KEY を使います。
 // Google Cloudで Routes API を有効化してください。
 define('GOOGLE_ROUTES_API_KEY', '');
+
+// === 共有ジオコードキャッシュ用 MySQL ===
+// お名前.comの管理画面でMySQLデータベースを作成し、接続情報を入れてください。
+// 通常版は GEOCODE_CACHE_DB_* を優先します。未設定の場合は下の TEST 設定を使います。
+define('GEOCODE_CACHE_DB_HOST', 'mysql.example.ne.jp');
+define('GEOCODE_CACHE_DB_PORT', 3306);
+define('GEOCODE_CACHE_DB_NAME', 'database_name');
+define('GEOCODE_CACHE_DB_USER', 'database_user');
+define('GEOCODE_CACHE_DB_PASSWORD', 'database_password');
+define('GEOCODE_CACHE_DB_TABLE', 'delivery_geocode_cache');
+define('GEOCODE_CACHE_DB_MAX_ITEMS', 50000);
+define('GEOCODE_CACHE_ADMIN_PIN', 'change-this-db-admin-pin');
+
+// === テスト版 共有ジオコードキャッシュ用 MySQL ===
+// テスト版は api/delivery_geocode_cache_test.php 経由で使用します。
+define('GEOCODE_CACHE_TEST_DB_HOST', 'mysql.example.ne.jp');
+define('GEOCODE_CACHE_TEST_DB_PORT', 3306);
+define('GEOCODE_CACHE_TEST_DB_NAME', 'database_name');
+define('GEOCODE_CACHE_TEST_DB_USER', 'database_user');
+define('GEOCODE_CACHE_TEST_DB_PASSWORD', 'database_password');
+define('GEOCODE_CACHE_TEST_DB_TABLE', 'delivery_geocode_cache_test');
+define('GEOCODE_CACHE_TEST_DB_MAX_ITEMS', 50000);
+define('GEOCODE_CACHE_TEST_ADMIN_PIN', 'change-this-db-admin-pin');
 
 // === 集荷進捗 → Googleスプレッドシート書き戻し ===
 // apps_script/pickup_progress.gs をGoogle Apps Scriptへ貼り付けてWebアプリとしてデプロイし、

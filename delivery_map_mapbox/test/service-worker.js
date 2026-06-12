@@ -19,13 +19,13 @@ self.addEventListener('push', event => {
   try {
     data = event.data ? event.data.json() : {};
   } catch (e) {
-    data = { title: 'RYS配送マップ', body: event.data ? event.data.text() : '' };
+    data = { title: 'RYS配送マップ テスト版', body: event.data ? event.data.text() : '' };
   }
-  const title = data.title || 'RYS配送マップ';
+  const title = data.title || 'RYS配送マップ テスト版';
   const options = {
     body: data.body || '',
-    icon: './app-icon-192.png?v=20260610-3',
-    badge: './app-icon-192.png?v=20260610-3',
+    icon: './app-icon-192.png?v=20260610-test-6',
+    badge: './app-icon-192.png?v=20260610-test-6',
     tag: data.tag || 'spot-pickup',
     renotify: true,
     data: {
