@@ -326,6 +326,12 @@
   body.list-collapsed .list-search {
     display: none;
   }
+  /* PIN欄: type="password"を使うとChromeが検索欄にログイン情報を
+     自動入力してしまうため、textのまま伏せ字表示にする */
+  .masked-input {
+    -webkit-text-security: disc;
+    text-security: disc;
+  }
   .list-search {
     display: flex;
     gap: 6px;
@@ -1095,7 +1101,7 @@
   <div class="modal">
     <h3>DBキャッシュ管理</h3>
     <label>管理PIN</label>
-    <input type="password" id="cache-admin-pin" autocomplete="off" placeholder="DB管理PIN">
+    <input type="text" id="cache-admin-pin" class="masked-input" autocomplete="one-time-code" placeholder="DB管理PIN">
     <div class="modal-help">
       伝票撮影で一度検索した住所の位置を確認・修正できます。通常は「編集」→「住所から位置を再検索」→「保存」の順で使います。
     </div>
@@ -1331,7 +1337,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.8';
+const APP_VERSION = 'v2026.06.12-test.9';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
