@@ -1035,7 +1035,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.12-test.1</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.12-test.2</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1283,7 +1283,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.1';
+const APP_VERSION = 'v2026.06.12-test.2';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1397,6 +1397,7 @@ let gpsActive = false;
 let gpsAutoFollow = false;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
 let listSearchQuery = '';
+let optimizedRouteOrderedIds = [];
 let recognition = null;
 let mapStyleLoaded = false;
 
@@ -2214,6 +2215,8 @@ const ESTAT_BOUNDARY_TILES = 'https://ubukawa.github.io/estat01/04_tiles/zxy-s/{
 const NEIGHBORHOOD_LAYER_IDS = [];
 const OPTIMIZED_ROUTE_SOURCE_ID = 'optimized-route';
 const OPTIMIZED_ROUTE_LAYER_ID = 'optimized-route-line';
+const NEXT_SEGMENT_SOURCE_ID = 'next-segment';
+const NEXT_SEGMENT_LAYER_ID = 'next-segment-line';
 
 function addNeighborhoodLayer(layer) {
   if (map.getLayer(layer.id)) return;
@@ -2497,7 +2500,8 @@ function addAddressLayer(data) {
   });
 }
 
-function setOptimizedRouteGeometry(geometry) {
+function setOptimizedRouteGeometry(geometry, orderedIds) {
+  if (orderedIds) optimizedRouteOrderedIds = orderedIds.slice();
   if (!map || !geometry || geometry.type !== 'LineString') return;
   const data = { type: 'Feature', geometry, properties: {} };
 
@@ -2517,22 +2521,82 @@ function setOptimizedRouteGeometry(geometry) {
       'line-cap': 'round'
     },
     paint: {
-      'line-color': '#2563eb',
+      'line-color': '#93c5fd',
       'line-width': [
         'interpolate', ['linear'], ['zoom'],
-        12, 3,
-        16, 5,
-        19, 7
+        12, 2,
+        16, 3,
+        19, 5
       ],
-      'line-opacity': 0.8
+      'line-opacity': 0.65
     }
   });
 }
 
 function clearOptimizedRouteGeometry() {
   if (!map) return;
+  optimizedRouteOrderedIds = [];
+  clearNextSegmentLayer();
   if (map.getLayer(OPTIMIZED_ROUTE_LAYER_ID)) map.removeLayer(OPTIMIZED_ROUTE_LAYER_ID);
   if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) map.removeSource(OPTIMIZED_ROUTE_SOURCE_ID);
+}
+
+function clearNextSegmentLayer() {
+  if (!map) return;
+  if (map.getLayer(NEXT_SEGMENT_LAYER_ID)) map.removeLayer(NEXT_SEGMENT_LAYER_ID);
+  if (map.getSource(NEXT_SEGMENT_SOURCE_ID)) map.removeSource(NEXT_SEGMENT_SOURCE_ID);
+}
+
+function setNextSegmentGeometry(geometry) {
+  if (!map || !geometry) return;
+  const data = { type: 'Feature', geometry, properties: {} };
+  if (map.getSource(NEXT_SEGMENT_SOURCE_ID)) {
+    map.getSource(NEXT_SEGMENT_SOURCE_ID).setData(data);
+    return;
+  }
+  map.addSource(NEXT_SEGMENT_SOURCE_ID, { type: 'geojson', data });
+  map.addLayer({
+    id: NEXT_SEGMENT_LAYER_ID,
+    type: 'line',
+    source: NEXT_SEGMENT_SOURCE_ID,
+    slot: 'top',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-color': '#f97316',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 5, 16, 8, 19, 11],
+      'line-opacity': 0.95
+    }
+  });
+}
+
+async function updateNextSegmentHighlight() {
+  if (!map || optimizedRouteOrderedIds.length === 0) { clearNextSegmentLayer(); return; }
+  const deliveryById = new Map(deliveries.map(d => [d.id, d]));
+  const nextDelivery = optimizedRouteOrderedIds
+    .map(id => deliveryById.get(id))
+    .find(d => d && !d.completed && d.lat != null && d.lng != null);
+
+  if (!nextDelivery) { clearNextSegmentLayer(); return; }
+
+  const start = getRouteStartPoint();
+  const token = mapboxConfig && mapboxConfig.mapboxAccessToken;
+
+  const fallback = () => setNextSegmentGeometry({
+    type: 'LineString',
+    coordinates: [[start.lng, start.lat], [nextDelivery.lng, nextDelivery.lat]]
+  });
+
+  if (!token) { fallback(); return; }
+
+  try {
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start.lng},${start.lat};${nextDelivery.lng},${nextDelivery.lat}?geometries=geojson&steps=false&access_token=${token}`;
+    const res = await fetch(url);
+    const data = res.ok ? await res.json() : null;
+    const geometry = data && data.routes && data.routes[0] && data.routes[0].geometry;
+    if (geometry) setNextSegmentGeometry(geometry); else fallback();
+  } catch (e) {
+    fallback();
+  }
 }
 
 function removeAddressLayer() {
@@ -2825,7 +2889,7 @@ function renderMarkers() {
       marker.setLngLat([d.lng, d.lat]);
     }
     const wrapper = marker.getElement();
-    wrapper.classList.toggle('search-dim', searchQuery ? !deliveryMatchesSearch(d, idx, searchQuery) : false);
+    wrapper.style.opacity = (searchQuery && !deliveryMatchesSearch(d, idx, searchQuery)) ? '0.25' : '';
     updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap);
   });
 }
@@ -3568,6 +3632,7 @@ async function toggleDone(id) {
   renderMarkers();
   renderList();
   syncPickupProgress(d, operatorName);
+  if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
 }
 
 function openNavigation(id) {
@@ -5254,8 +5319,14 @@ function confirmAndApplyRouteOrder({ title, summary, suggested, noLocationItems,
     () => {
       deliveries = suggested.concat(noLocationItems, completedItems);
       activeDeliveryId = suggested[0] ? suggested[0].id : null;
-      if (geometry) setOptimizedRouteGeometry(geometry);
-      else if (clearGeometry) clearOptimizedRouteGeometry();
+      const orderedIds = suggested.map(d => d.id);
+      if (geometry) {
+        setOptimizedRouteGeometry(geometry, orderedIds);
+      } else {
+        clearOptimizedRouteGeometry();
+        if (clearGeometry) optimizedRouteOrderedIds = orderedIds;
+      }
+      updateNextSegmentHighlight();
       saveDeliveries();
       renderMarkers();
       renderList();
@@ -5333,8 +5404,20 @@ async function optimizeCarRouteOrderWith(providerKey) {
     showToast(`${modeLabel()}先が2件以上ある時に${provider.shortName}ルート検索できます`, true);
     return;
   }
+
+  // 25件以上はAPIの制限を超えるため近い順で代替（ルートラインは次の目的地のみ表示）
   if (routeItems.length > 24) {
-    showToast(`${provider.shortName}ルート検索は一度に24件までです。完了分を削除するか分けて検索してください。`, true);
+    const start = getRouteStartPoint();
+    const suggested = improveRouteWithTwoOpt(start, nearestNeighborRoute(start, routeItems));
+    confirmAndApplyRouteOrder({
+      title: provider.title,
+      summary: `${routeItems.length}件のため道路APIの代わりに近い順で提案します（道路ルートAPIは24件まで対応）。\n始点: ${start.label}`,
+      suggested,
+      noLocationItems,
+      completedItems,
+      clearGeometry: true,
+      successMessage: `${modeLabel()}順を並べ替えました（${routeItems.length}件・近い順）`
+    });
     return;
   }
 
