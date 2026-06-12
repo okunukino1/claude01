@@ -3,19 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#ff5722">
-<title>配達員検定 | RYS</title>
+<meta name="theme-color" content="#0b1026">
+<title>配達員検定 〜全国お届けの旅〜 | RYS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700;800&display=swap" rel="stylesheet">
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <style>
   :root {
     --ink: #0d1117;
-    --ink-soft: #2a2f3a;
+    --night: #0b1026;
+    --night-soft: #141b3c;
     --paper: #f6f4ee;
     --paper-soft: #ecead9;
     --accent: #ff5722;
     --accent-soft: #ffe0d6;
-    --good: #16a34a;
-    --danger: #d32f2f;
+    --gold: #f5c542;
+    --gold-deep: #c9962a;
+    --good: #34d399;
+    --mincho: "Shippori Mincho B1", "Hiragino Mincho ProN", serif;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
@@ -23,127 +29,221 @@
     height: 100%; height: 100dvh;
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Meiryo", sans-serif;
-    background: var(--paper);
-    color: var(--ink);
+    background: var(--night);
+    color: var(--paper);
     -webkit-text-size-adjust: 100%;
   }
 
-  #map { position: absolute; inset: 0; }
+  #map { position: absolute; inset: 0; background: var(--night); }
+  /* 衛星写真モードの色調整とビネット(映像の引き締め) */
+  #vignette {
+    position: absolute; inset: 0; z-index: 5; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(5,8,24,0.55) 100%);
+    opacity: 0; transition: opacity 0.8s;
+  }
+  body.cinema #vignette { opacity: 1; }
 
-  /* ===== 全画面スクリーン(タイトル・結果) ===== */
+  #fx { position: absolute; inset: 0; z-index: 85; pointer-events: none; }
+
+  /* ===== 全画面スクリーン ===== */
   .screen {
-    position: absolute; inset: 0;
-    background: var(--paper);
-    z-index: 100;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: calc(20px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
+    position: absolute; inset: 0; z-index: 100;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: calc(18px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
     display: none;
   }
   .screen.active { display: block; }
-  .screen-inner { max-width: 480px; margin: 0 auto; }
+  .screen-inner { max-width: 480px; margin: 0 auto; position: relative; z-index: 2; }
 
-  .game-logo { text-align: center; margin: 24px 0 6px; font-size: 54px; line-height: 1; }
+  /* ===== タイトル画面: 夜空の演出 ===== */
+  #screen-title {
+    background:
+      radial-gradient(120% 70% at 50% -10%, rgba(64,46,140,0.55), transparent 60%),
+      radial-gradient(100% 60% at 80% 110%, rgba(255,87,34,0.18), transparent 60%),
+      linear-gradient(180deg, #060a1e 0%, #0b1026 45%, #1a1440 100%);
+  }
+  #title-stars { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .aurora {
+    position: absolute; left: -30%; right: -30%; top: -12%; height: 46%;
+    background: linear-gradient(100deg,
+      rgba(52,211,153,0.00) 12%, rgba(52,211,153,0.16) 30%,
+      rgba(99,102,241,0.22) 50%, rgba(245,197,66,0.12) 68%, transparent 86%);
+    filter: blur(26px);
+    animation: aurora-sway 11s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+  @keyframes aurora-sway {
+    from { transform: translateX(-6%) skewY(-4deg); opacity: 0.7; }
+    to   { transform: translateX(6%) skewY(3deg); opacity: 1; }
+  }
+
+  .title-crest { text-align: center; font-size: 56px; margin: 26px 0 2px; filter: drop-shadow(0 0 18px rgba(245,197,66,0.55)); animation: float 4s ease-in-out infinite; }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
   h1.game-title {
-    text-align: center; margin: 0 0 4px;
-    font-size: 28px; font-weight: 800; letter-spacing: 0.08em;
+    font-family: var(--mincho);
+    text-align: center; margin: 0;
+    font-size: 40px; font-weight: 800; letter-spacing: 0.12em; line-height: 1.25;
+    background: linear-gradient(180deg, #fff8e1 0%, var(--gold) 45%, var(--gold-deep) 75%, #fff3c4 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: var(--gold);
+    text-shadow: 0 0 28px rgba(245,197,66,0.25);
   }
-  .game-subtitle { text-align: center; color: var(--ink-soft); font-size: 13px; margin: 0 0 24px; }
+  .game-subtitle {
+    font-family: var(--mincho);
+    text-align: center; color: #cfd4ea; font-size: 14px; letter-spacing: 0.28em;
+    margin: 8px 0 4px;
+  }
+  .title-rule {
+    width: 180px; height: 1px; margin: 14px auto 22px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+  .title-lede {
+    text-align: center; font-size: 12.5px; line-height: 2; color: #aab1d6; margin: 0 0 22px;
+  }
+  .title-lede b { color: var(--gold); font-weight: 700; }
 
-  .card {
-    background: #fff; border-radius: 14px;
-    box-shadow: 0 2px 10px rgba(13,17,23,0.10);
-    padding: 14px 16px; margin-bottom: 12px;
+  .mode-btn {
+    display: block; width: 100%;
+    border-radius: 14px; border: 1px solid rgba(245,197,66,0.35);
+    padding: 16px 18px; margin: 12px 0;
+    font-family: inherit; text-align: left; cursor: pointer;
+    background: linear-gradient(135deg, rgba(26,20,64,0.9), rgba(11,16,38,0.9));
+    color: var(--paper);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.07);
+    transition: transform 0.12s, box-shadow 0.2s;
   }
-  .card h2 { margin: 0 0 8px; font-size: 15px; }
-  .card p { margin: 6px 0; font-size: 13px; line-height: 1.7; color: var(--ink-soft); }
+  .mode-btn:active { transform: scale(0.98); }
+  .mode-btn .m-name { font-size: 17px; font-weight: 800; letter-spacing: 0.04em; }
+  .mode-btn .m-desc { font-size: 11.5px; color: #aab1d6; margin-top: 4px; line-height: 1.6; }
+  .mode-btn.daily { border-color: var(--gold); background: linear-gradient(135deg, rgba(60,40,10,0.92), rgba(26,20,64,0.92)); box-shadow: 0 4px 28px rgba(245,197,66,0.22), inset 0 1px 0 rgba(255,255,255,0.1); }
+  .mode-btn.daily .m-name { color: var(--gold); }
+
+  .fx-toggle {
+    display: block; margin: 16px auto 0;
+    background: none; border: 1px solid rgba(170,177,214,0.4); color: #aab1d6;
+    border-radius: 18px; padding: 7px 16px; font-size: 12px; font-family: inherit; cursor: pointer;
+  }
+  .best-line { text-align: center; font-size: 12.5px; color: var(--gold); margin: 16px 0 0; letter-spacing: 0.05em; }
+  .footer-note { text-align: center; font-size: 10px; color: #5b628a; margin-top: 26px; line-height: 1.8; }
+  .footer-note a { color: inherit; }
+
+  /* ===== 配達指令(問題)HUD ===== */
+  .hud-top {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 60;
+    padding: calc(10px + env(safe-area-inset-top)) 12px 0;
+    pointer-events: none; display: none;
+  }
+  .hud-top.active { display: block; }
+  .order-card {
+    pointer-events: auto;
+    max-width: 480px; margin: 0 auto;
+    background: linear-gradient(135deg, rgba(16,22,52,0.94), rgba(8,12,32,0.94));
+    border: 1px solid rgba(245,197,66,0.45);
+    border-radius: 14px;
+    box-shadow: 0 6px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+    padding: 11px 14px;
+    color: var(--paper);
+    animation: order-in 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
+  }
+  @keyframes order-in { from { transform: translateY(-90px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .order-card .q-no { font-size: 11px; font-weight: 800; color: var(--gold); letter-spacing: 0.18em; }
+  .order-card .q-addr { font-family: var(--mincho); font-size: 22px; font-weight: 800; margin: 2px 0; letter-spacing: 0.04em; }
+  .order-card .q-item { font-size: 12px; color: #ffd9a8; }
+  .order-card .q-hint { font-size: 11px; color: #8b92bd; margin-top: 3px; }
+
+  .hud-bottom {
+    position: absolute; left: 0; right: 0;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: 60; padding: 0 12px; display: none;
+  }
+  .hud-bottom.active { display: block; }
+  .hud-bottom .row { max-width: 480px; margin: 0 auto; display: flex; gap: 10px; }
 
   .btn {
     display: block; width: 100%;
     border: none; border-radius: 12px;
     padding: 14px; margin: 10px 0;
-    font-size: 16px; font-weight: 700;
-    font-family: inherit;
+    font-size: 16px; font-weight: 800; font-family: inherit;
     cursor: pointer;
-    background: var(--paper-soft); color: var(--ink);
+    background: var(--night-soft); color: var(--paper);
+    border: 1px solid rgba(170,177,214,0.25);
   }
-  .btn.primary { background: var(--accent); color: #fff; box-shadow: 0 3px 10px rgba(255,87,34,0.35); }
-  .btn.ghost { background: transparent; border: 2px solid var(--ink-soft); }
-  .btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+  .btn.primary {
+    background: linear-gradient(135deg, #ff7043, var(--accent) 60%, #e64a19);
+    color: #fff; border: none;
+    box-shadow: 0 4px 18px rgba(255,87,34,0.5);
+  }
+  .btn.gold {
+    background: linear-gradient(135deg, #ffe082, var(--gold) 55%, var(--gold-deep));
+    color: #3a2a00; border: none;
+    box-shadow: 0 4px 22px rgba(245,197,66,0.45);
+  }
+  .btn:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
   .btn:active:not(:disabled) { transform: scale(0.98); }
+  .hud-bottom .btn { margin: 0; }
 
-  .best-line { text-align: center; font-size: 13px; color: var(--ink-soft); margin: 14px 0 4px; }
-  .footer-note { text-align: center; font-size: 10px; color: #9aa0a6; margin-top: 22px; line-height: 1.7; }
-  .footer-note a { color: inherit; }
-
-  /* ===== ステージ用HUD ===== */
-  .hud-top {
-    position: absolute; top: 0; left: 0; right: 0;
-    z-index: 60;
-    padding: calc(10px + env(safe-area-inset-top)) 12px 0;
-    pointer-events: none;
-    display: none;
-  }
-  .hud-top.active { display: block; }
-  .hud-card {
-    pointer-events: auto;
-    max-width: 480px; margin: 0 auto;
-    background: rgba(255,255,255,0.96);
-    border-radius: 14px;
-    box-shadow: 0 2px 12px rgba(13,17,23,0.18);
-    border-top: 3px solid var(--accent);
-    padding: 10px 14px;
-  }
-  .hud-card .q-no { font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: 0.06em; }
-  .hud-card .q-addr { font-size: 20px; font-weight: 800; margin: 2px 0; }
-  .hud-card .q-hint { font-size: 12px; color: var(--ink-soft); }
-
-  .hud-bottom {
-    position: absolute; left: 0; right: 0;
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    z-index: 60;
-    padding: 0 12px;
-    display: none;
-  }
-  .hud-bottom.active { display: block; }
-  .hud-bottom .row { max-width: 480px; margin: 0 auto; display: flex; gap: 10px; }
-  .hud-bottom .btn { margin: 0; box-shadow: 0 3px 12px rgba(13,17,23,0.25); }
-
-  /* ===== 結果シート(ステージ内) ===== */
+  /* ===== シート ===== */
   .sheet {
-    position: absolute; left: 0; right: 0; bottom: 0;
-    z-index: 80;
-    background: var(--paper);
-    border-radius: 18px 18px 0 0;
-    box-shadow: 0 -4px 18px rgba(13,17,23,0.30);
-    padding: 16px 18px calc(18px + env(safe-area-inset-bottom));
-    max-height: 62dvh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 80;
+    background: linear-gradient(180deg, rgba(18,24,56,0.97), rgba(8,12,32,0.99));
+    border-top: 1px solid rgba(245,197,66,0.4);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.6);
+    padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
+    max-height: 64dvh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     display: none;
+    color: var(--paper);
   }
-  .sheet.active { display: block; }
+  .sheet.active { display: block; animation: sheet-up 0.4s cubic-bezier(0.2, 1.1, 0.3, 1); }
+  @keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
   .sheet-inner { max-width: 480px; margin: 0 auto; }
-  .sheet .result-headline { font-size: 22px; font-weight: 800; margin: 0 0 2px; }
-  .sheet .result-sub { font-size: 14px; color: var(--ink-soft); margin: 0 0 10px; }
-  .sheet .result-sub b { color: var(--accent); font-size: 18px; }
-
+  .result-headline { font-family: var(--mincho); font-size: 24px; font-weight: 800; margin: 0 0 4px; letter-spacing: 0.04em; }
+  .result-sub { font-size: 14px; color: #c3c9e8; margin: 0 0 10px; line-height: 1.8; }
+  .result-sub b { color: var(--gold); font-size: 20px; font-family: var(--mincho); }
   .trivia {
-    background: var(--accent-soft);
-    border-radius: 12px;
-    padding: 10px 12px;
-    margin: 10px 0;
-    font-size: 13px; line-height: 1.75;
+    background: rgba(245,197,66,0.1);
+    border-left: 3px solid var(--gold);
+    border-radius: 10px;
+    padding: 10px 13px; margin: 12px 0;
+    font-size: 13px; line-height: 1.85; color: #e7e3d2;
   }
-  .trivia .trivia-tag { font-size: 11px; font-weight: 800; color: var(--accent); display: block; margin-bottom: 2px; }
+  .trivia .trivia-tag { font-size: 11px; font-weight: 800; color: var(--gold); display: block; margin-bottom: 3px; letter-spacing: 0.1em; }
+  .odo-line { font-size: 12px; color: #8b92bd; text-align: right; margin: 4px 0 0; }
+  .odo-line b { color: var(--gold); }
+
+  /* スキップボタン(演出中) */
+  #btn-skip {
+    position: absolute; right: 14px; bottom: calc(20px + env(safe-area-inset-bottom));
+    z-index: 95; display: none;
+    background: rgba(8,12,32,0.7); color: #c3c9e8;
+    border: 1px solid rgba(170,177,214,0.4);
+    border-radius: 18px; padding: 8px 16px; font-size: 12px; font-family: inherit; cursor: pointer;
+  }
+  #btn-skip.active { display: block; }
 
   /* ===== 結果画面 ===== */
-  .rank-big { text-align: center; font-size: 56px; margin: 10px 0 0; line-height: 1; }
-  .rank-name { text-align: center; font-size: 26px; font-weight: 800; margin: 6px 0 0; }
-  .score-big { text-align: center; font-size: 16px; color: var(--ink-soft); margin: 4px 0 16px; }
-  .score-big b { font-size: 26px; color: var(--accent); }
-  .breakdown { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .breakdown td { padding: 6px 4px; border-bottom: 1px solid var(--paper-soft); }
+  #screen-result {
+    background:
+      radial-gradient(110% 60% at 50% -5%, rgba(64,46,140,0.5), transparent 60%),
+      linear-gradient(180deg, #060a1e, #0e1233 60%, #1a1440);
+  }
+  .rank-big { text-align: center; font-size: 64px; margin: 18px 0 0; line-height: 1; filter: drop-shadow(0 0 24px rgba(245,197,66,0.6)); animation: rank-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1); }
+  @keyframes rank-pop { from { transform: scale(0); } to { transform: scale(1); } }
+  .rank-name {
+    font-family: var(--mincho);
+    text-align: center; font-size: 32px; font-weight: 800; margin: 8px 0 0; letter-spacing: 0.14em;
+    background: linear-gradient(180deg, #fff8e1, var(--gold) 50%, var(--gold-deep));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .score-big { text-align: center; font-size: 15px; color: #aab1d6; margin: 6px 0 18px; }
+  .score-big b { font-size: 30px; color: var(--gold); font-family: var(--mincho); }
+  .card-dark {
+    background: rgba(16,22,52,0.85);
+    border: 1px solid rgba(170,177,214,0.2);
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 12px;
+  }
+  .breakdown { width: 100%; border-collapse: collapse; font-size: 12.5px; color: #d9dcef; }
+  .breakdown td { padding: 7px 4px; border-bottom: 1px solid rgba(170,177,214,0.14); }
   .breakdown td:last-child { text-align: right; font-weight: 700; white-space: nowrap; }
   .new-best { text-align: center; color: var(--good); font-weight: 800; font-size: 14px; margin: 6px 0; }
 
@@ -153,126 +253,163 @@
     width: 30px; height: 30px; border-radius: 50% 50% 50% 0;
     transform: rotate(-45deg);
     background: var(--accent); border: 2px solid #fff;
-    box-shadow: 0 2px 8px rgba(13,17,23,0.4);
+    box-shadow: 0 0 16px rgba(255,87,34,0.8);
   }
   .mk-guess::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #fff; }
-  .mk-answer { font-size: 30px; text-shadow: 0 1px 4px rgba(13,17,23,0.4); }
+  .mk-answer { font-size: 34px; filter: drop-shadow(0 0 10px rgba(245,197,66,0.9)); animation: drop-in 0.5s cubic-bezier(0.2, 1.5, 0.4, 1); position: relative; }
+  @keyframes drop-in { from { transform: translateY(-60px) scale(0.3); opacity: 0; } to { transform: none; opacity: 1; } }
+  .mk-answer .pulse {
+    position: absolute; left: 50%; top: 60%; width: 12px; height: 12px;
+    border: 2px solid var(--gold); border-radius: 50%;
+    transform: translate(-50%, -50%);
+    animation: pulse-ring 1.6s ease-out infinite;
+  }
+  @keyframes pulse-ring {
+    from { width: 10px; height: 10px; opacity: 0.9; }
+    to { width: 90px; height: 90px; opacity: 0; }
+  }
+  .mk-truck { font-size: 30px; filter: drop-shadow(0 0 12px rgba(255,200,80,0.95)); z-index: 70; }
+  .mk-truck.flip { transform: scaleX(-1); }
   .mk-start {
-    width: 34px; height: 34px; border-radius: 10px;
-    background: var(--ink); color: #fff; font-size: 16px;
-    border: 2px solid #fff; box-shadow: 0 2px 8px rgba(13,17,23,0.4);
+    width: 36px; height: 36px; border-radius: 10px;
+    background: var(--night); color: var(--gold); font-size: 17px;
+    border: 2px solid var(--gold); box-shadow: 0 0 14px rgba(245,197,66,0.6);
   }
   .mk-dest {
-    width: 34px; height: 34px; border-radius: 50%;
-    background: #fff; border: 3px solid var(--accent);
-    font-size: 17px; color: var(--accent);
-    box-shadow: 0 2px 8px rgba(13,17,23,0.4);
+    width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(8,12,32,0.92); border: 2.5px solid var(--gold);
+    font-size: 17px; color: var(--gold);
+    box-shadow: 0 0 12px rgba(245,197,66,0.55);
     transition: transform 0.1s;
   }
-  .mk-dest.numbered { background: var(--accent); color: #fff; font-size: 18px; }
+  .mk-dest.numbered { background: var(--accent); border-color: #fff; color: #fff; font-size: 18px; box-shadow: 0 0 14px rgba(255,87,34,0.8); }
   .mk-dest:active { transform: scale(1.15); }
 
-  /* ===== ローディング ===== */
+  /* ===== ローディング・トースト ===== */
   #loading {
-    position: absolute; inset: 0; z-index: 200;
-    background: rgba(246,244,238,0.92);
+    position: absolute; inset: 0; z-index: 250;
+    background: rgba(6,10,30,0.92);
     display: none; align-items: center; justify-content: center;
-    flex-direction: column; gap: 14px;
-    text-align: center; padding: 0 30px;
+    flex-direction: column; gap: 14px; text-align: center; padding: 0 30px;
   }
   #loading.active { display: flex; }
   .spinner {
-    width: 38px; height: 38px; border-radius: 50%;
-    border: 4px solid var(--accent-soft); border-top-color: var(--accent);
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 4px solid rgba(245,197,66,0.2); border-top-color: var(--gold);
     animation: spin 0.9s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #loading-msg { font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+  #loading-msg { font-size: 14px; font-weight: 700; color: #c3c9e8; }
 
   #toast {
-    position: absolute; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom));
-    transform: translateX(-50%);
-    z-index: 300;
-    background: var(--ink); color: #fff;
+    position: absolute; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom));
+    transform: translateX(-50%); z-index: 300;
+    background: rgba(8,12,32,0.95); color: var(--paper);
+    border: 1px solid rgba(245,197,66,0.5);
     padding: 10px 18px; border-radius: 22px;
     font-size: 13px; font-weight: 700;
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.25s;
+    opacity: 0; pointer-events: none; transition: opacity 0.25s;
     white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
   }
   #toast.show { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .aurora, .title-crest, .mk-answer .pulse { animation: none; }
+  }
 </style>
 </head>
 <body>
 
 <div id="map"></div>
+<div id="vignette"></div>
+<canvas id="fx"></canvas>
 
 <!-- タイトル画面 -->
 <div id="screen-title" class="screen active">
+  <canvas id="title-stars"></canvas>
+  <div class="aurora"></div>
   <div class="screen-inner">
-    <div class="game-logo">🚚</div>
+    <div class="title-crest">🚚</div>
     <h1 class="game-title">配達員検定</h1>
-    <p class="game-subtitle">RYSの配達員になって、日本橋の街を駆けろ!</p>
+    <p class="game-subtitle">〜 全国お届けの旅 〜</p>
+    <div class="title-rule"></div>
+    <p class="title-lede">
+      RYSの拠点・日本橋は、江戸の昔より<b>五街道の起点</b>。<br>
+      いまも「日本国道路元標」が残る、<b>すべての道の始まりの地</b>。<br>
+      今日もここから、日本中の名所へ荷物を届けます。
+    </p>
 
-    <button id="btn-daily" class="btn primary">📅 デイリーチャレンジ</button>
-    <button id="btn-free" class="btn">🎲 フリープレイ</button>
+    <button id="btn-nat-daily" class="mode-btn daily">
+      <div class="m-name">📅 本日の配達指令(デイリー)</div>
+      <div class="m-desc">毎日あなたに届く5件の全国配達。名所の場所をピン当てし、最短ルートで回れ。結果をシェアして全国のドライバーと勝負!</div>
+    </button>
+    <button id="btn-nat-free" class="mode-btn">
+      <div class="m-name">🗾 全国お届けの旅(フリー)</div>
+      <div class="m-desc">毎回ちがう5つの名所へ。日本の地理と名所の知識が身につく修行モード。</div>
+    </button>
+    <button id="btn-local" class="mode-btn">
+      <div class="m-name">🏙 日本橋マスター(ご近所版)</div>
+      <div class="m-desc">RYSの地元・日本橋の実在の住所をピン当て。配達員のリアルな腕試し。</div>
+    </button>
+
     <div class="best-line" id="best-line"></div>
-
-    <div class="card">
-      <h2>🎮 遊び方</h2>
-      <p><b>ステージ1: 住所ピン当て(5問)</b><br>
-        実在の住所が出題されます。地図をタップして「ここだ!」と思う場所にピンを刺そう。正解に近いほど高得点。</p>
-      <p><b>ステージ2: ルート組み立て</b><br>
-        当てた5つの配達先を、お店から最短で回る順番を考えよう。AIが計算した最適ルートと勝負!</p>
-      <p><b>段位認定</b><br>
-        総合スコアで「見習い → 配達士 → 達人 → 伝説の配達員」の段位を認定。デイリーチャレンジは毎日全員に同じ問題が出ます。</p>
-    </div>
-
-    <div class="card">
-      <h2>📚 遊ぶと身につくこと</h2>
-      <p>日本独特の住所のしくみ(丁目・番・号)、日本橋エリアの地理、そして配送の現場で実際に使われている「ルート最適化」の考え方が、遊びながら自然に学べます。</p>
-    </div>
+    <button id="btn-fx" class="fx-toggle"></button>
 
     <p class="footer-note">
-      地図: 国土地理院(淡色地図) / 住所データ: <a href="https://geolonia.github.io/japanese-addresses/" target="_blank" rel="noopener">Geolonia 住所データ</a>・デジタル庁 アドレス・ベース・レジストリ<br>
+      地図: 国土地理院(淡色地図・全国最新写真) / 住所データ: <a href="https://geolonia.github.io/japanese-addresses/" target="_blank" rel="noopener">Geolonia</a>・アドレス・ベース・レジストリ<br>
       © RYS
     </p>
   </div>
 </div>
 
-<!-- ステージ1 HUD -->
-<div id="hud-stage1" class="hud-top">
-  <div class="hud-card">
-    <div class="q-no" id="s1-qno">Q1 / 5</div>
-    <div class="q-addr" id="s1-addr"></div>
-    <div class="q-hint">地図をタップしてピンを刺そう</div>
+<!-- 問題HUD -->
+<div id="hud-q" class="hud-top">
+  <div class="order-card" id="order-card">
+    <div class="q-no" id="q-no"></div>
+    <div class="q-addr" id="q-addr"></div>
+    <div class="q-item" id="q-item"></div>
+    <div class="q-hint" id="q-hint"></div>
   </div>
 </div>
-<div id="hud-stage1-actions" class="hud-bottom">
+<div id="hud-q-actions" class="hud-bottom">
   <div class="row">
-    <button id="btn-s1-confirm" class="btn primary" disabled>📍 ここに配達!</button>
+    <button id="btn-confirm" class="btn primary" disabled>📍 ここに配達!</button>
   </div>
 </div>
 
-<!-- ステージ1 問題結果シート -->
-<div id="sheet-s1" class="sheet">
+<!-- ステージ1 判定シート -->
+<div id="sheet-reveal" class="sheet">
   <div class="sheet-inner">
-    <p class="result-headline" id="s1r-headline"></p>
-    <p class="result-sub" id="s1r-sub"></p>
-    <div class="trivia"><span class="trivia-tag">📚 配達員のまめ知識</span><span id="s1r-trivia"></span></div>
-    <button id="btn-s1-next" class="btn primary"></button>
+    <p class="result-headline" id="rv-headline"></p>
+    <p class="result-sub" id="rv-sub"></p>
+    <button id="btn-deliver" class="btn gold" style="display:none;">🚚 日本橋から、お届けに出発!</button>
+    <div id="rv-local-extra" style="display:none;">
+      <div class="trivia"><span class="trivia-tag">📚 配達員のまめ知識</span><span id="rv-trivia"></span></div>
+      <button id="btn-next-local" class="btn primary"></button>
+    </div>
+  </div>
+</div>
+
+<!-- 到着シート(全国版) -->
+<div id="sheet-arrival" class="sheet">
+  <div class="sheet-inner">
+    <p class="result-headline" id="ar-headline"></p>
+    <p class="result-sub" id="ar-sub"></p>
+    <div class="trivia"><span class="trivia-tag" id="ar-tag"></span><span id="ar-desc"></span></div>
+    <p class="odo-line" id="ar-odo"></p>
+    <button id="btn-next" class="btn primary"></button>
   </div>
 </div>
 
 <!-- ステージ2 HUD -->
-<div id="hud-stage2" class="hud-top">
-  <div class="hud-card">
-    <div class="q-no">ステージ2: ルート組み立て</div>
-    <div class="q-addr" style="font-size:15px;" id="s2-status">お店 🏪 から5件を回る順番にタップ!</div>
-    <div class="q-hint">荷物ピン 📦 を配達する順にタップ(最後のピンはもう一度タップで取り消し)</div>
+<div id="hud-s2" class="hud-top">
+  <div class="order-card">
+    <div class="q-no">最終指令: 全国縦断ルート</div>
+    <div class="q-addr" style="font-size:15px;" id="s2-status"></div>
+    <div class="q-hint" id="s2-hint"></div>
   </div>
 </div>
-<div id="hud-stage2-actions" class="hud-bottom">
+<div id="hud-s2-actions" class="hud-bottom">
   <div class="row">
     <button id="btn-s2-reset" class="btn" style="flex:1;">やり直し</button>
     <button id="btn-s2-confirm" class="btn primary" style="flex:2;" disabled>🚚 出発!</button>
@@ -285,24 +422,26 @@
     <p class="result-headline" id="s2r-headline"></p>
     <p class="result-sub" id="s2r-sub"></p>
     <div class="trivia"><span class="trivia-tag">📚 配達員のまめ知識</span><span id="s2r-trivia"></span></div>
-    <button id="btn-s2-result" class="btn primary">🏅 検定結果を見る</button>
+    <button id="btn-s2-result" class="btn gold">🏅 検定結果を見る</button>
   </div>
 </div>
+
+<button id="btn-skip">演出をスキップ ▶▶</button>
 
 <!-- 結果画面 -->
 <div id="screen-result" class="screen">
   <div class="screen-inner">
     <div class="rank-big" id="r-emoji"></div>
     <div class="rank-name" id="r-rank"></div>
-    <p class="score-big">総合スコア <b id="r-score"></b> / 1000点</p>
+    <p class="score-big">総合スコア <b id="r-score">0</b> / 1000</p>
     <div class="new-best" id="r-newbest" style="display:none;">🎉 自己ベスト更新!</div>
-    <div class="card">
+    <div class="card-dark">
       <table class="breakdown" id="r-table"></table>
     </div>
-    <button id="btn-share" class="btn primary">📋 結果をコピーして自慢する</button>
-    <button id="btn-again" class="btn">🎲 フリープレイでもう一回</button>
-    <button id="btn-title" class="btn ghost">タイトルへ戻る</button>
-    <p class="footer-note">スコアの計算は直線距離です。実際の配達は道路に沿って走ります🚚</p>
+    <button id="btn-share" class="btn gold">📋 結果をコピーして自慢する</button>
+    <button id="btn-again" class="btn primary">もう一度挑戦する</button>
+    <button id="btn-title" class="btn">タイトルへ戻る</button>
+    <p class="footer-note">距離は直線距離で計算しています。実際の配達は道路に沿って走ります🚚</p>
   </div>
 </div>
 
@@ -315,13 +454,106 @@
 
 /* ===================== 定数 ===================== */
 
-const GSI_TILE_URL = 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png';
-const MAP_CENTER = [139.784, 35.687];   // 日本橋エリア(小舟町〜浜町の中間)
-const MAP_ZOOM = 15;
-const MAP_MAX_ZOOM = 17;                // 号レベルの読み取り防止
+const GAME_VER = 2;
 const QUESTION_COUNT = 5;
 
-// 住所データ(questions.json が無い場合のライブ取得設定。業務アプリと同じAPI)
+const GSI_PALE = 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png';
+const GSI_PHOTO = 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg';
+
+// 日本国道路元標(日本橋) — 五街道の起点であり、RYSのお届けの起点
+const NIHONBASHI = { name: '日本橋(道路元標)', lng: 139.7744, lat: 35.6840 };
+const JAPAN_BOUNDS = [[126.5, 29.0], [147.5, 45.8]];
+const LOCAL_CENTER = [139.784, 35.687];
+const LOCAL_ZOOM = 15;
+
+// 全国版の採点: [誤差上限km, 得点]
+const NAT_SCORE = [[20, 100], [60, 75], [150, 45], [300, 15]];
+// ご近所版の採点: [誤差上限m, 得点]
+const LOCAL_SCORE = [[50, 100], [100, 70], [200, 40], [400, 10]];
+const PTS_EMOJI_NAT = { 100: '🟩', 75: '🟨', 45: '🟧', 15: '🟥', 0: '⬜' };
+const PTS_EMOJI_LOCAL = { 100: '🟩', 70: '🟨', 40: '🟧', 10: '🟥', 0: '⬜' };
+
+const RANKS = [
+  { min: 900, name: '伝説の配達員', emoji: '🏆' },
+  { min: 700, name: '達人', emoji: '🥇' },
+  { min: 450, name: '配達士', emoji: '🥈' },
+  { min: 0,   name: '見習い', emoji: '🔰' },
+];
+
+/* ---- 全国の名所データ(47都道府県・55か所) ---- */
+// e: マーカー絵文字 / item: お届け品(配達フレーバー) / d: 解説(教育要素)
+const LANDMARKS = [
+  { n: '富士山', p: '静岡県・山梨県', e: '🗻', lng: 138.7274, lat: 35.3606, item: '山小屋カレー100食', d: '標高3776m、日本最高峰。2013年に世界文化遺産に登録。江戸時代には「富士講」で多くの庶民が登拝した。' },
+  { n: '金閣寺', p: '京都府', e: '🏯', lng: 135.7292, lat: 35.0394, item: '金箔の補修キット', d: '室町幕府3代将軍・足利義満の山荘が起源。舎利殿は約20万枚の金箔で覆われている。正式名は鹿苑寺。' },
+  { n: '伏見稲荷大社', p: '京都府', e: '⛩', lng: 135.7727, lat: 34.9671, item: '朱塗り用のうるし', d: '全国約3万社ある稲荷神社の総本宮。「千本鳥居」は実際には約1万基あるといわれる。' },
+  { n: '清水寺', p: '京都府', e: '🏮', lng: 135.7850, lat: 34.9949, item: '舞台修理用のヒノキ材', d: '「清水の舞台」は釘を1本も使わない懸造(かけづくり)。高さ約13mの舞台から京都市街を一望できる。' },
+  { n: '厳島神社', p: '広島県', e: '⛩', lng: 132.3198, lat: 34.2960, item: '大鳥居の絵はがき1万枚', d: '海上に立つ大鳥居で有名な世界遺産。平清盛が現在の姿に造営。満潮時には社殿が海に浮かんで見える。' },
+  { n: '原爆ドーム', p: '広島県', e: '🕊', lng: 132.4536, lat: 34.3955, item: '折り鶴の千羽鶴', d: '1945年の原爆の惨禍を今に伝える世界遺産。隣接する平和記念公園には世界中から折り鶴が届けられる。' },
+  { n: '東大寺', p: '奈良県', e: '🦌', lng: 135.8398, lat: 34.6890, item: '鹿せんべい1000枚', d: '奈良の大仏(盧舎那仏)は高さ約15m。大仏殿は世界最大級の木造建築。参道では鹿がお出迎え。' },
+  { n: '姫路城', p: '兵庫県', e: '🏯', lng: 134.6939, lat: 34.8394, item: '白漆喰の補修材', d: '「白鷺城」の愛称をもつ国宝・世界遺産。築城以来、大きな戦火を免れた奇跡の城といわれる。' },
+  { n: '大阪城', p: '大阪府', e: '🏯', lng: 135.5262, lat: 34.6873, item: 'たこ焼きの鉄板50枚', d: '豊臣秀吉が築いた天下の名城。現在の天守閣は昭和6年、市民の寄付によって再建された。' },
+  { n: '札幌市時計台', p: '北海道', e: '🕰', lng: 141.3536, lat: 43.0626, item: '雪まつり用スコップ', d: '正式名称は「旧札幌農学校演武場」。「少年よ大志を抱け」のクラーク博士ゆかりの学校の施設だった。' },
+  { n: '函館山', p: '北海道', e: '🌃', lng: 140.7036, lat: 41.7590, item: '夜景観賞用の双眼鏡', d: '山頂からの夜景は「百万ドルの夜景」と称される。砂州がつくる街のくびれが宝石箱のように輝く。' },
+  { n: '摩周湖', p: '北海道', e: '💧', lng: 144.5720, lat: 43.5860, item: '霧対策のレインコート', d: '世界屈指の透明度を誇るカルデラ湖。霧に包まれることが多く「霧の摩周湖」として歌にもなった。' },
+  { n: '弘前城', p: '青森県', e: '🌸', lng: 140.4640, lat: 40.6075, item: 'りんご剪定ばさみ', d: '現存12天守のひとつ。春には約2600本の桜が咲き誇る、日本屈指の花見の名所。' },
+  { n: '中尊寺金色堂', p: '岩手県', e: '✨', lng: 141.0999, lat: 38.9890, item: '金色堂の保護ガラス', d: '奥州藤原氏が築いた平泉の象徴。堂全体が金箔で覆われた平安美術の最高峰で、世界遺産。' },
+  { n: '松島', p: '宮城県', e: '🌊', lng: 141.0640, lat: 38.3680, item: '牡蠣養殖用のロープ', d: '日本三景のひとつ。260余りの島々が浮かぶ絶景に、松尾芭蕉も言葉を失ったと伝わる。' },
+  { n: '角館武家屋敷', p: '秋田県', e: '🏘', lng: 140.5560, lat: 39.5930, item: 'しだれ桜の苗木', d: '「みちのくの小京都」と呼ばれる城下町。黒板塀にしだれ桜が映える通りは春の絶景。' },
+  { n: '銀山温泉', p: '山形県', e: '♨️', lng: 140.5290, lat: 38.5700, item: 'ガス灯のランプ', d: '大正ロマンの木造旅館が川沿いに並ぶ温泉街。雪の夜、ガス灯がともる風景は幻想的。' },
+  { n: '鶴ヶ城', p: '福島県', e: '🏯', lng: 139.9297, lat: 37.4878, item: '赤瓦の予備瓦', d: '戊辰戦争で約1か月の籠城に耐えた会津の名城。国内唯一の赤瓦の天守が特徴。' },
+  { n: '日光東照宮', p: '栃木県', e: '⛩', lng: 139.5986, lat: 36.7580, item: '彫刻みがきの布', d: '徳川家康を祀る世界遺産。「見ざる言わざる聞かざる」の三猿と眠り猫の彫刻が有名。' },
+  { n: '草津温泉', p: '群馬県', e: '♨️', lng: 138.5963, lat: 36.6228, item: '湯もみ板20枚', d: '自然湧出量日本一の温泉。熱い湯を板でかき混ぜて冷ます「湯もみ」が名物。' },
+  { n: '富岡製糸場', p: '群馬県', e: '🧵', lng: 138.8880, lat: 36.2553, item: '生糸の絹糸セット', d: '明治5年創業の官営模範工場で世界遺産。日本の近代化と絹産業を支えた。' },
+  { n: '偕楽園', p: '茨城県', e: '🌺', lng: 140.4530, lat: 36.3760, item: '梅の盆栽', d: '日本三名園のひとつ。約100品種3000本の梅が植えられ、春の梅まつりで賑わう。' },
+  { n: '川越の時の鐘', p: '埼玉県', e: '🔔', lng: 139.4838, lat: 35.9251, item: 'さつまいも菓子の木箱', d: '「小江戸」川越のシンボル。今も1日4回、蔵造りの町並みに鐘の音を響かせる。' },
+  { n: '成田山新勝寺', p: '千葉県', e: '🏮', lng: 140.3180, lat: 35.7860, item: 'うなぎの蒲焼のたれ', d: '初詣参拝者数は全国トップクラス。門前町に並ぶうなぎ料理の店も名物。' },
+  { n: '東京スカイツリー', p: '東京都', e: '🗼', lng: 139.8107, lat: 35.7101, item: '展望台の窓ふきモップ', d: '高さ634m、世界一高い自立式電波塔。「634」は旧国名「武蔵(むさし)」の語呂合わせ。' },
+  { n: '鎌倉大仏', p: '神奈川県', e: '🧘', lng: 139.5358, lat: 35.3167, item: '大仏さまの肩掛け', d: '高さ約11mの阿弥陀如来像。大仏殿は災害で失われ、約500年ものあいだ「露坐」のまま。' },
+  { n: '佐渡金山', p: '新潟県', e: '⛏', lng: 138.2580, lat: 38.0410, item: '砂金採りのパン皿', d: '江戸幕府の財政を支えた日本最大の金銀山。約400年で金78トンを産出した。' },
+  { n: '黒部ダム', p: '富山県', e: '🌈', lng: 137.6622, lat: 36.5664, item: '観光放水用の虹メガネ', d: '高さ186m、日本一のアーチ式ダム。建設は延べ1000万人が関わった「世紀の難工事」だった。' },
+  { n: '兼六園', p: '石川県', e: '🏮', lng: 136.6628, lat: 36.5613, item: '雪吊り用の縄', d: '日本三名園のひとつ。冬、木々を縄で守る「雪吊り」は雪国金沢ならではの風物詩。' },
+  { n: '東尋坊', p: '福井県', e: '🌊', lng: 136.1255, lat: 36.2376, item: '遊覧船の救命胴衣', d: '高さ約25mの柱状節理の断崖が約1km続く。地質学的にも世界的に珍しい奇勝。' },
+  { n: '善光寺', p: '長野県', e: '🏮', lng: 138.1878, lat: 36.6616, item: 'お戒壇めぐりの提灯', d: '「一生に一度は善光寺参り」と謳われた無宗派の寺。御開帳は数えで7年に一度。' },
+  { n: '松本城', p: '長野県', e: '🏯', lng: 137.9690, lat: 36.2386, item: '黒壁用のうるし', d: '現存12天守のうち唯一の平城。黒と白のコントラストから「烏城(からすじょう)」とも。' },
+  { n: '白川郷', p: '岐阜県', e: '🏘', lng: 136.9066, lat: 36.2580, item: '茅葺き屋根のカヤ', d: '合掌造り集落の世界遺産。屋根の葺き替えは村人総出の助け合い「結(ゆい)」で行われてきた。' },
+  { n: '高山の古い町並み', p: '岐阜県', e: '🏮', lng: 137.2530, lat: 36.1430, item: '朝市ののれん', d: '「飛騨の小京都」。江戸時代の商家が連なり、宮川朝市は日本三大朝市のひとつ。' },
+  { n: '名古屋城', p: '愛知県', e: '🏯', lng: 136.8997, lat: 35.1856, item: '金鯱みがきセット', d: '徳川家康が築いた尾張徳川家の居城。金のしゃちほこは火災から城を守る守り神とされた。' },
+  { n: '伊勢神宮', p: '三重県', e: '⛩', lng: 136.7256, lat: 34.4550, item: '赤福餅の特製箱', d: '「お伊勢さん」と親しまれる日本の総氏神。20年に一度社殿を建て替える式年遷宮が1300年続く。' },
+  { n: '彦根城', p: '滋賀県', e: '🏯', lng: 136.2520, lat: 35.2760, item: 'ひこにゃんの兜', d: '国宝5天守のひとつ。井伊家35万石の居城で、ゆるキャラ「ひこにゃん」のふるさと。' },
+  { n: '那智の滝', p: '和歌山県', e: '🌊', lng: 135.8902, lat: 33.6726, item: '熊野古道用の杖', d: '落差133m、一段の滝として日本一。滝そのものが熊野那智大社の御神体として祀られる。' },
+  { n: '鳥取砂丘', p: '鳥取県', e: '🐪', lng: 134.2280, lat: 35.5400, item: 'らくだのエサ', d: '南北2.4km・東西16kmに広がる日本最大級の砂丘。風が砂に描く「風紋」が美しい。' },
+  { n: '出雲大社', p: '島根県', e: '⛩', lng: 132.6855, lat: 35.4020, item: '縁結びの赤い糸1万本', d: '縁結びの神・大国主大神を祀る。旧暦10月は全国の神々が集う月で、出雲だけ「神在月」と呼ぶ。' },
+  { n: '倉敷美観地区', p: '岡山県', e: '🏘', lng: 133.7720, lat: 34.5953, item: 'デニム生地のロール', d: '白壁の蔵屋敷が川沿いに並ぶ町並み。近くの児島は国産ジーンズ発祥の地。' },
+  { n: '錦帯橋', p: '山口県', e: '🌉', lng: 132.1772, lat: 34.1675, item: 'アーチの組み木', d: '5連の木造アーチ橋。釘をほとんど使わない伝統工法が約350年受け継がれている。' },
+  { n: '鳴門の渦潮', p: '徳島県', e: '🌀', lng: 134.6515, lat: 34.2365, item: '観潮船の旗', d: '世界最大級の渦潮は直径20mにも達する。潮の干満差が生む自然のダイナミックショー。' },
+  { n: '金刀比羅宮', p: '香川県', e: '⛩', lng: 133.8090, lat: 34.1840, item: '785段分の杖', d: '「こんぴらさん」と親しまれる海の神様。御本宮まで785段、奥社まで1368段の石段が名物。' },
+  { n: '道後温泉本館', p: '愛媛県', e: '♨️', lng: 132.7860, lat: 33.8520, item: 'みかん石けん', d: '日本最古級の名湯。明治建築の本館は「千と千尋の神隠し」の湯屋のモデルのひとつとも。' },
+  { n: '桂浜', p: '高知県', e: '🌊', lng: 133.5746, lat: 33.4969, item: '龍馬像の望遠鏡', d: '太平洋を望む景勝地。幕末の志士・坂本龍馬の銅像が、海の彼方をじっと見つめている。' },
+  { n: '太宰府天満宮', p: '福岡県', e: '⛩', lng: 130.5350, lat: 33.5210, item: '合格祈願の鉛筆1万本', d: '学問の神様・菅原道真公を祀る総本宮。受験シーズンには全国から参拝者が訪れる。' },
+  { n: '吉野ヶ里遺跡', p: '佐賀県', e: '🏺', lng: 130.3830, lat: 33.3250, item: '勾玉づくりキット', d: '弥生時代最大級の環壕集落跡。教科書でおなじみの物見やぐらが復元されている。' },
+  { n: 'グラバー園', p: '長崎県', e: '🏠', lng: 129.8689, lat: 32.7337, item: 'カステラ100箱', d: '幕末の貿易商グラバーの旧邸。日本最古級の木造洋風建築から長崎港を一望できる。' },
+  { n: '阿蘇山', p: '熊本県', e: '🌋', lng: 131.1040, lat: 32.8840, item: 'あか牛の牧草', d: '世界最大級のカルデラをもつ活火山。広大な草原での放牧風景は阿蘇ならでは。' },
+  { n: '別府温泉', p: '大分県', e: '♨️', lng: 131.4913, lat: 33.2846, item: '地獄蒸しのせいろ', d: '源泉数・湧出量ともに日本一の温泉郷。「地獄めぐり」ではコバルトブルーや真っ赤な熱泉が見られる。' },
+  { n: '高千穂峡', p: '宮崎県', e: '🚣', lng: 131.3010, lat: 32.7020, item: '貸しボートのオール', d: '阿蘇の火砕流が刻んだ柱状節理の峡谷。日本の滝百選「真名井の滝」にボートで近づける。' },
+  { n: '桜島', p: '鹿児島県', e: '🌋', lng: 130.6570, lat: 31.5930, item: '火山灰の克灰袋', d: '今も噴煙を上げる活火山。1914年の大正大噴火で、海峡が埋まり大隅半島と陸続きになった。' },
+  { n: '屋久島・縄文杉', p: '鹿児島県', e: '🌲', lng: 130.5770, lat: 30.3860, item: '登山道の木道板', d: '樹齢数千年ともいわれる屋久杉の巨木。会いに行くには往復10時間のトレッキングが必要。' },
+  { n: '首里城', p: '沖縄県', e: '🏯', lng: 127.7190, lat: 26.2170, item: '朱塗りの瓦', d: '琉球王国の王城。中国と日本の築城文化が融合した独自の様式をもつ。現在復元工事が進む。' },
+];
+
+const TSP_TRIVIA = '配達先を最短で回る順番を求める問題は「巡回セールスマン問題」と呼ばれる有名な難問。訪問先が増えると組み合わせが爆発的に増え、10件で約36万通り、15件で約870億通りに。実際の配送現場ではコンピュータが近似アルゴリズムで一瞬にして良いルートを計算しています。RYSの配送でも同じ技術が活躍中!';
+
+const LOCAL_TRIVIA = [
+  '日本の住所は「街区方式」。「2丁目8-6」は「2丁目の8番街区の6号」という意味で、道路名ではなくブロック単位で場所が決まる、世界でも少数派のしくみです。',
+  '「号」は街区の周囲を一定間隔(多くは10〜15m)で区切り、角から時計回りに振られます。だから「8-6」の隣が必ず「8-7」とは限らないのが配達員泣かせ。',
+  'ふだん使う住所(住居表示)とは別に、土地の登記には「地番」という別の番号があります。同じ場所に2種類の番号があるのです。',
+  '今の「番・号」方式は1962年の「住居表示に関する法律」で生まれました。それまでは地番が住所代わりで、配達は今よりずっと大変でした。',
+  '日本橋小舟町は、江戸時代に日本橋川の舟運で栄えた町。小舟が集まる河岸(かし)があったことが町名の由来とされます。',
+  '日本橋人形町は、江戸時代に人形浄瑠璃の人形師が多く住んだことが名前の由来。甘酒横丁など下町情緒が今も残ります。',
+  '中央区には「日本橋○○町」を冠する町が20以上残っています。江戸以来の町名が今も現役で使われる貴重なエリアです。',
+  'ベテラン配達員は街区の「角の号」を覚えておき、番地から建物のだいたいの位置を頭の中で逆算します。このゲームはまさにその訓練。',
+];
+
+// ご近所版のライブ住所取得(業務アプリと同じAPI)
 const ADDR_API_BASE = 'https://japanese-addresses-v2.geoloniamaps.com/api/ja';
 const ADDR_PREF = '東京都';
 const ADDR_CITY = '中央区';
@@ -330,40 +562,15 @@ const TARGET_OAZA = [
   '日本橋富沢町', '日本橋久松町', '日本橋浜町', '日本橋蛎殻町',
   '日本橋大伝馬町', '日本橋小伝馬町', '日本橋横山町', '日本橋中洲', '東日本橋',
 ];
-const AREA_CENTER = { lng: 139.778364, lat: 35.686672 };  // 日本橋小舟町の中心
+const AREA_CENTER = { lng: 139.778364, lat: 35.686672 };
 const MAX_DIST_FROM_CENTER_M = 2500;
 const START_FALLBACK = { name: 'RYS 小舟町店', addr: '日本橋小舟町8-6', lng: AREA_CENTER.lng, lat: AREA_CENTER.lat };
 
-// ステージ1採点: [誤差上限m, 得点]
-const SCORE_TABLE = [[50, 100], [100, 70], [200, 40], [400, 10]];
-const PTS_EMOJI = { 100: '🟩', 70: '🟨', 40: '🟧', 10: '🟥', 0: '⬜' };
-
-// 段位(総合1000点満点)
-const RANKS = [
-  { min: 900, name: '伝説の配達員', emoji: '🏆' },
-  { min: 700, name: '達人', emoji: '🥇' },
-  { min: 450, name: '配達士', emoji: '🥈' },
-  { min: 0,   name: '見習い', emoji: '🔰' },
-];
-
-const TRIVIA = [
-  '日本の住所は「街区方式」。「2丁目8-6」は「2丁目の8番街区(ブロック)の6号」という意味で、道路名ではなくブロック単位で場所が決まります。これは世界でも少数派のしくみです。',
-  '「号」は街区の周囲を一定間隔(多くは10〜15m)で区切り、角から順に時計回りに振られます。だから「8-6」の隣が必ず「8-7」とは限らないのが配達員泣かせ。',
-  'ふだん使う住所(住居表示)とは別に、土地の登記には「地番」という別の番号があります。同じ場所に2種類の番号があるのです。',
-  '今の「番・号」方式は1962年(昭和37年)の「住居表示に関する法律」で生まれました。それまでは地番が住所代わりで、順番がバラバラ。配達は今よりずっと大変でした。',
-  '日本橋小舟町は、江戸時代に日本橋川の舟運で栄えた町。小舟が集まる河岸(かし)があったことが町名の由来とされます。',
-  '日本橋浜町は隅田川沿いの「浜」に由来する町名。明治座があることでも有名で、芝居見物の人で賑わってきました。',
-  '日本橋人形町は、江戸時代に人形浄瑠璃の人形師たちが多く住んだことが名前の由来。甘酒横丁など下町情緒が今も残ります。',
-  '中央区には「日本橋○○町」を冠する町が20以上残っています。江戸以来の歴史ある町名が今も現役で使われている貴重なエリアです。',
-  '同じ日本でも京都市内は街区方式ではなく「通り名方式」。「御池通烏丸東入ル」のように交差点からの方向で場所を表します。',
-  'ベテラン配達員は街区の「角の号」を覚えておき、番地から建物のだいたいの位置を頭の中で逆算します。このゲームはまさにその訓練です。',
-];
-
-const TSP_TRIVIA = '配達先を最短で回る順番を求める問題は「巡回セールスマン問題」と呼ばれる有名な難問。訪問先が増えると組み合わせが爆発的に増え、10件なら約36万通り、15件なら約870億通りにもなります。実際の配送現場では、コンピュータが近似アルゴリズムで一瞬にして良いルートを計算しています。RYSの配送でも同じ技術が活躍中!';
-
-const LS_BEST = 'rys_game_best';
-const LS_DAILY_PREFIX = 'rys_game_daily_';
+const LS_BEST_NAT = 'rys_game_best_nat';
+const LS_BEST_LOCAL = 'rys_game_best_local';
+const LS_DAILY_PREFIX = 'rys_game_daily2_';
 const LS_ADDR_CACHE = 'rys_game_addr_v1';
+const LS_FX = 'rys_game_fx';
 
 /* ===================== ユーティリティ ===================== */
 
@@ -384,10 +591,11 @@ function distanceMeters(a, b) {
 }
 
 function formatDist(m) {
-  return m >= 1000 ? (m / 1000).toFixed(2) + 'km' : Math.round(m) + 'm';
+  if (m >= 100000) return Math.round(m / 1000).toLocaleString('ja-JP') + 'km';
+  if (m >= 1000) return (m / 1000).toFixed(1) + 'km';
+  return Math.round(m) + 'm';
 }
 
-// シード付きPRNG(デイリーチャレンジの決定性のため)
 function xmur3(str) {
   let h = 1779033703 ^ str.length;
   for (let i = 0; i < str.length; i++) {
@@ -438,14 +646,294 @@ function hideLoading() { $('loading').classList.remove('active'); }
 function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
 function lsSet(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
 
-/* ===================== 住所データ読み込み ===================== */
+const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function fxEnabled() { return !reducedMotion && lsGet(LS_FX) !== 'off'; }
 
-// 1) 同梱 questions.json → 2) localStorageキャッシュ → 3) Geolonia APIライブ取得
-let addrData = null;  // { version, start, addresses: [{a, l, lng, lat}] }
+// 数字のカウントアップ演出
+function countUp(el, to, suffix, durationMs) {
+  if (!fxEnabled()) { el.textContent = Math.round(to).toLocaleString('ja-JP') + (suffix || ''); return; }
+  const t0 = performance.now();
+  function frame(t) {
+    const p = Math.min(1, (t - t0) / durationMs);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(to * eased).toLocaleString('ja-JP') + (suffix || '');
+    if (p < 1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ===================== パーティクル演出 ===================== */
+
+const fx = { canvas: null, ctx: null, parts: [], raf: 0 };
+
+function fxInit() {
+  fx.canvas = $('fx');
+  fx.ctx = fx.canvas.getContext('2d');
+  const resize = () => {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    fx.canvas.width = innerWidth * dpr;
+    fx.canvas.height = innerHeight * dpr;
+    fx.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  resize();
+  addEventListener('resize', resize);
+}
+
+function fxSpawn(x, y, opts) {
+  if (!fxEnabled()) return;
+  const o = opts || {};
+  const n = o.n || 14;
+  for (let i = 0; i < n; i++) {
+    const ang = o.spread ? (Math.random() * o.spread - o.spread / 2) + (o.angle || 0) : Math.random() * Math.PI * 2;
+    const spd = (o.speed || 2.2) * (0.4 + Math.random());
+    fx.parts.push({
+      x, y,
+      vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      life: 1, decay: 0.012 + Math.random() * 0.02,
+      size: (o.size || 2.6) * (0.5 + Math.random()),
+      color: o.colors ? o.colors[Math.floor(Math.random() * o.colors.length)] : '#f5c542',
+      grav: o.grav || 0,
+    });
+  }
+  if (!fx.raf) fxLoop();
+}
+
+function fxLoop() {
+  fx.raf = requestAnimationFrame(fxLoop);
+  const ctx = fx.ctx;
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = fx.parts.length - 1; i >= 0; i--) {
+    const p = fx.parts[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vy += p.grav;
+    p.vx *= 0.985; p.vy *= 0.985;
+    p.life -= p.decay;
+    if (p.life <= 0) { fx.parts.splice(i, 1); continue; }
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  if (!fx.parts.length && !fireworksOn) { cancelAnimationFrame(fx.raf); fx.raf = 0; ctx.clearRect(0, 0, innerWidth, innerHeight); }
+}
+
+let fireworksOn = false;
+let fireworksTimer = null;
+function startFireworks() {
+  if (!fxEnabled()) return;
+  fireworksOn = true;
+  let count = 0;
+  const COLORS = ['#f5c542', '#ff7043', '#34d399', '#7dd3fc', '#f9a8d4', '#fff8e1'];
+  const launch = () => {
+    if (!fireworksOn) return;
+    fxSpawn(innerWidth * (0.15 + Math.random() * 0.7), innerHeight * (0.12 + Math.random() * 0.35),
+      { n: 46, speed: 3.4, size: 2.8, colors: COLORS, grav: 0.035 });
+    count++;
+    if (count < 14) fireworksTimer = setTimeout(launch, 420 + Math.random() * 500);
+    else fireworksOn = false;
+  };
+  launch();
+  if (!fx.raf) fxLoop();
+}
+function stopFireworks() { fireworksOn = false; clearTimeout(fireworksTimer); }
+
+/* ---- タイトル画面の星空 ---- */
+function startTitleStars() {
+  const canvas = $('title-stars');
+  if (!canvas || reducedMotion) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  let stars = [];
+  const resize = () => {
+    canvas.width = canvas.offsetWidth * dpr;
+    canvas.height = canvas.offsetHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    stars = Array.from({ length: 110 }, () => ({
+      x: Math.random() * canvas.offsetWidth,
+      y: Math.random() * canvas.offsetHeight,
+      r: Math.random() * 1.4 + 0.3,
+      tw: Math.random() * Math.PI * 2,
+      sp: 0.008 + Math.random() * 0.025,
+    }));
+  };
+  resize();
+  addEventListener('resize', resize);
+  let shooting = null;
+  (function loop() {
+    if (!$('screen-title').classList.contains('active')) { requestAnimationFrame(loop); return; }
+    ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
+    for (const s of stars) {
+      s.tw += s.sp;
+      ctx.globalAlpha = 0.35 + 0.65 * Math.abs(Math.sin(s.tw));
+      ctx.fillStyle = '#fff8e1';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 流れ星
+    if (!shooting && Math.random() < 0.006) {
+      shooting = { x: Math.random() * canvas.offsetWidth * 0.8 + canvas.offsetWidth * 0.2, y: Math.random() * canvas.offsetHeight * 0.3, life: 1 };
+    }
+    if (shooting) {
+      shooting.x -= 7; shooting.y += 3.4; shooting.life -= 0.025;
+      ctx.globalAlpha = Math.max(0, shooting.life);
+      const grad = ctx.createLinearGradient(shooting.x, shooting.y, shooting.x + 60, shooting.y - 30);
+      grad.addColorStop(0, '#fff8e1'); grad.addColorStop(1, 'transparent');
+      ctx.strokeStyle = grad; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(shooting.x, shooting.y); ctx.lineTo(shooting.x + 60, shooting.y - 30); ctx.stroke();
+      if (shooting.life <= 0) shooting = null;
+    }
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(loop);
+  })();
+}
+
+/* ===================== 地図 ===================== */
+
+let map = null;
+let mapReady = false;
+
+function initMap() {
+  map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      sources: {
+        'gsi-pale': { type: 'raster', tiles: [GSI_PALE], tileSize: 256, maxzoom: 18, attribution: '地理院タイル | 住所データ: Geolonia / アドレス・ベース・レジストリ' },
+        'gsi-photo': { type: 'raster', tiles: [GSI_PHOTO], tileSize: 256, maxzoom: 18 },
+      },
+      layers: [
+        { id: 'bg', type: 'background', paint: { 'background-color': '#0b1026' } },
+        { id: 'gsi-photo', type: 'raster', source: 'gsi-photo', layout: { visibility: 'visible' },
+          paint: { 'raster-saturation': 0.12, 'raster-contrast': 0.08, 'raster-brightness-max': 0.96 } },
+        { id: 'gsi-pale', type: 'raster', source: 'gsi-pale', layout: { visibility: 'none' } },
+      ],
+    },
+    center: [137.7, 38.2],
+    zoom: 4.4,
+    minZoom: 3.6,
+    maxZoom: 17,
+    maxBounds: [[118, 20], [158, 50]],
+    attributionControl: { compact: true },
+  });
+  map.on('load', () => {
+    const lineSources = ['guess-line', 'trail-glow-src', 'player-route', 'optimal-route'];
+    for (const id of lineSources) {
+      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+    map.addLayer({ id: 'guess-line', type: 'line', source: 'guess-line',
+      paint: { 'line-color': '#c3c9e8', 'line-width': 2.5, 'line-dasharray': [2, 2] } });
+    map.addLayer({ id: 'optimal-route', type: 'line', source: 'optimal-route',
+      paint: { 'line-color': '#34d399', 'line-width': 4, 'line-dasharray': [2, 1.5], 'line-opacity': 0.9 } });
+    map.addLayer({ id: 'player-route', type: 'line', source: 'player-route',
+      paint: { 'line-color': '#ff5722', 'line-width': 4, 'line-opacity': 0.9 } });
+    // 配達トラックの光の軌跡(グロー2層)
+    map.addLayer({ id: 'trail-glow', type: 'line', source: 'trail-glow-src',
+      paint: { 'line-color': '#f5c542', 'line-width': 12, 'line-blur': 10, 'line-opacity': 0.55 } });
+    map.addLayer({ id: 'trail-core', type: 'line', source: 'trail-glow-src',
+      paint: { 'line-color': '#fff8e1', 'line-width': 2.5, 'line-opacity': 0.95 } });
+    mapReady = true;
+  });
+}
+
+function setBaseLayer(kind) {
+  if (!mapReady) { map.once('load', () => setBaseLayer(kind)); return; }
+  map.setLayoutProperty('gsi-photo', 'visibility', kind === 'photo' ? 'visible' : 'none');
+  map.setLayoutProperty('gsi-pale', 'visibility', kind === 'pale' ? 'visible' : 'none');
+  document.body.classList.toggle('cinema', kind === 'photo');
+}
+
+function setLine(sourceId, coords) {
+  if (!mapReady) return;
+  map.getSource(sourceId).setData(coords.length >= 2
+    ? { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } }
+    : { type: 'FeatureCollection', features: [] });
+}
+
+function fitBoundsSafe(bounds, padding, duration) {
+  try {
+    map.fitBounds(bounds, { padding, maxZoom: map.getMaxZoom(), duration: duration == null ? 600 : duration });
+  } catch (e) {
+    map.fitBounds(bounds, { padding: 20, maxZoom: map.getMaxZoom(), duration: duration == null ? 600 : duration });
+  }
+}
+
+function makeMarker(className, html, lngLat) {
+  const el = document.createElement('div');
+  el.className = 'mk ' + className;
+  if (html) el.innerHTML = html;
+  return new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
+}
+
+/* ---- トラック飛行演出 ---- */
+let flightAbort = null;
+
+function buildArc(from, to, n) {
+  // メルカトル感覚の簡易アーク: 中間点を北に持ち上げる
+  const pts = [];
+  const distKm = distanceMeters(from, to) / 1000;
+  const bump = Math.min(3.2, distKm / 380);
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    pts.push([
+      from.lng + (to.lng - from.lng) * t,
+      from.lat + (to.lat - from.lat) * t + bump * Math.sin(Math.PI * t),
+    ]);
+  }
+  return pts;
+}
+
+function flyTruck(from, to, durationMs, onDone) {
+  if (!fxEnabled()) { onDone(); return; }
+  const path = buildArc(from, to, 220);
+  const truck = makeMarker('mk-truck' + (to.lng < from.lng ? ' flip' : ''), '🚚', path[0]);
+  const t0 = performance.now();
+  let finished = false;
+  let lastSpawn = 0;
+
+  function finish() {
+    if (finished) return;
+    finished = true;
+    $('btn-skip').classList.remove('active');
+    setLine('trail-glow-src', path);
+    truck.remove();
+    flightAbort = null;
+    // 到着の金色バースト
+    const px = map.project(path[path.length - 1]);
+    fxSpawn(px.x, px.y, { n: 40, speed: 3.2, size: 3, colors: ['#f5c542', '#fff8e1', '#ff7043'] });
+    onDone();
+  }
+  flightAbort = finish;
+  $('btn-skip').classList.add('active');
+
+  function frame(t) {
+    if (finished) return;
+    const p = Math.min(1, (t - t0) / durationMs);
+    const eased = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+    const i = Math.max(1, Math.round(eased * (path.length - 1)));
+    truck.setLngLat(path[i]);
+    setLine('trail-glow-src', path.slice(0, i + 1));
+    if (t - lastSpawn > 50) {
+      lastSpawn = t;
+      const px = map.project(path[i]);
+      fxSpawn(px.x, px.y, { n: 3, speed: 1.1, size: 2, colors: ['#f5c542', '#fff8e1'] });
+    }
+    if (p >= 1) finish();
+    else requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ===================== ご近所版: 住所データ ===================== */
+
+let addrData = null;
 
 async function loadAddressData() {
   if (addrData) return addrData;
-
   try {
     const res = await fetch('questions.json', { cache: 'no-cache' });
     if (res.ok) {
@@ -456,7 +944,6 @@ async function loadAddressData() {
       }
     }
   } catch (e) {}
-
   const cached = lsGet(LS_ADDR_CACHE);
   if (cached) {
     try {
@@ -467,7 +954,6 @@ async function loadAddressData() {
       }
     } catch (e) {}
   }
-
   showLoading('住所データを取得中...');
   const live = await fetchLiveAddressData((c, t) => {
     $('loading-msg').textContent = `住所データを取得中... ${c}/${t} エリア`;
@@ -483,7 +969,6 @@ async function fetchLiveAddressData(onProgress) {
   const cityRes = await fetch(`${baseUrl}.json`);
   if (!cityRes.ok) throw new Error(`住所データ取得失敗 (HTTP ${cityRes.status})`);
   const cityJson = await cityRes.json();
-
   const ranges = (cityJson.data || [])
     .filter(m => m.rsdt && m.csv_ranges && m.csv_ranges['住居表示'])
     .map(m => ({
@@ -502,9 +987,7 @@ async function fetchLiveAddressData(onProgress) {
     while (nextIdx < ranges.length) {
       const r = ranges[nextIdx++];
       try {
-        const res = await fetch(txtUrl, {
-          headers: { Range: `bytes=${r.start}-${r.start + r.length - 1}` },
-        });
+        const res = await fetch(txtUrl, { headers: { Range: `bytes=${r.start}-${r.start + r.length - 1}` } });
         if (res.ok || res.status === 206) parseAddrSection(await res.text(), r.machiazaName, points);
       } catch (e) {}
       completed++;
@@ -521,18 +1004,14 @@ async function fetchLiveAddressData(onProgress) {
     seen.add(key);
     return distanceMeters(p, AREA_CENTER) <= MAX_DIST_FROM_CENTER_M;
   });
-  // 正規ソート: 同じ日に取得した全員が同じ並び→同じデイリー問題になる
   addresses.sort((x, y) => (x.a + x.l).localeCompare(y.a + y.l, 'ja'));
-
   const startHit = addresses.find(p => p.a === '日本橋小舟町' && p.l === '8-6');
   const start = startHit
     ? { name: START_FALLBACK.name, addr: START_FALLBACK.addr, lng: startHit.lng, lat: startHit.lat }
     : { ...START_FALLBACK };
-
   return { version: 0, start, addresses };
 }
 
-// 業務アプリ(index.html)と同じ住居表示CSVのパース
 function parseAddrSection(text, machiazaName, out) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   if (lines.length < 3) return;
@@ -561,191 +1040,140 @@ function parseAddrSection(text, machiazaName, out) {
 
 /* ===================== 出題選択 ===================== */
 
-function pickQuestions(data, seedStr) {
+// keyFn でグループ(都道府県/町丁目)を分散させつつシード付きで5件選ぶ
+function pickFrom(list, seedStr, keyFn) {
   const rand = mulberry32(xmur3(seedStr)());
-  const indices = seededShuffle(data.addresses.map((_, i) => i), rand);
+  const indices = seededShuffle(list.map((_, i) => i), rand);
   const picked = [];
-  const usedMachiaza = new Set();
+  const used = new Set();
   for (const i of indices) {
-    const p = data.addresses[i];
-    if (usedMachiaza.has(p.a)) continue;
-    usedMachiaza.add(p.a);
-    picked.push(p);
+    const item = list[i];
+    if (used.has(keyFn(item))) continue;
+    used.add(keyFn(item));
+    picked.push(item);
     if (picked.length >= QUESTION_COUNT) break;
   }
-  // 町丁目が足りない場合は重複を許して埋める
   for (const i of indices) {
     if (picked.length >= QUESTION_COUNT) break;
-    const p = data.addresses[i];
-    if (!picked.includes(p)) picked.push(p);
+    if (!picked.includes(list[i])) picked.push(list[i]);
   }
   return picked;
-}
-
-/* ===================== 地図 ===================== */
-
-let map = null;
-let mapReady = false;
-
-function initMap() {
-  map = new maplibregl.Map({
-    container: 'map',
-    style: {
-      version: 8,
-      sources: {
-        gsi: {
-          type: 'raster',
-          tiles: [GSI_TILE_URL],
-          tileSize: 256,
-          maxzoom: 18,
-          attribution: '地理院タイル(淡色地図) | 住所データ: Geolonia / アドレス・ベース・レジストリ',
-        },
-      },
-      layers: [{ id: 'gsi', type: 'raster', source: 'gsi' }],
-    },
-    center: MAP_CENTER,
-    zoom: MAP_ZOOM,
-    maxZoom: MAP_MAX_ZOOM,
-    attributionControl: { compact: true },
-  });
-  map.on('load', () => {
-    for (const id of ['guess-line', 'player-route', 'optimal-route']) {
-      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    }
-    map.addLayer({
-      id: 'guess-line', type: 'line', source: 'guess-line',
-      paint: { 'line-color': '#2a2f3a', 'line-width': 2.5, 'line-dasharray': [2, 2] },
-    });
-    map.addLayer({
-      id: 'optimal-route', type: 'line', source: 'optimal-route',
-      paint: { 'line-color': '#16a34a', 'line-width': 4, 'line-dasharray': [2, 1.5], 'line-opacity': 0.9 },
-    });
-    map.addLayer({
-      id: 'player-route', type: 'line', source: 'player-route',
-      paint: { 'line-color': '#ff5722', 'line-width': 4, 'line-opacity': 0.85 },
-    });
-    mapReady = true;
-  });
-}
-
-function setLine(sourceId, coords) {
-  if (!mapReady) return;
-  map.getSource(sourceId).setData(coords.length >= 2
-    ? { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } }
-    : { type: 'FeatureCollection', features: [] });
-}
-
-function fitBoundsSafe(bounds, padding) {
-  // 画面が極端に小さいとpaddingがキャンバスを超えてエラーになるため抑制する
-  try {
-    map.fitBounds(bounds, { padding, maxZoom: MAP_MAX_ZOOM, duration: 600 });
-  } catch (e) {
-    map.fitBounds(bounds, { padding: 20, maxZoom: MAP_MAX_ZOOM, duration: 600 });
-  }
-}
-
-function makeMarker(className, html, lngLat) {
-  const el = document.createElement('div');
-  el.className = 'mk ' + className;
-  if (html) el.innerHTML = html;
-  return new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
 }
 
 /* ===================== ゲーム状態 ===================== */
 
 const state = {
-  mode: null,        // 'daily' | 'free'
+  mode: null,          // 'nat-daily' | 'nat-free' | 'local'
   dateStr: '',
   questions: [],
   qIndex: 0,
-  results: [],       // {dist, pts}
+  results: [],         // {dist(m), pts}
+  odo: 0,              // 走行距離(m)
   s2: { order: [], playerDist: 0, optDist: 0, score: 0 },
 };
 
+function isNational() { return state.mode === 'nat-daily' || state.mode === 'nat-free'; }
+function startPoint() { return isNational() ? NIHONBASHI : (addrData ? addrData.start : START_FALLBACK); }
+function scoreTable() { return isNational() ? NAT_SCORE.map(([km, p]) => [km * 1000, p]) : LOCAL_SCORE; }
+function ptsEmoji(pts) { return (isNational() ? PTS_EMOJI_NAT : PTS_EMOJI_LOCAL)[pts] || '⬜'; }
+
 let guessMarker = null;
 let answerMarker = null;
-let s2Markers = [];   // {marker, el, idx}
+let s2Markers = [];
 let startMarker = null;
 
 function clearStageMarkers() {
+  if (flightAbort) flightAbort();
   if (guessMarker) { guessMarker.remove(); guessMarker = null; }
   if (answerMarker) { answerMarker.remove(); answerMarker = null; }
   for (const m of s2Markers) m.marker.remove();
   s2Markers = [];
   if (startMarker) { startMarker.remove(); startMarker = null; }
-  setLine('guess-line', []);
-  setLine('player-route', []);
-  setLine('optimal-route', []);
+  for (const id of ['guess-line', 'player-route', 'optimal-route', 'trail-glow-src']) setLine(id, []);
 }
 
 function show(id, on) { $(id).classList.toggle('active', on); }
-
 function showScreens(ids) {
-  for (const id of ['screen-title', 'screen-result', 'hud-stage1', 'hud-stage1-actions',
-    'sheet-s1', 'hud-stage2', 'hud-stage2-actions', 'sheet-s2']) {
+  for (const id of ['screen-title', 'screen-result', 'hud-q', 'hud-q-actions',
+    'sheet-reveal', 'sheet-arrival', 'hud-s2', 'hud-s2-actions', 'sheet-s2']) {
     show(id, ids.includes(id));
   }
 }
 
-/* ===================== ステージ1 ===================== */
+/* ===================== ゲーム進行 ===================== */
 
 async function startGame(mode) {
-  let data;
-  try {
-    data = await loadAddressData();
-  } catch (e) {
-    hideLoading();
-    showToast('データ取得に失敗しました: ' + e.message);
-    return;
-  }
-
   state.mode = mode;
   state.dateStr = jstDateStr();
 
-  if (mode === 'daily') {
-    const saved = lsGet(LS_DAILY_PREFIX + state.dateStr);
-    if (saved) {
-      try {
-        showResultScreen(JSON.parse(saved), true);
-        return;
-      } catch (e) {}
+  if (mode === 'local') {
+    try { await loadAddressData(); }
+    catch (e) { hideLoading(); showToast('データ取得に失敗しました: ' + e.message); return; }
+    state.questions = pickFrom(addrData.addresses, `free-${Date.now()}-${Math.random()}`, q => q.a);
+  } else {
+    if (mode === 'nat-daily') {
+      const saved = lsGet(LS_DAILY_PREFIX + state.dateStr);
+      if (saved) {
+        try { showResultScreen(JSON.parse(saved), true, false); return; } catch (e) {}
+      }
     }
+    const seedStr = mode === 'nat-daily'
+      ? `rys-kentei-nat-v${GAME_VER}-${state.dateStr}`
+      : `free-${Date.now()}-${Math.random()}`;
+    state.questions = pickFrom(LANDMARKS, seedStr, q => q.p);
   }
 
-  const seedStr = mode === 'daily'
-    ? `rys-kentei-v${data.version}-${state.dateStr}`
-    : `free-${Date.now()}-${Math.random()}`;
-  state.questions = pickQuestions(data, seedStr);
   state.qIndex = 0;
   state.results = [];
+  state.odo = 0;
   state.s2 = { order: [], playerDist: 0, optDist: 0, score: 0 };
 
   clearStageMarkers();
-  showScreens(['hud-stage1', 'hud-stage1-actions']);
-  map.jumpTo({ center: MAP_CENTER, zoom: MAP_ZOOM });
+  stopFireworks();
+  setBaseLayer(isNational() ? 'photo' : 'pale');
+  showScreens(['hud-q', 'hud-q-actions']);
+  resetCamera(0);
   showQuestion();
+}
+
+function resetCamera(duration) {
+  if (isNational()) fitBoundsSafe(JAPAN_BOUNDS, { top: 130, bottom: 90, left: 24, right: 24 }, duration);
+  else map.jumpTo({ center: LOCAL_CENTER, zoom: LOCAL_ZOOM });
 }
 
 function showQuestion() {
   const q = state.questions[state.qIndex];
-  $('s1-qno').textContent = `Q${state.qIndex + 1} / ${QUESTION_COUNT}`;
-  $('s1-addr').textContent = `${q.a} ${q.l}`;
-  $('btn-s1-confirm').disabled = true;
+  const card = $('order-card');
+  card.style.animation = 'none';
+  void card.offsetWidth;  // アニメ再発火
+  card.style.animation = '';
+  $('q-no').textContent = `配達指令 ${state.qIndex + 1} / ${QUESTION_COUNT}`;
+  if (isNational()) {
+    $('q-addr').textContent = `${q.e} ${q.n}`;
+    $('q-item').textContent = `お届け品: ${q.item}`;
+    $('q-hint').textContent = '地図をタップして配達先にピンを刺そう';
+  } else {
+    $('q-addr').textContent = `${q.a} ${q.l}`;
+    $('q-item').textContent = '';
+    $('q-hint').textContent = '地図をタップしてピンを刺そう';
+  }
+  $('btn-confirm').disabled = true;
   if (guessMarker) { guessMarker.remove(); guessMarker = null; }
   if (answerMarker) { answerMarker.remove(); answerMarker = null; }
   setLine('guess-line', []);
+  setLine('trail-glow-src', []);
 }
 
 function onMapClick(e) {
-  // ステージ1のピン刺しモード中のみ反応
-  if (!$('hud-stage1').classList.contains('active') || $('sheet-s1').classList.contains('active')) return;
+  if (!$('hud-q').classList.contains('active')) return;
+  if ($('sheet-reveal').classList.contains('active') || $('sheet-arrival').classList.contains('active')) return;
   if (guessMarker) guessMarker.setLngLat(e.lngLat);
   else guessMarker = makeMarker('mk-guess', '', e.lngLat);
-  $('btn-s1-confirm').disabled = false;
+  $('btn-confirm').disabled = false;
 }
 
 function scoreForDist(dist) {
-  for (const [limit, pts] of SCORE_TABLE) if (dist <= limit) return pts;
+  for (const [limit, pts] of scoreTable()) if (dist <= limit) return pts;
   return 0;
 }
 
@@ -756,40 +1184,78 @@ function confirmGuess() {
   const pts = scoreForDist(dist);
   state.results.push({ dist, pts });
 
-  answerMarker = makeMarker('mk-answer', '🏠', [q.lng, q.lat]);
+  const emoji = isNational() ? q.e : '🏠';
+  answerMarker = makeMarker('mk-answer', `${emoji}<span class="pulse"></span>`, [q.lng, q.lat]);
   setLine('guess-line', [[g.lng, g.lat], [q.lng, q.lat]]);
   fitBoundsSafe([[Math.min(g.lng, q.lng), Math.min(g.lat, q.lat)], [Math.max(g.lng, q.lng), Math.max(g.lat, q.lat)]],
-    { top: 140, bottom: Math.round(window.innerHeight * 0.5), left: 50, right: 50 });
+    { top: 150, bottom: Math.round(innerHeight * 0.46), left: 60, right: 60 });
 
-  const headline = pts === 100 ? '🎯 お見事!' : pts >= 70 ? '✨ おしい!' : pts >= 40 ? '👍 まずまず' : pts >= 10 ? '💦 もう少し!' : '🗺 大はずれ…';
-  $('s1r-headline').textContent = headline;
-  $('s1r-sub').innerHTML = `誤差 <b>${escapeHtml(formatDist(dist))}</b> ${PTS_EMOJI[pts]} <b>+${pts}点</b>`;
-  $('s1r-trivia').textContent = TRIVIA[(xmur3(state.dateStr + state.qIndex)() % TRIVIA.length + state.qIndex) % TRIVIA.length];
-  $('btn-s1-next').textContent = state.qIndex + 1 < QUESTION_COUNT ? '次の配達へ ▶' : '🚚 ステージ2: ルート組み立てへ';
-  show('hud-stage1-actions', false);
-  show('sheet-s1', true);
+  const headline = pts === 100 ? '🎯 ピタリ!神業配達!' : pts >= 70 ? '✨ おしい!' : pts >= 40 ? '👍 まずまず' : pts > 0 ? '💦 だいぶ遠い…' : '🗺 大はずれ…';
+  $('rv-headline').textContent = headline;
+  $('rv-sub').innerHTML = `誤差 <b>${escapeHtml(formatDist(dist))}</b> ${ptsEmoji(pts)} +${pts}点`;
+
+  if (isNational()) {
+    $('btn-deliver').style.display = 'block';
+    $('rv-local-extra').style.display = 'none';
+  } else {
+    $('btn-deliver').style.display = 'none';
+    $('rv-local-extra').style.display = 'block';
+    $('rv-trivia').textContent = LOCAL_TRIVIA[(state.qIndex + xmur3(state.dateStr)() ) % LOCAL_TRIVIA.length];
+    $('btn-next-local').textContent = state.qIndex + 1 < QUESTION_COUNT ? '次の配達へ ▶' : '🚚 最終指令: ルート組み立てへ';
+  }
+  show('hud-q-actions', false);
+  show('sheet-reveal', true);
+}
+
+// 全国版: 日本橋→名所のトラック飛行演出
+function deliverCinematic() {
+  const q = state.questions[state.qIndex];
+  show('sheet-reveal', false);
+  state.odo += distanceMeters(NIHONBASHI, q);
+
+  const run = () => {
+    fitBoundsSafe(
+      [[Math.min(NIHONBASHI.lng, q.lng), Math.min(NIHONBASHI.lat, q.lat)],
+       [Math.max(NIHONBASHI.lng, q.lng), Math.max(NIHONBASHI.lat, q.lat)]],
+      { top: 120, bottom: 100, left: 60, right: 60 }, 800);
+    setTimeout(() => flyTruck(NIHONBASHI, q, 2600, showArrival), fxEnabled() ? 850 : 0);
+  };
+  run();
+}
+
+function showArrival() {
+  const q = state.questions[state.qIndex];
+  const r = state.results[state.qIndex];
+  $('ar-headline').textContent = `${q.e} ${q.n} に到着!`;
+  $('ar-sub').innerHTML = `${escapeHtml(q.p)} / 「${escapeHtml(q.item)}」をお届けしました 📦`;
+  $('ar-tag').textContent = `📚 ${q.n} のはなし`;
+  $('ar-desc').textContent = q.d;
+  $('ar-odo').innerHTML = `本日の走行距離: <b>${escapeHtml(formatDist(state.odo))}</b>(日本橋から ${escapeHtml(formatDist(distanceMeters(NIHONBASHI, q)))})`;
+  $('btn-next').textContent = state.qIndex + 1 < QUESTION_COUNT ? '次の配達指令へ ▶' : '🚚 最終指令: 全国縦断ルートへ';
+  show('sheet-arrival', true);
 }
 
 function nextQuestion() {
-  show('sheet-s1', false);
+  show('sheet-reveal', false);
+  show('sheet-arrival', false);
   state.qIndex++;
   if (state.qIndex < QUESTION_COUNT) {
-    show('hud-stage1-actions', true);
-    map.flyTo({ center: MAP_CENTER, zoom: MAP_ZOOM, duration: 500 });
+    show('hud-q-actions', true);
+    resetCamera(700);
     showQuestion();
   } else {
     startStage2();
   }
 }
 
-/* ===================== ステージ2 ===================== */
+/* ===================== ステージ2: ルート ===================== */
 
 function startStage2() {
   clearStageMarkers();
-  showScreens(['hud-stage2', 'hud-stage2-actions']);
+  showScreens(['hud-s2', 'hud-s2-actions']);
 
-  const start = addrData.start;
-  startMarker = makeMarker('mk-start', '🏪', [start.lng, start.lat]);
+  const start = startPoint();
+  startMarker = makeMarker('mk-start', isNational() ? '🌉' : '🏪', [start.lng, start.lat]);
 
   state.questions.forEach((q, idx) => {
     const marker = makeMarker('mk-dest', '📦', [q.lng, q.lat]);
@@ -798,10 +1264,14 @@ function startStage2() {
     s2Markers.push(rec);
   });
 
+  $('s2-hint').textContent = isNational()
+    ? '日本橋 🌉 を出発し、5つの名所を配達して回る順にタップ(最後のピンは再タップで取り消し)'
+    : 'お店 🏪 から回る順にタップ(最後のピンは再タップで取り消し)';
+
   const lngs = [start.lng, ...state.questions.map(q => q.lng)];
   const lats = [start.lat, ...state.questions.map(q => q.lat)];
   fitBoundsSafe([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
-    { top: 150, bottom: 110, left: 50, right: 50 });
+    { top: 160, bottom: 110, left: 50, right: 50 }, 800);
 
   updateStage2Ui();
 }
@@ -810,11 +1280,15 @@ function onDestTap(rec) {
   const order = state.s2.order;
   const pos = order.indexOf(rec.idx);
   if (pos >= 0) {
-    if (pos === order.length - 1) order.pop();  // 最後のピンのみ取り消し可
+    if (pos === order.length - 1) order.pop();
     else { showToast('途中のピンは外せません(やり直しを使ってね)'); return; }
   } else {
     if (order.length >= QUESTION_COUNT) return;
     order.push(rec.idx);
+    if (fxEnabled()) {
+      const px = map.project([state.questions[rec.idx].lng, state.questions[rec.idx].lat]);
+      fxSpawn(px.x, px.y, { n: 10, speed: 1.8, size: 2.2, colors: ['#ff7043', '#f5c542'] });
+    }
   }
   updateStage2Ui();
 }
@@ -826,18 +1300,17 @@ function updateStage2Ui() {
     rec.el.classList.toggle('numbered', pos >= 0);
     rec.el.textContent = pos >= 0 ? String(pos + 1) : '📦';
   }
-  const start = addrData.start;
+  const start = startPoint();
   setLine('player-route', [[start.lng, start.lat], ...order.map(i => [state.questions[i].lng, state.questions[i].lat])]);
   $('s2-status').textContent = order.length >= QUESTION_COUNT
     ? '順番が決まった!「出発!」を押そう'
-    : `お店 🏪 から回る順にタップ! (${order.length} / ${QUESTION_COUNT})`;
+    : `回る順番にタップ! (${order.length} / ${QUESTION_COUNT})`;
   $('btn-s2-confirm').disabled = order.length < QUESTION_COUNT;
 }
 
 function routeDist(orderIdxs) {
-  const start = addrData.start;
   let total = 0;
-  let prev = start;
+  let prev = startPoint();
   for (const i of orderIdxs) {
     total += distanceMeters(prev, state.questions[i]);
     prev = state.questions[i];
@@ -867,19 +1340,37 @@ function confirmRoute() {
   state.s2.playerDist = playerDist;
   state.s2.optDist = optDist;
   state.s2.score = score;
+  state.odo += playerDist;
 
-  const start = addrData.start;
+  const start = startPoint();
   setLine('optimal-route', [[start.lng, start.lat], ...optOrder.map(i => [state.questions[i].lng, state.questions[i].lat])]);
 
-  const eff = Math.round(100 * optDist / Math.max(playerDist, 1));
-  const headline = eff >= 100 ? '🏆 最適ルートと一致!' : eff >= 90 ? '🚀 ほぼ完璧なルート!' : eff >= 75 ? '🚚 なかなかのルート!' : '🐢 遠回りしちゃった…';
-  $('s2r-headline').textContent = headline;
-  $('s2r-sub').innerHTML =
-    `あなた: <b>${escapeHtml(formatDist(playerDist))}</b> / AIの最適ルート(緑の点線): ${escapeHtml(formatDist(optDist))}<br>` +
-    `ルート効率 <b>${eff}%</b> → <b>+${score}点</b>(500点満点)`;
-  $('s2r-trivia').textContent = TSP_TRIVIA;
-  show('hud-stage2-actions', false);
-  show('sheet-s2', true);
+  show('hud-s2-actions', false);
+
+  const showSheet = () => {
+    const eff = Math.round(100 * optDist / Math.max(playerDist, 1));
+    const headline = eff >= 100 ? '🏆 最適ルートと完全一致!' : eff >= 90 ? '🚀 ほぼ完璧なルート!' : eff >= 75 ? '🚚 なかなかのルート!' : '🐢 だいぶ遠回り…';
+    $('s2r-headline').textContent = headline;
+    $('s2r-sub').innerHTML =
+      `あなたのルート: <b>${escapeHtml(formatDist(playerDist))}</b><br>` +
+      `AIの最適ルート(緑の点線): ${escapeHtml(formatDist(optDist))}<br>` +
+      `ルート効率 ${eff}% → +${score}点(500点満点)`;
+    $('s2r-trivia').textContent = TSP_TRIVIA;
+    show('sheet-s2', true);
+  };
+
+  // プレイヤーのルートをトラックが駆け抜ける演出
+  if (fxEnabled()) {
+    const legs = [startPoint(), ...state.s2.order.map(i => state.questions[i])];
+    let leg = 0;
+    const runLeg = () => {
+      if (leg >= legs.length - 1) { showSheet(); return; }
+      flyTruck(legs[leg], legs[leg + 1], Math.max(500, 2200 / (legs.length - 1)), () => { leg++; runLeg(); });
+    };
+    runLeg();
+  } else {
+    showSheet();
+  }
 }
 
 function resetRoute() {
@@ -888,17 +1379,25 @@ function resetRoute() {
   updateStage2Ui();
 }
 
-/* ===================== 結果画面 ===================== */
+/* ===================== 結果 ===================== */
 
 function buildRecord() {
   const s1Total = state.results.reduce((s, r) => s + r.pts, 0);
   const total = s1Total + state.s2.score;
   const rank = RANKS.find(r => total >= r.min);
   const eff = Math.round(100 * state.s2.optDist / Math.max(state.s2.playerDist, 1));
-  const ver = addrData ? addrData.version : 0;
-  const pinLine = state.results.map(r => PTS_EMOJI[r.pts]).join('');
-  const modeLabel = state.mode === 'daily' ? `デイリー ${state.dateStr}` : 'フリープレイ';
-  const share = `🚚配達員検定 ${modeLabel}\n📍${pinLine}\n🛣ルート効率 ${eff}%\n${rank.emoji}段位: ${rank.name} (${total}点/1000点)\n#RYS配達員検定 v${ver}`;
+  const pinLine = state.results.map(r => ptsEmoji(r.pts)).join('');
+  const nat = isNational();
+  const modeLabel = state.mode === 'nat-daily' ? `本日の配達指令 ${state.dateStr}`
+    : nat ? '全国お届けの旅' : '日本橋マスター';
+  const shareLines = [
+    `🚚配達員検定 ${modeLabel}`,
+    `📍${pinLine}`,
+    `🛣ルート効率 ${eff}%`,
+  ];
+  if (nat) shareLines.push(`🏁総走行距離 ${formatDist(state.odo)}`);
+  shareLines.push(`${rank.emoji}段位: ${rank.name} (${total}点/1000点)`);
+  shareLines.push(`#RYS配達員検定 v${GAME_VER}`);
   return {
     mode: state.mode,
     date: state.dateStr,
@@ -906,20 +1405,25 @@ function buildRecord() {
     rank: rank.name,
     emoji: rank.emoji,
     eff,
-    share,
-    qs: state.questions.map((q, i) => ({ addr: `${q.a} ${q.l}`, dist: Math.round(state.results[i].dist), pts: state.results[i].pts })),
-    s2: { score: state.s2.score, player: Math.round(state.s2.playerDist), opt: Math.round(state.s2.optDist) },
+    odo: Math.round(state.odo),
+    share: shareLines.join('\n'),
+    qs: state.questions.map((q, i) => ({
+      label: nat ? `${q.e} ${q.n}` : `${q.a} ${q.l}`,
+      dist: Math.round(state.results[i].dist),
+      pts: state.results[i].pts,
+      emoji: ptsEmoji(state.results[i].pts),
+    })),
+    s2: { score: state.s2.score },
   };
 }
 
 function finishGame() {
   const record = buildRecord();
-
+  const bestKey = isNational() ? LS_BEST_NAT : LS_BEST_LOCAL;
   let newBest = false;
-  const best = parseInt(lsGet(LS_BEST) || '0', 10);
-  if (record.total > best) { lsSet(LS_BEST, String(record.total)); newBest = true; }
-  if (state.mode === 'daily') lsSet(LS_DAILY_PREFIX + state.dateStr, JSON.stringify(record));
-
+  const best = parseInt(lsGet(bestKey) || '0', 10);
+  if (record.total > best) { lsSet(bestKey, String(record.total)); newBest = true; }
+  if (state.mode === 'nat-daily') lsSet(LS_DAILY_PREFIX + state.dateStr, JSON.stringify(record));
   showResultScreen(record, false, newBest);
 }
 
@@ -929,32 +1433,30 @@ function showResultScreen(record, isReplayView, newBest) {
 
   $('r-emoji').textContent = record.emoji;
   $('r-rank').textContent = record.rank;
-  $('r-score').textContent = record.total;
+  countUp($('r-score'), record.total, '', 1400);
   $('r-newbest').style.display = newBest ? 'block' : 'none';
 
   let rows = '';
   record.qs.forEach((q, i) => {
-    rows += `<tr><td>Q${i + 1} ${escapeHtml(q.addr)}</td><td>誤差${escapeHtml(formatDist(q.dist))} ${PTS_EMOJI[q.pts]} ${q.pts}点</td></tr>`;
+    rows += `<tr><td>${i + 1}. ${escapeHtml(q.label)}</td><td>誤差${escapeHtml(formatDist(q.dist))} ${q.emoji} ${q.pts}点</td></tr>`;
   });
   rows += `<tr><td>🚚 ルート組み立て(効率${record.eff}%)</td><td>${record.s2.score}点</td></tr>`;
-  if (isReplayView) {
-    rows += `<tr><td colspan="2" style="text-align:center;color:#9aa0a6;">本日のデイリーはプレイ済みです。明日また挑戦してね!</td></tr>`;
-  }
+  if (record.odo) rows += `<tr><td>🏁 本日の総走行距離</td><td>${escapeHtml(formatDist(record.odo))}</td></tr>`;
+  if (isReplayView) rows += `<tr><td colspan="2" style="text-align:center;color:#8b92bd;">本日の配達指令は完了済み。明日また新しい指令が届きます!</td></tr>`;
   $('r-table').innerHTML = rows;
 
   $('btn-share').onclick = () => copyShareText(record.share);
+  $('btn-again').onclick = () => startGame(record.mode === 'local' ? 'local' : 'nat-free');
   show('screen-result', true);
+  startFireworks();
 }
 
 function copyShareText(text) {
   const done = () => showToast('結果をコピーしました!SNSでシェアしよう📣');
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text) && done());
-  } else if (fallbackCopy(text)) {
-    done();
-  } else {
-    showToast('コピーできませんでした');
-  }
+    navigator.clipboard.writeText(text).then(done).catch(() => { if (fallbackCopy(text)) done(); else showToast('コピーできませんでした'); });
+  } else if (fallbackCopy(text)) done();
+  else showToast('コピーできませんでした');
 }
 
 function fallbackCopy(text) {
@@ -974,31 +1476,51 @@ function fallbackCopy(text) {
 /* ===================== 初期化 ===================== */
 
 function updateBestLine() {
-  const best = parseInt(lsGet(LS_BEST) || '0', 10);
-  $('best-line').textContent = best > 0 ? `🏅 自己ベスト: ${best}点` : 'はじめての方は「遊び方」を読んでね';
+  const nat = parseInt(lsGet(LS_BEST_NAT) || '0', 10);
+  const loc = parseInt(lsGet(LS_BEST_LOCAL) || '0', 10);
+  const parts = [];
+  if (nat > 0) parts.push(`全国 ${nat}点`);
+  if (loc > 0) parts.push(`日本橋 ${loc}点`);
+  $('best-line').textContent = parts.length ? `🏅 自己ベスト: ${parts.join(' / ')}` : '';
+}
+
+function updateFxButton() {
+  $('btn-fx').textContent = fxEnabled() ? '✨ 演出: オン(タップで切替)' : '🌑 演出: オフ(タップで切替)';
 }
 
 function goTitle() {
+  stopFireworks();
   clearStageMarkers();
   showScreens(['screen-title']);
+  document.body.classList.remove('cinema');
   updateBestLine();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  fxInit();
   initMap();
   map.on('click', onMapClick);
+  startTitleStars();
 
-  $('btn-daily').addEventListener('click', () => startGame('daily'));
-  $('btn-free').addEventListener('click', () => startGame('free'));
-  $('btn-s1-confirm').addEventListener('click', confirmGuess);
-  $('btn-s1-next').addEventListener('click', nextQuestion);
+  $('btn-nat-daily').addEventListener('click', () => startGame('nat-daily'));
+  $('btn-nat-free').addEventListener('click', () => startGame('nat-free'));
+  $('btn-local').addEventListener('click', () => startGame('local'));
+  $('btn-confirm').addEventListener('click', confirmGuess);
+  $('btn-deliver').addEventListener('click', deliverCinematic);
+  $('btn-next').addEventListener('click', nextQuestion);
+  $('btn-next-local').addEventListener('click', nextQuestion);
   $('btn-s2-reset').addEventListener('click', resetRoute);
   $('btn-s2-confirm').addEventListener('click', confirmRoute);
   $('btn-s2-result').addEventListener('click', () => { show('sheet-s2', false); finishGame(); });
-  $('btn-again').addEventListener('click', () => startGame('free'));
   $('btn-title').addEventListener('click', goTitle);
+  $('btn-skip').addEventListener('click', () => { if (flightAbort) flightAbort(); });
+  $('btn-fx').addEventListener('click', () => {
+    lsSet(LS_FX, fxEnabled() ? 'off' : 'on');
+    updateFxButton();
+  });
 
   updateBestLine();
+  updateFxButton();
 });
 </script>
 </body>
