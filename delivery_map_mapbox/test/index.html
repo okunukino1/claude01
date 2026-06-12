@@ -2160,9 +2160,6 @@ const GEOSHAPE_ADMIN_LAYER_CANDIDATES = [
 
 const ESTAT_BOUNDARY_TILES = 'https://ubukawa.github.io/estat01/04_tiles/zxy-s/{z}/{x}/{y}.pbf';
 
-// 国土地理院ベクトルタイルは補助線として使う。
-// ftCode=6101 は「特定地区界」。町丁目そのものではない地域もあるため、主データにはしない。
-const GSI_BOUNDARY_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
 const NEIGHBORHOOD_LAYER_IDS = [];
 const OPTIMIZED_ROUTE_SOURCE_ID = 'optimized-route';
 const OPTIMIZED_ROUTE_LAYER_ID = 'optimized-route-line';
@@ -2171,58 +2168,6 @@ function addNeighborhoodLayer(layer) {
   if (map.getLayer(layer.id)) return;
   map.addLayer(layer);
   NEIGHBORHOOD_LAYER_IDS.push(layer.id);
-}
-
-function addLocalNeighborhoodLayers() {
-  if (map.getSource('local-neighborhoods')) return;
-
-  map.addSource('local-neighborhoods', {
-    type: 'geojson',
-    data: '../data/chuo_nihonbashi_boundaries.geojson',
-    attribution: '日本橋周辺町丁目境界: Geoshape / e-Stat'
-  });
-
-  addNeighborhoodLayer({
-    id: 'local-neighborhoods-fill',
-    type: 'fill',
-    source: 'local-neighborhoods',
-    minzoom: 11,
-    slot: 'top',
-    layout: {
-      'visibility': neighborhoodVisible ? 'visible' : 'none'
-    },
-    paint: {
-      'fill-color': '#ff8a3d',
-      'fill-opacity': [
-        'interpolate', ['linear'], ['zoom'],
-        11, 0.02,
-        16, 0.07
-      ]
-    }
-  });
-
-  addNeighborhoodLayer({
-    id: 'local-neighborhoods-line',
-    type: 'line',
-    source: 'local-neighborhoods',
-    minzoom: 11,
-    slot: 'top',
-    layout: {
-      'visibility': neighborhoodVisible ? 'visible' : 'none',
-      'line-join': 'round',
-      'line-cap': 'round'
-    },
-    paint: {
-      'line-color': '#ff4b1f',
-      'line-width': [
-        'interpolate', ['linear'], ['zoom'],
-        11, 1.4,
-        16, 3.2,
-        19, 4.2
-      ],
-      'line-opacity': 0.95
-    }
-  });
 }
 
 function addEstatNeighborhoodLayers() {
@@ -5136,11 +5081,50 @@ function shortRoutePreview(route) {
   }).join('\n');
 }
 
+function collectRouteCandidates() {
+  return {
+    routeItems: deliveries.filter(isRoutableDelivery),
+    noLocationItems: deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d)),
+    completedItems: deliveries.filter(d => d && d.completed)
+  };
+}
+
+function buildRouteTailNote(noLocationItems, completedItems) {
+  return [
+    noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
+    completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
+  ].filter(Boolean).join('\n');
+}
+
+// 並べ替え確定処理（おすすめ順・車用・Google車用で共通）
+function confirmAndApplyRouteOrder({ title, summary, suggested, noLocationItems, completedItems, geometry = null, clearGeometry = false, successMessage }) {
+  const tailNote = buildRouteTailNote(noLocationItems, completedItems);
+  showConfirm(
+    title,
+    summary + '\n\n' +
+    shortRoutePreview(suggested) +
+    (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
+    (tailNote ? `\n\n${tailNote}` : '') +
+    '\n\nこの順番に並べ替えますか？',
+    () => {
+      deliveries = suggested.concat(noLocationItems, completedItems);
+      activeDeliveryId = suggested[0] ? suggested[0].id : null;
+      if (geometry) setOptimizedRouteGeometry(geometry);
+      else if (clearGeometry) clearOptimizedRouteGeometry();
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      if (suggested[0] && map) {
+        map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
+      }
+      showToast(successMessage);
+    }
+  );
+}
+
 function optimizeRouteOrder() {
   closeModal('modal-menu');
-  const routeItems = deliveries.filter(isRoutableDelivery);
-  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
-  const completedItems = deliveries.filter(d => d && d.completed);
+  const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
 
   if (routeItems.length < 2) {
     showToast(`${modeLabel()}先が2件以上ある時に並べ替えできます`, true);
@@ -5152,188 +5136,112 @@ function optimizeRouteOrder() {
   const suggested = improveRouteWithTwoOpt(start, nearestNeighborRoute(start, routeItems));
   const suggestedDistance = routeDistanceMeters(start, suggested);
   const diff = Math.max(0, originalDistance - suggestedDistance);
-  const tailNote = [
-    noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
-    completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
-  ].filter(Boolean).join('\n');
 
-  showConfirm(
-    'おすすめ順に並べ替え',
-    `${start.label}から近い順に${modeLabel()}順を提案します。\n` +
-    `目安距離: ${formatKm(originalDistance)} → ${formatKm(suggestedDistance)}` +
-    (diff > 0 ? ` (${formatKm(diff)}短縮)` : '') + '\n\n' +
-    shortRoutePreview(suggested) +
-    (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
-    (tailNote ? `\n\n${tailNote}` : '') +
-    '\n\nこの順番に並べ替えますか？',
-    () => {
-      deliveries = suggested.concat(noLocationItems, completedItems);
-      activeDeliveryId = suggested[0] ? suggested[0].id : null;
-      clearOptimizedRouteGeometry();
-      saveDeliveries();
-      renderMarkers();
-      renderList();
-      if (suggested[0] && map) {
-        map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
-      }
-      showToast(`${modeLabel()}順を並べ替えました`);
-    }
-  );
+  confirmAndApplyRouteOrder({
+    title: 'おすすめ順に並べ替え',
+    summary: `${start.label}から近い順に${modeLabel()}順を提案します。\n` +
+      `目安距離: ${formatKm(originalDistance)} → ${formatKm(suggestedDistance)}` +
+      (diff > 0 ? ` (${formatKm(diff)}短縮)` : ''),
+    suggested,
+    noLocationItems,
+    completedItems,
+    clearGeometry: true,
+    successMessage: `${modeLabel()}順を並べ替えました`
+  });
 }
 
-async function optimizeCarRouteOrder() {
+const CAR_ROUTE_PROVIDERS = {
+  mapbox: {
+    endpoint: '../api/optimize_route.php',
+    usageKind: 'routeOptimize',
+    shortName: '車用',
+    title: '車向け 道路優先ルート',
+    summaryHead: 'Mapboxの道路ルート',
+    buildRequestBody: (start, routeItems) => ({
+      profile: 'mapbox/driving',
+      start: { lat: start.lat, lng: start.lng },
+      points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
+    }),
+    errorDetail: (data) => data && data.detail ? `\n${data.detail}` : ''
+  },
+  google: {
+    endpoint: '../api/google_route.php',
+    usageKind: 'googleRouteOptimize',
+    shortName: 'Google車用',
+    title: 'Google車向け 道路優先ルート',
+    summaryHead: 'Google Routes APIの道路ルート',
+    buildRequestBody: (start, routeItems) => ({
+      start: { lat: start.lat, lng: start.lng },
+      points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
+    }),
+    errorDetail: (data) => data && (data.hint || data.detail) ? `\n${data.hint || data.detail}` : ''
+  }
+};
+
+async function optimizeCarRouteOrderWith(providerKey) {
+  const provider = CAR_ROUTE_PROVIDERS[providerKey];
+  if (!provider) return;
   closeModal('modal-menu');
-  const routeItems = deliveries.filter(isRoutableDelivery);
-  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
-  const completedItems = deliveries.filter(d => d && d.completed);
+  const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
 
   if (routeItems.length < 2) {
-    showToast(`${modeLabel()}先が2件以上ある時に車用ルート検索できます`, true);
+    showToast(`${modeLabel()}先が2件以上ある時に${provider.shortName}ルート検索できます`, true);
     return;
   }
   if (routeItems.length > 24) {
-    showToast('車用ルート検索は一度に24件までです。完了分を削除するか分けて検索してください。', true);
+    showToast(`${provider.shortName}ルート検索は一度に24件までです。完了分を削除するか分けて検索してください。`, true);
     return;
   }
 
   const start = getRouteStartPoint();
-  showLoading('車用ルートを検索中...');
+  showLoading(`${provider.shortName}ルートを検索中...`);
   try {
-    bumpUsage('routeOptimize');
-    const res = await fetch('../api/optimize_route.php', {
+    bumpUsage(provider.usageKind);
+    const res = await fetch(provider.endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        profile: 'mapbox/driving',
-        start: { lat: start.lat, lng: start.lng },
-        points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
-      })
+      body: JSON.stringify(provider.buildRequestBody(start, routeItems))
     });
     let data = null;
     try { data = await res.json(); } catch (e) {}
     hideLoading();
 
     if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
-      const detail = data && data.detail ? `\n${data.detail}` : '';
-      throw new Error(((data && data.error) || '車用ルート検索に失敗しました') + detail);
+      throw new Error(((data && data.error) || `${provider.shortName}ルート検索に失敗しました`) + provider.errorDetail(data));
     }
 
     const byId = new Map(deliveries.map(d => [d.id, d]));
     const suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
     if (suggested.length !== routeItems.length) {
-      throw new Error('車用ルート検索結果の件数が一致しませんでした');
+      throw new Error(`${provider.shortName}ルート検索結果の件数が一致しませんでした`);
     }
 
     const distanceText = data.distance ? formatKm(data.distance) : '不明';
     const durationText = data.duration ? formatDuration(data.duration) : '';
-    const tailNote = [
-      noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
-      completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
-    ].filter(Boolean).join('\n');
 
-    showConfirm(
-      '車向け 道路優先ルート',
-      `Mapboxの道路ルートで${modeLabel()}順を提案します。\n` +
-      `始点: ${start.label}\n` +
-      `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n\n` +
-      shortRoutePreview(suggested) +
-      (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
-      (tailNote ? `\n\n${tailNote}` : '') +
-      '\n\nこの順番に並べ替えますか？',
-      () => {
-        deliveries = suggested.concat(noLocationItems, completedItems);
-        activeDeliveryId = suggested[0] ? suggested[0].id : null;
-        saveDeliveries();
-        renderMarkers();
-        renderList();
-        if (data.geometry) setOptimizedRouteGeometry(data.geometry);
-        if (suggested[0] && map) {
-          map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
-        }
-        showToast(`${modeLabel()}順を車用ルートで並べ替えました`);
-      }
-    );
+    confirmAndApplyRouteOrder({
+      title: provider.title,
+      summary: `${provider.summaryHead}で${modeLabel()}順を提案します。\n` +
+        `始点: ${start.label}\n` +
+        `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}`,
+      suggested,
+      noLocationItems,
+      completedItems,
+      geometry: data.geometry || null,
+      successMessage: `${modeLabel()}順を${provider.shortName}ルートで並べ替えました`
+    });
   } catch (e) {
     hideLoading();
-    showToast(e.message || '車用ルート検索に失敗しました', true);
+    showToast(e.message || `${provider.shortName}ルート検索に失敗しました`, true);
   }
 }
 
-async function optimizeGoogleCarRouteOrder() {
-  closeModal('modal-menu');
-  const routeItems = deliveries.filter(isRoutableDelivery);
-  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
-  const completedItems = deliveries.filter(d => d && d.completed);
+function optimizeCarRouteOrder() {
+  return optimizeCarRouteOrderWith('mapbox');
+}
 
-  if (routeItems.length < 2) {
-    showToast(`${modeLabel()}先が2件以上ある時にGoogle車用ルート検索できます`, true);
-    return;
-  }
-  if (routeItems.length > 24) {
-    showToast('Google車用ルート検索は一度に24件までです。完了分を削除するか分けて検索してください。', true);
-    return;
-  }
-
-  const start = getRouteStartPoint();
-  showLoading('Google車用ルートを検索中...');
-  try {
-    bumpUsage('googleRouteOptimize');
-    const res = await fetch('../api/google_route.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        start: { lat: start.lat, lng: start.lng },
-        points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
-      })
-    });
-    let data = null;
-    try { data = await res.json(); } catch (e) {}
-    hideLoading();
-
-    if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
-      const detail = data && (data.hint || data.detail) ? `\n${data.hint || data.detail}` : '';
-      throw new Error(((data && data.error) || 'Google車用ルート検索に失敗しました') + detail);
-    }
-
-    const byId = new Map(deliveries.map(d => [d.id, d]));
-    const suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
-    if (suggested.length !== routeItems.length) {
-      throw new Error('Google車用ルート検索結果の件数が一致しませんでした');
-    }
-
-    const distanceText = data.distance ? formatKm(data.distance) : '不明';
-    const durationText = data.duration ? formatDuration(data.duration) : '';
-    const tailNote = [
-      noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
-      completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
-    ].filter(Boolean).join('\n');
-
-    showConfirm(
-      'Google車向け 道路優先ルート',
-      `Google Routes APIの道路ルートで${modeLabel()}順を提案します。\n` +
-      `始点: ${start.label}\n` +
-      `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n\n` +
-      shortRoutePreview(suggested) +
-      (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
-      (tailNote ? `\n\n${tailNote}` : '') +
-      '\n\nこの順番に並べ替えますか？',
-      () => {
-        deliveries = suggested.concat(noLocationItems, completedItems);
-        activeDeliveryId = suggested[0] ? suggested[0].id : null;
-        saveDeliveries();
-        renderMarkers();
-        renderList();
-        if (data.geometry) setOptimizedRouteGeometry(data.geometry);
-        if (suggested[0] && map) {
-          map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
-        }
-        showToast(`${modeLabel()}順をGoogle車用ルートで並べ替えました`);
-      }
-    );
-  } catch (e) {
-    hideLoading();
-    showToast(e.message || 'Google車用ルート検索に失敗しました', true);
-  }
+function optimizeGoogleCarRouteOrder() {
+  return optimizeCarRouteOrderWith('google');
 }
 
 function exportDeliveriesAsJSON() {
