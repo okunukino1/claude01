@@ -1035,7 +1035,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.12-test.2</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.12-test.3</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1283,7 +1283,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.2';
+const APP_VERSION = 'v2026.06.12-test.3';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -5405,30 +5405,25 @@ async function optimizeCarRouteOrderWith(providerKey) {
     return;
   }
 
-  // 25件以上はAPIの制限を超えるため近い順で代替（ルートラインは次の目的地のみ表示）
+  const start = getRouteStartPoint();
+
+  // 25件以上は現在地から近い24件を道路APIで最適化し、残りはその後ろに近い順で続ける
+  let apiItems = routeItems;
+  let overflowItems = [];
   if (routeItems.length > 24) {
-    const start = getRouteStartPoint();
-    const suggested = improveRouteWithTwoOpt(start, nearestNeighborRoute(start, routeItems));
-    confirmAndApplyRouteOrder({
-      title: provider.title,
-      summary: `${routeItems.length}件のため道路APIの代わりに近い順で提案します（道路ルートAPIは24件まで対応）。\n始点: ${start.label}`,
-      suggested,
-      noLocationItems,
-      completedItems,
-      clearGeometry: true,
-      successMessage: `${modeLabel()}順を並べ替えました（${routeItems.length}件・近い順）`
-    });
-    return;
+    const sortedByDistance = routeItems.slice().sort((a, b) =>
+      distanceMeters(start, routePoint(a)) - distanceMeters(start, routePoint(b)));
+    apiItems = sortedByDistance.slice(0, 24);
+    overflowItems = sortedByDistance.slice(24);
   }
 
-  const start = getRouteStartPoint();
   showLoading(`${provider.shortName}ルートを検索中...`);
   try {
     bumpUsage(provider.usageKind);
     const res = await fetch(provider.endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(provider.buildRequestBody(start, routeItems))
+      body: JSON.stringify(provider.buildRequestBody(start, apiItems))
     });
     let data = null;
     try { data = await res.json(); } catch (e) {}
@@ -5439,19 +5434,29 @@ async function optimizeCarRouteOrderWith(providerKey) {
     }
 
     const byId = new Map(deliveries.map(d => [d.id, d]));
-    const suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
-    if (suggested.length !== routeItems.length) {
+    let suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
+    if (suggested.length !== apiItems.length) {
       throw new Error(`${provider.shortName}ルート検索結果の件数が一致しませんでした`);
+    }
+
+    if (overflowItems.length) {
+      const lastStop = routePoint(suggested[suggested.length - 1]);
+      suggested = suggested.concat(nearestNeighborRoute(lastStop, overflowItems));
     }
 
     const distanceText = data.distance ? formatKm(data.distance) : '不明';
     const durationText = data.duration ? formatDuration(data.duration) : '';
 
+    const overflowNote = overflowItems.length
+      ? `\n全${routeItems.length}件のうち現在地から近い24件を道路APIで最適化し、残り${overflowItems.length}件は後ろに近い順で続けます。`
+      : '';
+
     confirmAndApplyRouteOrder({
       title: provider.title,
       summary: `${provider.summaryHead}で${modeLabel()}順を提案します。\n` +
         `始点: ${start.label}\n` +
-        `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}`,
+        `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}` +
+        overflowNote,
       suggested,
       noLocationItems,
       completedItems,
