@@ -887,6 +887,31 @@
     text-decoration: underline;
   }
 
+  .delivery-sync-status {
+    padding: 9px 12px;
+    border-radius: 6px;
+    font-size: calc(13px * var(--text-scale));
+    font-weight: 700;
+    margin-bottom: 12px;
+    line-height: 1.4;
+  }
+  .delivery-sync-status.connected {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+  }
+  .delivery-sync-status.disconnected {
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    border: 1px solid #d8d0b7;
+  }
+  .delivery-sync-last-at {
+    font-size: calc(12px * var(--text-scale));
+    color: var(--ink-soft);
+    margin: -4px 0 12px;
+    min-height: 18px;
+  }
+
   /* Text sizing is intentionally separate from map and marker dimensions. */
   .topbar h1,
   .num-badge,
@@ -1045,6 +1070,7 @@
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
+      <button id="menu-delivery-sync" type="button">🔗 デバイス間データ共有</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
       <button id="menu-clear-done" type="button">✓ 完了分を削除</button>
@@ -1179,6 +1205,28 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-delivery-sync">
+  <div class="modal">
+    <h3>デバイス間データ共有</h3>
+    <div class="delivery-sync-status disconnected" id="delivery-sync-status">未接続</div>
+    <div class="delivery-sync-last-at" id="delivery-sync-last-at"></div>
+    <label>共有コード</label>
+    <input type="text" id="delivery-sync-code-input"
+           placeholder="共有コード（例: myteam-2024）"
+           autocomplete="off" autocapitalize="none">
+    <div class="modal-help">
+      同じコードを入力した端末同士でリストをリアルタイム共有します（10秒ごとに同期）。推測されにくいコードを使ってください。
+    </div>
+    <div class="modal-actions">
+      <button class="danger" id="btn-delivery-sync-disconnect" type="button">共有を解除</button>
+      <button class="primary" id="btn-delivery-sync-connect" type="button">共有を開始</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-delivery-sync">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-pickup-import">
   <div class="modal">
     <h3>モード・集荷コースを選択</h3>
@@ -1283,7 +1331,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.3';
+const APP_VERSION = 'v2026.06.12-test.4';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1306,6 +1354,11 @@ const APP_VERSION_CHECK_KEY = 'rys-mapbox-test-version-check-v1';
 const APP_VERSION_PROMPTED_KEY = 'rys-mapbox-test-version-prompted-v1';
 const GEOCODE_CACHE_KEY = 'rys-mapbox-test-geocode-cache-v1';
 const GEOCODE_CACHE_ADMIN_PIN_KEY = 'rys-mapbox-test-geocode-cache-admin-pin-v1';
+const DELIVERY_SYNC_CODE_KEY = 'rys-mapbox-test-delivery-sync-code-v1';
+const DELIVERY_SYNC_DEVICE_ID_KEY = 'rys-mapbox-test-delivery-sync-device-id-v1';
+const DELIVERY_SYNC_INTERVAL_MS = 10000;
+const DELIVERY_SYNC_PUSH_DEBOUNCE_MS = 3000;
+const DELIVERY_SYNC_API = '../api/delivery_sync.php';
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
 const SPOT_PICKUP_PREFETCH_API = '../api/spot_pickups.php';
@@ -1385,6 +1438,14 @@ let operatorSaveCallback = null;
 let operatorCancelCallback = null;
 let pickupSyncTimer = null;
 let pickupSyncInFlight = false;
+let deliverySyncCode = '';
+let deliverySyncEnabled = false;
+let deliverySyncDeviceId = '';
+let deliverySyncTimer = null;
+let deliverySyncPushTimer = null;
+let deliverySyncInFlight = false;
+let deliverySyncLastServerAt = '';
+let deliverySyncLastPushedAt = '';
 let pickupPendingRetryInFlight = false;
 let pickupLastSyncedAt = null;
 let pickupLastSpotTouchAt = 0;
@@ -1809,6 +1870,7 @@ function saveDeliveries() {
     const sheetName = getSelectedPickupSheet();
     if (sheetName) saveRegularPickupCache(sheetName, deliveries);
   }
+  scheduleSyncPush();
 }
 function loadDeliveries() {
   migrateMisfiledPickupDeliveries();
@@ -3452,7 +3514,8 @@ async function addDelivery({ address, note }) {
     formatted: result.formatted,
     completed: false,
     completedAt: null,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    updatedAt: Date.now()
   };
   deliveries.push(d);
   activeDeliveryId = d.id;
@@ -3627,6 +3690,7 @@ async function toggleDone(id) {
   d.completedAt = d.completed ? Date.now() : null;
   d.completedBy = d.completed ? operatorName : '';
   d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
+  d.updatedAt = Date.now();
   if (d.completed && activeDeliveryId === id) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
@@ -3836,6 +3900,7 @@ async function saveEditedItem() {
     formatted: d.formatted
   };
   d.note = newNote;
+  d.updatedAt = Date.now();
 
   let locationChanged = false;
   if (addressChanged) {
@@ -4937,6 +5002,188 @@ function restartPickupAutoSync() {
   pickupSyncTimer = setInterval(() => syncPickupProgressFromSheets(true), PICKUP_SYNC_INTERVAL_MS);
 }
 
+// ---- Cross-device delivery sync ----
+
+function initDeliverySync() {
+  deliverySyncDeviceId = localStorage.getItem(DELIVERY_SYNC_DEVICE_ID_KEY) || '';
+  if (!deliverySyncDeviceId) {
+    deliverySyncDeviceId = uid();
+    localStorage.setItem(DELIVERY_SYNC_DEVICE_ID_KEY, deliverySyncDeviceId);
+  }
+  const savedCode = localStorage.getItem(DELIVERY_SYNC_CODE_KEY) || '';
+  if (savedCode) {
+    deliverySyncCode = savedCode;
+    deliverySyncEnabled = true;
+  }
+}
+
+function updateDeliverySyncStatusUI() {
+  const statusEl = $('delivery-sync-status');
+  const lastAtEl = $('delivery-sync-last-at');
+  if (!statusEl) return;
+  if (deliverySyncEnabled) {
+    statusEl.textContent = `接続中 (コード設定済み)`;
+    statusEl.className = 'delivery-sync-status connected';
+    if (deliverySyncLastServerAt) {
+      const d = new Date(deliverySyncLastServerAt.replace(' ', 'T') + 'Z');
+      lastAtEl.textContent = isNaN(d) ? '' : `最終同期: ${d.toLocaleTimeString('ja-JP')}`;
+    } else {
+      lastAtEl.textContent = '';
+    }
+  } else {
+    statusEl.textContent = '未接続';
+    statusEl.className = 'delivery-sync-status disconnected';
+    lastAtEl.textContent = '';
+  }
+}
+
+function mergeDeliveryLists(local, remote) {
+  const byId = new Map();
+  for (const item of local) {
+    if (item && item.id) byId.set(item.id, item);
+  }
+  for (const item of remote) {
+    if (!item || !item.id) continue;
+    const existing = byId.get(item.id);
+    if (!existing) {
+      byId.set(item.id, item);
+    } else {
+      const localTime = existing.updatedAt || existing.completedAt || existing.createdAt || 0;
+      const remoteTime = item.updatedAt || item.completedAt || item.createdAt || 0;
+      if (remoteTime > localTime) byId.set(item.id, item);
+    }
+  }
+  return [...byId.values()];
+}
+
+function scheduleSyncPush() {
+  if (!deliverySyncEnabled) return;
+  clearTimeout(deliverySyncPushTimer);
+  deliverySyncPushTimer = setTimeout(pushDeliverySync, DELIVERY_SYNC_PUSH_DEBOUNCE_MS);
+}
+
+async function pushDeliverySync() {
+  if (!deliverySyncEnabled || !deliverySyncCode || deliverySyncInFlight) return;
+  deliverySyncInFlight = true;
+  try {
+    const payload = JSON.stringify(deliveries);
+    const resp = await fetch(DELIVERY_SYNC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'push',
+        code: deliverySyncCode,
+        device_id: deliverySyncDeviceId,
+        payload
+      })
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.ok && data.updated_at) {
+      deliverySyncLastPushedAt = data.updated_at;
+      deliverySyncLastServerAt = data.updated_at;
+      updateDeliverySyncStatusUI();
+    }
+  } catch (e) {
+    console.warn('delivery sync push failed', e);
+  } finally {
+    deliverySyncInFlight = false;
+  }
+}
+
+async function pullDeliverySync() {
+  if (!deliverySyncEnabled || !deliverySyncCode || deliverySyncInFlight) return;
+  deliverySyncInFlight = true;
+  try {
+    const resp = await fetch(DELIVERY_SYNC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'pull',
+        code: deliverySyncCode,
+        device_id: deliverySyncDeviceId
+      })
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.ok || !data.found) return;
+
+    const serverAt = data.updated_at;
+    if (serverAt === deliverySyncLastServerAt) return;
+
+    // Our own push came back — just update the timestamp
+    if (data.device_id === deliverySyncDeviceId) {
+      deliverySyncLastServerAt = serverAt;
+      updateDeliverySyncStatusUI();
+      return;
+    }
+
+    // Another device pushed — merge
+    let remoteItems;
+    try { remoteItems = JSON.parse(data.payload || '[]'); } catch { return; }
+    if (!Array.isArray(remoteItems)) return;
+
+    const merged = mergeDeliveryLists(deliveries, remoteItems);
+    const changed = JSON.stringify(merged) !== JSON.stringify(deliveries);
+    if (changed) {
+      deliveries = merged;
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      showToast('他のデバイスからデータを同期しました');
+    }
+    deliverySyncLastServerAt = serverAt;
+    updateDeliverySyncStatusUI();
+  } catch (e) {
+    console.warn('delivery sync pull failed', e);
+  } finally {
+    deliverySyncInFlight = false;
+  }
+}
+
+function restartDeliverySyncTimer() {
+  clearInterval(deliverySyncTimer);
+  deliverySyncTimer = null;
+  if (!deliverySyncEnabled) return;
+  pullDeliverySync();
+  deliverySyncTimer = setInterval(pullDeliverySync, DELIVERY_SYNC_INTERVAL_MS);
+}
+
+function openDeliverySyncModal() {
+  closeModal('modal-menu');
+  $('delivery-sync-code-input').value = deliverySyncCode;
+  updateDeliverySyncStatusUI();
+  openModal('modal-delivery-sync');
+}
+
+function connectDeliverySync() {
+  const code = $('delivery-sync-code-input').value.trim();
+  if (!code) { showToast('共有コードを入力してください', true); return; }
+  deliverySyncCode = code;
+  deliverySyncEnabled = true;
+  deliverySyncLastServerAt = '';
+  deliverySyncLastPushedAt = '';
+  localStorage.setItem(DELIVERY_SYNC_CODE_KEY, code);
+  updateDeliverySyncStatusUI();
+  restartDeliverySyncTimer();
+  showToast('共有を開始しました');
+}
+
+function disconnectDeliverySync() {
+  clearInterval(deliverySyncTimer);
+  deliverySyncTimer = null;
+  clearTimeout(deliverySyncPushTimer);
+  deliverySyncPushTimer = null;
+  deliverySyncEnabled = false;
+  deliverySyncCode = '';
+  deliverySyncLastServerAt = '';
+  deliverySyncLastPushedAt = '';
+  localStorage.removeItem(DELIVERY_SYNC_CODE_KEY);
+  $('delivery-sync-code-input').value = '';
+  updateDeliverySyncStatusUI();
+  showToast('共有を解除しました');
+}
+
 async function mapWithConcurrency(items, limit, worker) {
   const results = new Array(items.length);
   let nextIndex = 0;
@@ -5659,6 +5906,7 @@ $('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
 $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
 $('menu-optimize-google').addEventListener('click', optimizeGoogleCarRouteOrder);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
+$('menu-delivery-sync').addEventListener('click', openDeliverySyncModal);
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);
 $('menu-clear-done').addEventListener('click', clearCompleted);
@@ -5679,6 +5927,8 @@ $('menu-manual').addEventListener('click', () => {
   window.open('manual.html', '_blank', 'noopener');
 });
 
+$('btn-delivery-sync-connect').addEventListener('click', connectDeliverySync);
+$('btn-delivery-sync-disconnect').addEventListener('click', disconnectDeliverySync);
 $('btn-reset-usage').addEventListener('click', resetUsage);
 $('btn-pickup-import').addEventListener('click', importPickupSheet);
 $('btn-operator-save').addEventListener('click', saveOperatorFromModal);
@@ -5778,6 +6028,8 @@ document.addEventListener('visibilitychange', () => {
     ensureGpsWatching();
     updateGpsButton();
     hideLoading();
+    initDeliverySync();
+    restartDeliverySyncTimer();
     resetStalePickupCompletions()
       .catch(e => console.warn('startup pickup reset failed', e))
       .finally(() => restartPickupAutoSync());
