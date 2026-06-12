@@ -67,8 +67,8 @@ function ensure_sync_table($pdo, $table) {
       `room_code`  CHAR(64)     NOT NULL,
       `payload`    MEDIUMTEXT   NOT NULL DEFAULT '',
       `device_id`  VARCHAR(64)  NOT NULL DEFAULT '',
-      `updated_at` DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
-                                ON UPDATE CURRENT_TIMESTAMP(3),
+      `updated_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (`room_code`),
       KEY `idx_updated_at` (`updated_at`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -146,11 +146,11 @@ try {
 
     $pdo->prepare("
       INSERT INTO `{$table}` (`room_code`, `payload`, `device_id`, `updated_at`)
-      VALUES (?, ?, ?, NOW(3))
+      VALUES (?, ?, ?, NOW())
       ON DUPLICATE KEY UPDATE
         `payload`    = VALUES(`payload`),
         `device_id`  = VALUES(`device_id`),
-        `updated_at` = NOW(3)
+        `updated_at` = NOW()
     ")->execute([$roomCode, $payload, $deviceId]);
 
     $row = $pdo->prepare(

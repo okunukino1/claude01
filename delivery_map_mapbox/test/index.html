@@ -1331,7 +1331,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.5';
+const APP_VERSION = 'v2026.06.12-test.6';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2564,7 +2564,7 @@ function addAddressLayer(data) {
 
 function addOptimizedRouteLayer() {
   if (map.getLayer(OPTIMIZED_ROUTE_LAYER_ID)) return;
-  map.addLayer({
+  const layerDef = {
     id: OPTIMIZED_ROUTE_LAYER_ID,
     type: 'line',
     source: OPTIMIZED_ROUTE_SOURCE_ID,
@@ -2575,7 +2575,12 @@ function addOptimizedRouteLayer() {
       'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2, 16, 3, 19, 5],
       'line-opacity': 0.65
     }
-  });
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+  }
 }
 
 function setOptimizedRouteGeometry(geometry, orderedIds) {
@@ -2619,7 +2624,7 @@ function clearNextSegmentLayer() {
 
 function addNextSegmentLayer() {
   if (map.getLayer(NEXT_SEGMENT_LAYER_ID)) return;
-  map.addLayer({
+  const layerDef = {
     id: NEXT_SEGMENT_LAYER_ID,
     type: 'line',
     source: NEXT_SEGMENT_SOURCE_ID,
@@ -2630,7 +2635,12 @@ function addNextSegmentLayer() {
       'line-width': ['interpolate', ['linear'], ['zoom'], 12, 5, 16, 8, 19, 11],
       'line-opacity': 0.95
     }
-  });
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+  }
 }
 
 function setNextSegmentGeometry(geometry) {
@@ -5181,6 +5191,7 @@ function connectDeliverySync() {
   localStorage.setItem(DELIVERY_SYNC_CODE_KEY, code);
   updateDeliverySyncStatusUI();
   restartDeliverySyncTimer();
+  scheduleSyncPush();
   showToast('共有を開始しました');
 }
 
@@ -5582,11 +5593,15 @@ function confirmAndApplyRouteOrder({ title, summary, suggested, noLocationItems,
       deliveries = suggested.concat(noLocationItems, completedItems);
       activeDeliveryId = suggested[0] ? suggested[0].id : null;
       const orderedIds = suggested.map(d => d.id);
-      if (geometry) {
-        setOptimizedRouteGeometry(geometry, orderedIds);
-      } else {
-        clearOptimizedRouteGeometry();
-        if (clearGeometry) optimizedRouteOrderedIds = orderedIds;
+      try {
+        if (geometry) {
+          setOptimizedRouteGeometry(geometry, orderedIds);
+        } else {
+          clearOptimizedRouteGeometry();
+          if (clearGeometry) optimizedRouteOrderedIds = orderedIds;
+        }
+      } catch (e) {
+        optimizedRouteOrderedIds = orderedIds;
       }
       updateNextSegmentHighlight();
       saveDeliveries();
