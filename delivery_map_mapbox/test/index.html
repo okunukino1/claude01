@@ -1331,7 +1331,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.4';
+const APP_VERSION = 'v2026.06.12-test.5';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2562,37 +2562,45 @@ function addAddressLayer(data) {
   });
 }
 
-function setOptimizedRouteGeometry(geometry, orderedIds) {
-  if (orderedIds) optimizedRouteOrderedIds = orderedIds.slice();
-  if (!map || !geometry || geometry.type !== 'LineString') return;
-  const data = { type: 'Feature', geometry, properties: {} };
-
-  if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) {
-    map.getSource(OPTIMIZED_ROUTE_SOURCE_ID).setData(data);
-    return;
-  }
-
-  map.addSource(OPTIMIZED_ROUTE_SOURCE_ID, { type: 'geojson', data });
+function addOptimizedRouteLayer() {
+  if (map.getLayer(OPTIMIZED_ROUTE_LAYER_ID)) return;
   map.addLayer({
     id: OPTIMIZED_ROUTE_LAYER_ID,
     type: 'line',
     source: OPTIMIZED_ROUTE_SOURCE_ID,
     slot: 'top',
-    layout: {
-      'line-join': 'round',
-      'line-cap': 'round'
-    },
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
     paint: {
       'line-color': '#93c5fd',
-      'line-width': [
-        'interpolate', ['linear'], ['zoom'],
-        12, 2,
-        16, 3,
-        19, 5
-      ],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2, 16, 3, 19, 5],
       'line-opacity': 0.65
     }
   });
+}
+
+function setOptimizedRouteGeometry(geometry, orderedIds) {
+  if (orderedIds) optimizedRouteOrderedIds = orderedIds.slice();
+  if (!map || !geometry) return;
+
+  // Accept LineString; flatten MultiLineString to LineString
+  let lineGeometry = geometry;
+  if (geometry.type === 'MultiLineString' && Array.isArray(geometry.coordinates)) {
+    const coords = [].concat(...geometry.coordinates);
+    if (coords.length >= 2) lineGeometry = { type: 'LineString', coordinates: coords };
+  }
+  if (!lineGeometry || lineGeometry.type !== 'LineString' ||
+      !Array.isArray(lineGeometry.coordinates) || lineGeometry.coordinates.length < 2) return;
+
+  const data = { type: 'Feature', geometry: lineGeometry, properties: {} };
+
+  if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) {
+    map.getSource(OPTIMIZED_ROUTE_SOURCE_ID).setData(data);
+    addOptimizedRouteLayer();
+    return;
+  }
+
+  map.addSource(OPTIMIZED_ROUTE_SOURCE_ID, { type: 'geojson', data });
+  addOptimizedRouteLayer();
 }
 
 function clearOptimizedRouteGeometry() {
@@ -2609,14 +2617,8 @@ function clearNextSegmentLayer() {
   if (map.getSource(NEXT_SEGMENT_SOURCE_ID)) map.removeSource(NEXT_SEGMENT_SOURCE_ID);
 }
 
-function setNextSegmentGeometry(geometry) {
-  if (!map || !geometry) return;
-  const data = { type: 'Feature', geometry, properties: {} };
-  if (map.getSource(NEXT_SEGMENT_SOURCE_ID)) {
-    map.getSource(NEXT_SEGMENT_SOURCE_ID).setData(data);
-    return;
-  }
-  map.addSource(NEXT_SEGMENT_SOURCE_ID, { type: 'geojson', data });
+function addNextSegmentLayer() {
+  if (map.getLayer(NEXT_SEGMENT_LAYER_ID)) return;
   map.addLayer({
     id: NEXT_SEGMENT_LAYER_ID,
     type: 'line',
@@ -2631,6 +2633,18 @@ function setNextSegmentGeometry(geometry) {
   });
 }
 
+function setNextSegmentGeometry(geometry) {
+  if (!map || !geometry) return;
+  const data = { type: 'Feature', geometry, properties: {} };
+  if (map.getSource(NEXT_SEGMENT_SOURCE_ID)) {
+    map.getSource(NEXT_SEGMENT_SOURCE_ID).setData(data);
+    addNextSegmentLayer();
+    return;
+  }
+  map.addSource(NEXT_SEGMENT_SOURCE_ID, { type: 'geojson', data });
+  addNextSegmentLayer();
+}
+
 async function updateNextSegmentHighlight() {
   if (!map || optimizedRouteOrderedIds.length === 0) { clearNextSegmentLayer(); return; }
   const deliveryById = new Map(deliveries.map(d => [d.id, d]));
@@ -2641,23 +2655,24 @@ async function updateNextSegmentHighlight() {
   if (!nextDelivery) { clearNextSegmentLayer(); return; }
 
   const start = getRouteStartPoint();
-  const token = mapboxConfig && mapboxConfig.mapboxAccessToken;
 
-  const fallback = () => setNextSegmentGeometry({
+  // Draw straight line immediately for instant feedback when a stop is completed
+  setNextSegmentGeometry({
     type: 'LineString',
     coordinates: [[start.lng, start.lat], [nextDelivery.lng, nextDelivery.lat]]
   });
 
-  if (!token) { fallback(); return; }
+  const token = mapboxConfig && mapboxConfig.mapboxAccessToken;
+  if (!token) return;
 
   try {
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start.lng},${start.lat};${nextDelivery.lng},${nextDelivery.lat}?geometries=geojson&steps=false&access_token=${token}`;
     const res = await fetch(url);
     const data = res.ok ? await res.json() : null;
     const geometry = data && data.routes && data.routes[0] && data.routes[0].geometry;
-    if (geometry) setNextSegmentGeometry(geometry); else fallback();
+    if (geometry) setNextSegmentGeometry(geometry);
   } catch (e) {
-    fallback();
+    // straight line already shown above
   }
 }
 
@@ -2951,7 +2966,7 @@ function renderMarkers() {
       marker.setLngLat([d.lng, d.lat]);
     }
     const wrapper = marker.getElement();
-    wrapper.style.opacity = (searchQuery && !deliveryMatchesSearch(d, idx, searchQuery)) ? '0.25' : '';
+    wrapper.style.display = (searchQuery && !deliveryMatchesSearch(d, idx, searchQuery)) ? 'none' : '';
     updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap);
   });
 }
