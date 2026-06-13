@@ -1,0 +1,1688 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1026">
+<title>お掃除マイスター検定 | RYS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0d1117;
+    --night: #0b1026;
+    --night-soft: #141b3c;
+    --paper: #f6f4ee;
+    --accent: #ff5722;
+    --gold: #f5c542;
+    --gold-deep: #c9962a;
+    --good: #34d399;
+    --bubble: #7dd3fc;
+    --danger-y: #ffd60a;
+    --mincho: "Shippori Mincho B1", "Hiragino Mincho ProN", serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%; height: 100dvh;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Meiryo", sans-serif;
+    background: var(--night);
+    color: var(--paper);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* ===== お掃除現場のキャンバス ===== */
+  #scene-canvas, #dirt-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #dirt-canvas { touch-action: none; }
+  #fx { position: absolute; inset: 0; z-index: 85; pointer-events: none; }
+
+  /* ピカッと一閃のリベール */
+  #shine {
+    position: absolute; inset: 0; z-index: 88; pointer-events: none;
+    background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.9) 50%, transparent 70%);
+    background-size: 300% 100%;
+    background-position: 120% 0;
+    opacity: 0;
+  }
+  #shine.run { animation: shine-sweep 0.8s ease-out; }
+  @keyframes shine-sweep {
+    0% { opacity: 0; background-position: 120% 0; }
+    25% { opacity: 1; }
+    100% { opacity: 0; background-position: -120% 0; }
+  }
+
+  /* まぜるな危険オーバーレイ */
+  #danger {
+    position: absolute; inset: 0; z-index: 150;
+    display: none; align-items: center; justify-content: center;
+    background:
+      repeating-linear-gradient(45deg, rgba(13,17,23,0.92) 0 26px, rgba(255,214,10,0.88) 26px 52px);
+  }
+  #danger.active { display: flex; animation: danger-shake 0.5s linear 2; }
+  @keyframes danger-shake {
+    0%,100% { transform: translateX(0); }
+    20% { transform: translateX(-12px); } 40% { transform: translateX(10px); }
+    60% { transform: translateX(-8px); } 80% { transform: translateX(6px); }
+  }
+  .danger-inner {
+    background: var(--ink); color: var(--danger-y);
+    border: 4px solid var(--danger-y); border-radius: 18px;
+    padding: 26px 34px; text-align: center;
+    font-family: var(--mincho); font-size: 34px; font-weight: 800; letter-spacing: 0.08em;
+    box-shadow: 0 0 60px rgba(0,0,0,0.8);
+  }
+  .danger-inner small { display: block; font-size: 14px; margin-top: 8px; color: #fff; font-family: inherit; }
+  @media (prefers-reduced-motion: reduce) { #danger.active { animation: none; } }
+
+  /* ===== 全画面スクリーン ===== */
+  .screen {
+    position: absolute; inset: 0; z-index: 100;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: calc(18px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
+    display: none;
+  }
+  .screen.active { display: block; }
+  .screen-inner { max-width: 480px; margin: 0 auto; position: relative; z-index: 2; }
+
+  /* ===== タイトル画面: 泡の演出 ===== */
+  #screen-title {
+    background:
+      radial-gradient(120% 70% at 50% -10%, rgba(45,90,140,0.55), transparent 60%),
+      radial-gradient(100% 60% at 80% 110%, rgba(125,211,252,0.16), transparent 60%),
+      linear-gradient(180deg, #061226 0%, #0b1026 45%, #14203f 100%);
+  }
+  #title-bubbles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .title-crest { text-align: center; font-size: 56px; margin: 26px 0 2px; filter: drop-shadow(0 0 18px rgba(125,211,252,0.6)); animation: float 4s ease-in-out infinite; }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+  h1.game-title {
+    font-family: var(--mincho);
+    text-align: center; margin: 0;
+    font-size: 34px; font-weight: 800; letter-spacing: 0.1em; line-height: 1.3;
+    background: linear-gradient(180deg, #fff8e1 0%, var(--gold) 45%, var(--gold-deep) 75%, #fff3c4 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: var(--gold);
+  }
+  .game-subtitle {
+    font-family: var(--mincho);
+    text-align: center; color: #cfe3ea; font-size: 13.5px; letter-spacing: 0.26em;
+    margin: 8px 0 4px;
+  }
+  .title-rule {
+    width: 180px; height: 1px; margin: 14px auto 22px;
+    background: linear-gradient(90deg, transparent, var(--bubble), transparent);
+  }
+  .title-lede { text-align: center; font-size: 12.5px; line-height: 2; color: #a9bdd6; margin: 0 0 22px; }
+  .title-lede b { color: var(--bubble); font-weight: 700; }
+
+  .mode-btn {
+    display: block; width: 100%;
+    border-radius: 14px; border: 1px solid rgba(125,211,252,0.35);
+    padding: 16px 18px; margin: 12px 0;
+    font-family: inherit; text-align: left; cursor: pointer;
+    background: linear-gradient(135deg, rgba(20,32,63,0.9), rgba(11,16,38,0.9));
+    color: var(--paper);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.07);
+    transition: transform 0.12s;
+  }
+  .mode-btn:active { transform: scale(0.98); }
+  .mode-btn .m-name { font-size: 17px; font-weight: 800; letter-spacing: 0.04em; }
+  .mode-btn .m-desc { font-size: 11.5px; color: #a9bdd6; margin-top: 4px; line-height: 1.6; }
+  .mode-btn.daily { border-color: var(--gold); background: linear-gradient(135deg, rgba(60,48,10,0.92), rgba(20,32,63,0.92)); box-shadow: 0 4px 28px rgba(245,197,66,0.22); }
+  .mode-btn.daily .m-name { color: var(--gold); }
+
+  .fx-toggle, .series-link {
+    display: block; margin: 14px auto 0;
+    background: none; border: 1px solid rgba(169,189,214,0.4); color: #a9bdd6;
+    border-radius: 18px; padding: 7px 16px; font-size: 12px; font-family: inherit; cursor: pointer;
+    text-decoration: none; text-align: center; width: fit-content;
+  }
+  .best-line { text-align: center; font-size: 12.5px; color: var(--gold); margin: 16px 0 0; letter-spacing: 0.05em; }
+  .footer-note { text-align: center; font-size: 10px; color: #5b6e8a; margin-top: 24px; line-height: 1.8; }
+  .footer-note a { color: inherit; }
+
+  /* ===== HUD ===== */
+  .hud-top {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 60;
+    padding: calc(10px + env(safe-area-inset-top)) 12px 0;
+    pointer-events: none; display: none;
+  }
+  .hud-top.active { display: block; }
+  .order-card {
+    pointer-events: auto;
+    max-width: 480px; margin: 0 auto;
+    background: linear-gradient(135deg, rgba(16,26,52,0.94), rgba(8,12,32,0.94));
+    border: 1px solid rgba(125,211,252,0.45);
+    border-radius: 14px;
+    box-shadow: 0 6px 30px rgba(0,0,0,0.5);
+    padding: 11px 14px;
+    animation: order-in 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
+  }
+  @keyframes order-in { from { transform: translateY(-90px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .order-card .q-no { font-size: 11px; font-weight: 800; color: var(--bubble); letter-spacing: 0.18em; }
+  .order-card .q-title { font-family: var(--mincho); font-size: 20px; font-weight: 800; margin: 2px 0; }
+  .order-card .q-hint { font-size: 11.5px; color: #8fa3bd; margin-top: 2px; }
+
+  .hud-bottom {
+    position: absolute; left: 0; right: 0;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: 60; padding: 0 12px; display: none;
+  }
+  .hud-bottom.active { display: block; }
+  .hud-bottom .row { max-width: 480px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }
+
+  /* 磨きタイマーと除去率 */
+  .scrub-status {
+    max-width: 480px; margin: 0 auto 8px;
+    background: rgba(8,12,32,0.85);
+    border: 1px solid rgba(125,211,252,0.35);
+    border-radius: 12px; padding: 8px 12px;
+  }
+  .scrub-status .labels { display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; }
+  .scrub-status .labels .pct { color: var(--bubble); }
+  .timer-track { height: 6px; border-radius: 3px; background: rgba(125,211,252,0.18); margin-top: 6px; overflow: hidden; }
+  .timer-bar { height: 100%; width: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--bubble), var(--gold)); transition: width 0.1s linear; }
+
+  .btn {
+    display: block; width: 100%;
+    border-radius: 12px;
+    padding: 14px; margin: 10px 0;
+    font-size: 16px; font-weight: 800; font-family: inherit;
+    cursor: pointer;
+    background: var(--night-soft); color: var(--paper);
+    border: 1px solid rgba(169,189,214,0.25);
+  }
+  .btn.primary {
+    background: linear-gradient(135deg, #ff7043, var(--accent) 60%, #e64a19);
+    color: #fff; border: none;
+    box-shadow: 0 4px 18px rgba(255,87,34,0.5);
+  }
+  .btn.gold {
+    background: linear-gradient(135deg, #ffe082, var(--gold) 55%, var(--gold-deep));
+    color: #3a2a00; border: none;
+    box-shadow: 0 4px 22px rgba(245,197,66,0.45);
+  }
+  .btn.aqua {
+    background: linear-gradient(135deg, #bae6fd, var(--bubble) 55%, #38bdf8);
+    color: #06283f; border: none;
+    box-shadow: 0 4px 22px rgba(125,211,252,0.45);
+  }
+  .btn:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+  .btn:active:not(:disabled) { transform: scale(0.98); }
+  .hud-bottom .btn { margin: 0; }
+
+  /* ===== シート ===== */
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 80;
+    background: linear-gradient(180deg, rgba(18,28,56,0.97), rgba(8,12,32,0.99));
+    border-top: 1px solid rgba(125,211,252,0.4);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.6);
+    padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
+    max-height: 64dvh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    display: none;
+  }
+  .sheet.active { display: block; animation: sheet-up 0.4s cubic-bezier(0.2, 1.1, 0.3, 1); }
+  @keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+  .sheet-inner { max-width: 480px; margin: 0 auto; }
+  .result-headline { font-family: var(--mincho); font-size: 23px; font-weight: 800; margin: 0 0 4px; }
+  .result-sub { font-size: 14px; color: #c3d2e8; margin: 0 0 10px; line-height: 1.8; }
+  .result-sub b { color: var(--gold); font-size: 20px; font-family: var(--mincho); }
+  .trivia {
+    background: rgba(125,211,252,0.1);
+    border-left: 3px solid var(--bubble);
+    border-radius: 10px;
+    padding: 10px 13px; margin: 12px 0;
+    font-size: 13px; line-height: 1.85; color: #e2ecf5;
+  }
+  .trivia .trivia-tag { font-size: 11px; font-weight: 800; color: var(--bubble); display: block; margin-bottom: 3px; letter-spacing: 0.1em; }
+  .trivia.warn { background: rgba(255,214,10,0.12); border-left-color: var(--danger-y); }
+  .trivia.warn .trivia-tag { color: var(--danger-y); }
+
+  /* 洗剤選択 */
+  .cleaner-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 10px; }
+  .cleaner-btn {
+    border-radius: 12px; border: 1px solid rgba(125,211,252,0.35);
+    background: rgba(16,26,52,0.9); color: var(--paper);
+    padding: 11px 12px; font-family: inherit; text-align: left; cursor: pointer;
+  }
+  .cleaner-btn:active { transform: scale(0.97); }
+  .cleaner-btn .c-name { font-size: 14.5px; font-weight: 800; }
+  .cleaner-btn .c-note { font-size: 11px; color: #8fa3bd; margin-top: 2px; }
+
+  /* 段取りタスクリスト */
+  .task-list { margin-top: 8px; }
+  .task-item {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%;
+    border-radius: 12px; border: 1px solid rgba(125,211,252,0.3);
+    background: rgba(16,26,52,0.9); color: var(--paper);
+    padding: 12px 14px; margin: 8px 0;
+    font-family: inherit; font-size: 14.5px; font-weight: 700; text-align: left; cursor: pointer;
+    transition: transform 0.1s;
+  }
+  .task-item:active { transform: scale(0.98); }
+  .task-item .t-badge {
+    flex: none; width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(125,211,252,0.15); color: var(--bubble);
+    font-size: 16px; font-weight: 800;
+  }
+  .task-item.numbered { border-color: var(--accent); }
+  .task-item.numbered .t-badge { background: var(--accent); color: #fff; }
+  .violation { font-size: 12.5px; color: #ffb4a2; line-height: 1.8; margin: 4px 0; }
+  .satisfied { font-size: 12.5px; color: #9ae6c4; line-height: 1.8; margin: 4px 0; }
+
+  /* ===== 結果画面 ===== */
+  #screen-result {
+    background:
+      radial-gradient(110% 60% at 50% -5%, rgba(45,90,140,0.5), transparent 60%),
+      linear-gradient(180deg, #061226, #0e1833 60%, #14203f);
+  }
+  .rank-big { text-align: center; font-size: 64px; margin: 18px 0 0; line-height: 1; filter: drop-shadow(0 0 24px rgba(245,197,66,0.6)); animation: rank-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1); }
+  @keyframes rank-pop { from { transform: scale(0); } to { transform: scale(1); } }
+  .rank-name {
+    font-family: var(--mincho);
+    text-align: center; font-size: 28px; font-weight: 800; margin: 8px 0 0; letter-spacing: 0.1em;
+    background: linear-gradient(180deg, #fff8e1, var(--gold) 50%, var(--gold-deep));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .score-big { text-align: center; font-size: 15px; color: #a9bdd6; margin: 6px 0 18px; }
+  .score-big b { font-size: 30px; color: var(--gold); font-family: var(--mincho); }
+  .card-dark {
+    background: rgba(16,26,52,0.85);
+    border: 1px solid rgba(169,189,214,0.2);
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 12px;
+  }
+  .breakdown { width: 100%; border-collapse: collapse; font-size: 12.5px; color: #d9e2ef; }
+  .breakdown td { padding: 7px 4px; border-bottom: 1px solid rgba(169,189,214,0.14); }
+  .breakdown td:last-child { text-align: right; font-weight: 700; white-space: nowrap; }
+  .new-best { text-align: center; color: var(--good); font-weight: 800; font-size: 14px; margin: 6px 0; }
+
+  /* ===== ローディング・トースト ===== */
+  #loading {
+    position: absolute; inset: 0; z-index: 250;
+    background: rgba(6,14,30,0.92);
+    display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px; text-align: center; padding: 0 30px;
+  }
+  #loading.active { display: flex; }
+  .spinner {
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 4px solid rgba(125,211,252,0.2); border-top-color: var(--bubble);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #toast {
+    position: absolute; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom));
+    transform: translateX(-50%); z-index: 300;
+    background: rgba(8,12,32,0.95); color: var(--paper);
+    border: 1px solid rgba(125,211,252,0.5);
+    padding: 10px 18px; border-radius: 22px;
+    font-size: 13px; font-weight: 700;
+    opacity: 0; pointer-events: none; transition: opacity 0.25s;
+    white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+  }
+  #toast.show { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .title-crest, #shine.run { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="scene-canvas"></canvas>
+<canvas id="dirt-canvas"></canvas>
+<canvas id="fx"></canvas>
+<div id="shine"></div>
+
+<!-- タイトル画面 -->
+<div id="screen-title" class="screen active">
+  <canvas id="title-bubbles"></canvas>
+  <div class="screen-inner">
+    <div class="title-crest">🧽</div>
+    <h1 class="game-title">お掃除マイスター検定</h1>
+    <p class="game-subtitle">〜 RYSの現場をピカピカに 〜</p>
+    <div class="title-rule"></div>
+    <p class="title-lede">
+      荷物を届けるだけが、RYSの仕事じゃない。<br>
+      今日の指令は<b>「お得意さまの店舗を、心を込めてお掃除せよ」</b>。<br>
+      汚れには science がある。<b>正しい洗剤</b>を選び、磨き上げろ!
+    </p>
+
+    <button id="btn-daily" class="mode-btn daily">
+      <div class="m-name">📅 本日の現場(デイリー)</div>
+      <div class="m-desc">毎日届く5件のお掃除現場。汚れを science で見抜いて磨き、プロの段取りで仕上げる。結果をシェアして腕比べ!</div>
+    </button>
+    <button id="btn-free" class="mode-btn">
+      <div class="m-name">🫧 お掃除修行(フリー)</div>
+      <div class="m-desc">毎回ちがう現場で何度でも修行。重曹とクエン酸の使い分け、家でそのまま役立ちます。</div>
+    </button>
+
+    <div class="best-line" id="best-line"></div>
+    <button id="btn-fx" class="fx-toggle"></button>
+    <a class="series-link" href="../game/">🚚 検定シリーズ第1弾: 配達員検定はこちら</a>
+
+    <p class="footer-note">
+      お掃除の情報は一般的な目安です。実際のお手入れは製品・建材の注意書きに従ってください。<br>
+      © RYS
+    </p>
+  </div>
+</div>
+
+<!-- 問題HUD -->
+<div id="hud-q" class="hud-top">
+  <div class="order-card" id="order-card">
+    <div class="q-no" id="q-no"></div>
+    <div class="q-title" id="q-title"></div>
+    <div class="q-hint" id="q-hint"></div>
+  </div>
+</div>
+
+<!-- 磨きフェーズの下部HUD -->
+<div id="hud-scrub" class="hud-bottom">
+  <div class="scrub-status">
+    <div class="labels"><span id="scrub-cleaner"></span><span class="pct" id="scrub-pct">0%</span></div>
+    <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
+  </div>
+  <div class="row">
+    <button id="btn-scrub-end" class="btn">✋ ここで終了</button>
+  </div>
+</div>
+
+<!-- 洗剤選択シート -->
+<div id="sheet-cleaner" class="sheet">
+  <div class="sheet-inner">
+    <p class="result-headline">🧴 どの洗剤で挑む?</p>
+    <p class="result-sub" id="cl-desc"></p>
+    <div class="cleaner-grid" id="cleaner-grid"></div>
+  </div>
+</div>
+
+<!-- まぜるな危険 -->
+<div id="danger"><div class="danger-inner">⚠️ まぜるな危険!<small id="danger-sub"></small></div></div>
+
+<!-- ステージ1 結果シート -->
+<div id="sheet-reveal" class="sheet">
+  <div class="sheet-inner">
+    <p class="result-headline" id="rv-headline"></p>
+    <p class="result-sub" id="rv-sub"></p>
+    <div class="trivia" id="rv-trivia-box"><span class="trivia-tag" id="rv-tag">📚 汚れの science</span><span id="rv-trivia"></span></div>
+    <button id="btn-next" class="btn primary"></button>
+  </div>
+</div>
+
+<!-- ステージ2: 段取り -->
+<div id="screen-s2" class="screen">
+  <div class="screen-inner">
+    <div class="order-card" style="animation:none; margin-bottom: 4px;">
+      <div class="q-no">最終検定: プロの段取り</div>
+      <div class="q-title" style="font-size:17px;" id="s2-status">作業する順番にタップ!</div>
+      <div class="q-hint">プロの鉄則: 「上から下」「乾いた掃除 → 濡れた掃除」。最後のタスクは再タップで取り消し</div>
+    </div>
+    <div class="task-list" id="task-list"></div>
+    <div style="display:flex; gap:10px;">
+      <button id="btn-s2-reset" class="btn" style="flex:1;">やり直し</button>
+      <button id="btn-s2-confirm" class="btn primary" style="flex:2;" disabled>🧹 この段取りで開始!</button>
+    </div>
+  </div>
+</div>
+
+<!-- ステージ2 結果シート -->
+<div id="sheet-s2" class="sheet">
+  <div class="sheet-inner">
+    <p class="result-headline" id="s2r-headline"></p>
+    <p class="result-sub" id="s2r-sub"></p>
+    <div id="s2r-detail"></div>
+    <div class="trivia"><span class="trivia-tag">📚 プロの鉄則</span>掃除は「上から下へ」(ホコリは落ちる)、「乾いた掃除から濡れた掃除へ」(濡れた床に掃除機はNG)、「奥から手前へ」(きれいな場所を踏まない)。この3つだけで仕上がりが見違えます。</div>
+    <button id="btn-s2-result" class="btn gold">🏅 検定結果を見る</button>
+  </div>
+</div>
+
+<!-- 結果画面 -->
+<div id="screen-result" class="screen">
+  <div class="screen-inner">
+    <div class="rank-big" id="r-emoji"></div>
+    <div class="rank-name" id="r-rank"></div>
+    <p class="score-big">総合スコア <b id="r-score">0</b> / 1000</p>
+    <div class="new-best" id="r-newbest" style="display:none;">🎉 自己ベスト更新!</div>
+    <div class="card-dark">
+      <table class="breakdown" id="r-table"></table>
+    </div>
+    <button id="btn-share" class="btn gold">📋 結果をコピーして自慢する</button>
+    <button id="btn-again" class="btn aqua">もう一度修行する</button>
+    <button id="btn-title" class="btn">タイトルへ戻る</button>
+    <p class="footer-note">お掃除の情報は一般的な目安です。製品の注意書きに従ってください。</p>
+  </div>
+</div>
+
+<div id="loading"><div class="spinner"></div><div id="loading-msg">準備中...</div></div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ===================== 定数 ===================== */
+
+const GAME_VER = 1;
+const QUESTION_COUNT = 5;
+const SCRUB_TIME_MS = 15000;
+const CLEAR_SNAP = 0.93;   // この除去率でスナップクリア
+
+const CLEANERS = [
+  { id: 'alkali',   e: '🧂', name: '重曹・セスキ',   note: 'アルカリ性。油や皮脂に' },
+  { id: 'acid',     e: '🍋', name: 'クエン酸',       note: '酸性。水垢やアルカリ汚れに' },
+  { id: 'chlorine', e: '🧴', name: '塩素系漂白剤',   note: 'カビ・除菌の最終兵器' },
+  { id: 'neutral',  e: '💧', name: '中性洗剤',       note: 'やさしい万能タイプ' },
+  { id: 'alcohol',  e: '✨', name: 'アルコール',     note: '除菌してすぐ乾く' },
+];
+
+// 汚れシナリオ15種。nature(汚れの性質)→正しい洗剤、が学びの核
+// effect: 正解=1.0 / partial=0.35 / その他=0.05(danger選択は磨きに進まない)
+const SCENARIOS = [
+  { id: 'konro', place: 'キッチン', title: 'コンロまわりの油汚れ', look: 'ベタベタの茶色い飛び散り…', nature: '酸性',
+    correct: ['alkali'], partial: ['neutral'], danger: [], scene: 'stove', dirt: 'oil',
+    desc: '油汚れは「酸性」。反対の性質のアルカリ性(重曹・セスキ)で中和すると、スルッと分解できます。' },
+  { id: 'fan', place: 'キッチン', title: '換気扇のベタベタ油', look: '何年モノ?の頑固な油膜…', nature: '酸性',
+    correct: ['alkali'], partial: ['neutral'], danger: [], scene: 'fan', dirt: 'oil',
+    desc: '換気扇の油もアルカリで攻める。50℃くらいのセスキのお湯につけ置きすると効果倍増のプロ技。' },
+  { id: 'range', place: 'キッチン', title: '電子レンジ内の油はね', look: '庫内の壁に点々と油のシミ…', nature: '酸性',
+    correct: ['alkali'], partial: ['neutral', 'alcohol'], danger: [], scene: 'microwave', dirt: 'oil',
+    desc: '重曹水をレンジでチンして蒸気を充満させ、汚れを浮かせてから拭くのがプロの裏ワザ。' },
+  { id: 'faucet', place: '浴室', title: '蛇口の白い水垢', look: 'カリカリの白い付着物…', nature: 'アルカリ性',
+    correct: ['acid'], partial: [], danger: [], scene: 'faucet', dirt: 'scale',
+    desc: '水垢の正体は水道水のミネラル(カルシウム)で「アルカリ性」。酸(クエン酸)で溶かすのが正解。' },
+  { id: 'mirror', place: '浴室', title: '鏡のうろこ汚れ', look: '白いうろこ模様で顔が見えない…', nature: 'アルカリ性',
+    correct: ['acid'], partial: [], danger: [], scene: 'mirror', dirt: 'scale',
+    desc: '鏡のうろこも水垢の仲間。クエン酸水をキッチンペーパーで湿布して、ラップで密着パックすると頑固なうろこも降参。' },
+  { id: 'kettle', place: 'キッチン家電', title: '電気ケトルの白い結晶', look: '底に白いザラザラが…', nature: 'アルカリ性',
+    correct: ['acid'], partial: [], danger: [], scene: 'kettle', dirt: 'scale',
+    desc: 'ケトルの白い結晶も水道水のミネラル。クエン酸を入れて沸かすだけでピカピカ。食品由来の酸だから安心です。' },
+  { id: 'toilet', place: 'トイレ', title: '便器の黄ばみ(尿石)', look: '水際にこびりつく黄ばみ…', nature: 'アルカリ性',
+    correct: ['acid'], partial: [], danger: ['chlorine'], scene: 'toilet', dirt: 'stain',
+    dangerDesc: '尿石は酸性洗剤の出番ですが、トイレでよく使う塩素系と酸性が混ざると有毒な塩素ガスが発生します。実際の掃除でも、同じ日に併用しないこと!',
+    desc: '尿石は「アルカリ性」なので酸で溶かします。ただし塩素系との併用は絶対NG。「まぜるな危険」表示は命を守る注意書きです。' },
+  { id: 'packing', place: '浴室', title: 'ゴムパッキンの黒カビ', look: '窓ぎわのゴムに黒い点々…', nature: 'カビ(菌)',
+    correct: ['chlorine'], partial: [], danger: ['acid'], scene: 'packing', dirt: 'mold',
+    dangerDesc: 'カビ取り中の塩素系に酸性(クエン酸)を重ねると有毒な塩素ガスが発生します。浴室は密室なので特に危険。換気をしても併用は絶対NG!',
+    desc: '黒カビは汚れではなく「菌」。漂白ではなく殺菌が本質なので、塩素系漂白剤で根まで断ちます。使用中は必ず換気を。' },
+  { id: 'drain', place: '水まわり', title: '排水口のぬめり', look: 'ピンク色のぬるぬる…', nature: '雑菌の膜',
+    correct: ['chlorine'], partial: ['alkali'], danger: ['acid'], scene: 'drain', dirt: 'slime',
+    dangerDesc: '排水口の中で塩素系と酸性が混ざると、見えない場所で有毒ガスが発生してとても危険。順番に使うときも、間にしっかり水で流すこと!',
+    desc: 'ぬめりの正体は雑菌が作るバリア(バイオフィルム)。塩素系で分解・除菌するのが確実です。' },
+  { id: 'doorknob', place: 'リビング', title: 'ドアノブ・スイッチの手垢', look: 'うっすら黒ずむ手の跡…', nature: '酸性(皮脂)',
+    correct: ['alkali'], partial: ['alcohol', 'neutral'], danger: [], scene: 'switchplate', dirt: 'smudge',
+    desc: '手垢の正体は皮脂で「酸性」。セスキ水のスプレーでひと拭きすればすっきり。みんなが触る場所はアルコール除菌も◎。' },
+  { id: 'floor', place: 'リビング', title: 'フローリングの黒ずみ', look: '素足で歩く場所の皮脂汚れ…', nature: '酸性(皮脂)',
+    correct: ['neutral'], partial: ['alkali'], danger: [], scene: 'floor', dirt: 'smudge',
+    desc: 'ひっかけ問題! 汚れは酸性でも、強いアルカリはフローリングのワックスを傷めます。床は薄めた中性洗剤が正解。素材も science のうち。' },
+  { id: 'window', place: '窓', title: '窓ガラスの曇り', look: '外の景色がぼんやり…', nature: 'ホコリ+皮脂',
+    correct: ['neutral'], partial: ['alcohol'], danger: [], scene: 'window', dirt: 'haze',
+    desc: '窓は薄めた中性洗剤で「上から下へ」。仕上げに乾いた布で拭き上げると筋が残りません。曇りの日のほうが乾きが遅く、実はキレイに仕上がります。' },
+  { id: 'fridge', place: 'キッチン家電', title: '冷蔵庫内の食品汚れ', look: '調味料の液だれとカス…', nature: '食品汚れ',
+    correct: ['alcohol'], partial: ['neutral'], danger: [], scene: 'fridge', dirt: 'food',
+    desc: '食品を入れる場所は「洗剤残り」が大敵。すぐに揮発するアルコールなら、除菌もできて二度拭き不要です。' },
+  { id: 'tvscreen', place: 'リビング', title: 'テレビ・スマホ画面の指紋', look: 'ペタペタの指紋だらけ…', nature: '皮脂',
+    correct: ['alcohol'], partial: ['neutral'], danger: [], scene: 'screen', dirt: 'smudge',
+    desc: 'ひっかけ問題! 画面の基本はやわらかい布での乾拭き。使うなら少量のアルコールを布に付けて優しく。強い洗剤はコーティングを剥がします。' },
+  { id: 'sink', place: '水まわり', title: 'シンクのくすみ(石けんカス)', look: '白っぽくくすんだステンレス…', nature: 'アルカリ性',
+    correct: ['acid'], partial: ['neutral'], danger: [], scene: 'sink', dirt: 'scale',
+    desc: '石けんカス+水垢は「アルカリ性」。クエン酸で磨いて水で流せば、ステンレス本来の輝きが戻ります。' },
+];
+
+// ステージ2: 段取りタスクと順序制約
+const TASKS = [
+  { id: 'vent',   e: '🪟', name: '窓を開けて換気する' },
+  { id: 'dust',   e: '🪶', name: '天井・照明のホコリを払う' },
+  { id: 'shelf',  e: '🧽', name: '棚とテーブルを上の段から拭く' },
+  { id: 'vacuum', e: '🧹', name: '床に掃除機をかける(奥から手前)' },
+  { id: 'mop',    e: '🪣', name: '床を水拭きする' },
+  { id: 'trash',  e: '🗑', name: 'ゴミをまとめて出す' },
+  { id: 'finish', e: '✅', name: '道具を片付けて窓を閉める' },
+];
+// [先, 後, 理由]
+const TASK_RULES = [
+  ['vent', 'dust',   '換気してからホコリ作業(舞ったホコリを外へ逃がす)'],
+  ['dust', 'shelf',  '上から下へ: 天井のホコリを払ってから棚を拭く'],
+  ['dust', 'vacuum', 'ホコリを床に落としきってから掃除機で吸う'],
+  ['shelf', 'vacuum','拭き掃除で落ちたゴミも掃除機でまとめて吸う'],
+  ['vacuum', 'mop',  '乾いた掃除→濡れた掃除。濡れた床に掃除機はNG'],
+  ['vent', 'mop',    '換気しながら水拭きすると床が早く乾く'],
+  ['vacuum', 'trash','掃除機のあとにゴミをまとめると取りこぼしなし'],
+  ['mop', 'finish',  '片付けは床が仕上がってから'],
+  ['trash', 'finish','ゴミ出しを済ませてから道具を片付ける'],
+  ['dust', 'finish', 'ホコリ作業が残ったまま店じまいしない'],
+];
+
+const RANKS = [
+  { min: 900, name: '伝説のお掃除マイスター', emoji: '🏆' },
+  { min: 700, name: 'お掃除師範', emoji: '🥇' },
+  { min: 450, name: 'お掃除上手', emoji: '🥈' },
+  { min: 0,   name: '見習い', emoji: '🔰' },
+];
+
+const LS_BEST = 'rys_osouji_best';
+const LS_DAILY_PREFIX = 'rys_osouji_daily_';
+const LS_FX = 'rys_game_fx';   // 検定シリーズで演出設定を共有
+
+/* ===================== ユーティリティ ===================== */
+
+const $ = id => document.getElementById(id);
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function xmur3(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h ^= h >>> 16) >>> 0;
+  };
+}
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function seededShuffle(arr, rand) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function jstDateStr() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+function lsSet(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+
+const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function fxEnabled() { return !reducedMotion && lsGet(LS_FX) !== 'off'; }
+
+function countUp(el, to, suffix, durationMs) {
+  if (!fxEnabled()) { el.textContent = Math.round(to).toLocaleString('ja-JP') + (suffix || ''); return; }
+  const t0 = performance.now();
+  function frame(t) {
+    const p = Math.min(1, (t - t0) / durationMs);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(to * eased).toLocaleString('ja-JP') + (suffix || '');
+    if (p < 1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function pickFrom(list, seedStr, keyFn) {
+  const rand = mulberry32(xmur3(seedStr)());
+  const indices = seededShuffle(list.map((_, i) => i), rand);
+  const picked = [];
+  const used = new Set();
+  for (const i of indices) {
+    const item = list[i];
+    if (used.has(keyFn(item))) continue;
+    used.add(keyFn(item));
+    picked.push(item);
+    if (picked.length >= QUESTION_COUNT) break;
+  }
+  for (const i of indices) {
+    if (picked.length >= QUESTION_COUNT) break;
+    if (!picked.includes(list[i])) picked.push(list[i]);
+  }
+  return picked;
+}
+
+/* ===================== パーティクル ===================== */
+
+const fx = { canvas: null, ctx: null, parts: [], raf: 0 };
+const FX_MAX_PARTS = 320;
+
+function fxInit() {
+  fx.canvas = $('fx');
+  fx.ctx = fx.canvas.getContext('2d');
+  const resize = () => {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    fx.canvas.width = innerWidth * dpr;
+    fx.canvas.height = innerHeight * dpr;
+    fx.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  resize();
+  addEventListener('resize', resize);
+}
+
+function fxSpawn(x, y, opts) {
+  if (!fxEnabled()) return;
+  const o = opts || {};
+  const n = Math.min(o.n || 14, Math.max(0, FX_MAX_PARTS - fx.parts.length));
+  for (let i = 0; i < n; i++) {
+    const ang = o.spread != null ? (Math.random() * o.spread - o.spread / 2) + (o.angle || 0) : Math.random() * Math.PI * 2;
+    const spd = (o.speed || 2.2) * (0.4 + Math.random());
+    fx.parts.push({
+      x, y,
+      vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      life: 1, decay: 0.012 + Math.random() * 0.02,
+      size: (o.size || 2.6) * (0.5 + Math.random()),
+      color: o.colors ? o.colors[Math.floor(Math.random() * o.colors.length)] : '#f5c542',
+      grav: o.grav || 0,
+      ring: !!o.ring,
+    });
+  }
+  if (!fx.raf) fxLoop();
+}
+
+function fxLoop() {
+  fx.raf = requestAnimationFrame(fxLoop);
+  const ctx = fx.ctx;
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = fx.parts.length - 1; i >= 0; i--) {
+    const p = fx.parts[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vy += p.grav;
+    p.vx *= 0.985; p.vy *= 0.985;
+    p.life -= p.decay;
+    if (p.life <= 0) { fx.parts.splice(i, 1); continue; }
+    ctx.globalAlpha = Math.max(0, p.life);
+    if (p.ring) {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (1.6 - p.life * 0.6), 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  if (!fx.parts.length && !fireworksOn) { cancelAnimationFrame(fx.raf); fx.raf = 0; ctx.clearRect(0, 0, innerWidth, innerHeight); }
+}
+
+let fireworksOn = false;
+let fireworksTimer = null;
+function startFireworks() {
+  if (!fxEnabled()) return;
+  fireworksOn = true;
+  let count = 0;
+  const COLORS = ['#f5c542', '#7dd3fc', '#34d399', '#fff8e1', '#f9a8d4'];
+  const launch = () => {
+    if (!fireworksOn) return;
+    fxSpawn(innerWidth * (0.15 + Math.random() * 0.7), innerHeight * (0.12 + Math.random() * 0.35),
+      { n: 46, speed: 3.4, size: 2.8, colors: COLORS, grav: 0.035 });
+    count++;
+    if (count < 14) fireworksTimer = setTimeout(launch, 420 + Math.random() * 500);
+    else fireworksOn = false;
+  };
+  launch();
+  if (!fx.raf) fxLoop();
+}
+function stopFireworks() { fireworksOn = false; clearTimeout(fireworksTimer); }
+
+/* ---- タイトルの泡 ---- */
+function startTitleBubbles() {
+  const canvas = $('title-bubbles');
+  if (!canvas || reducedMotion) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  let bubbles = [];
+  const spawn = (h, w) => ({
+    x: Math.random() * w,
+    y: h + 20 + Math.random() * 60,
+    r: 2 + Math.random() * 9,
+    sp: 0.25 + Math.random() * 0.7,
+    wob: Math.random() * Math.PI * 2,
+    wobSp: 0.01 + Math.random() * 0.03,
+  });
+  const resize = () => {
+    canvas.width = canvas.offsetWidth * dpr;
+    canvas.height = canvas.offsetHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    bubbles = Array.from({ length: 36 }, () => {
+      const b = spawn(canvas.offsetHeight, canvas.offsetWidth);
+      b.y = Math.random() * canvas.offsetHeight;
+      return b;
+    });
+  };
+  resize();
+  addEventListener('resize', resize);
+  (function loop() {
+    requestAnimationFrame(loop);
+    if (!$('screen-title').classList.contains('active')) return;
+    const w = canvas.offsetWidth, h = canvas.offsetHeight;
+    ctx.clearRect(0, 0, w, h);
+    for (let i = 0; i < bubbles.length; i++) {
+      const b = bubbles[i];
+      b.y -= b.sp;
+      b.wob += b.wobSp;
+      const x = b.x + Math.sin(b.wob) * 8;
+      if (b.y < -20) bubbles[i] = spawn(h, w);
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = '#bfe7fb';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(x, b.y, b.r, 0, Math.PI * 2);
+      ctx.stroke();
+      // 泡のハイライト
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.arc(x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.28, Math.PI * 0.9, Math.PI * 1.7);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  })();
+}
+
+/* ===================== シーン・汚れの手続き描画 ===================== */
+
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function paintTiles(ctx, w, h, base, line) {
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 2;
+  const step = Math.max(48, Math.round(w / 7));
+  for (let x = step; x < w; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = step; y < h; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+}
+
+function metalGrad(ctx, x0, y0, x1, y1, tones) {
+  const g = ctx.createLinearGradient(x0, y0, x1, y1);
+  tones.forEach(([p, c]) => g.addColorStop(p, c));
+  return g;
+}
+
+const SCENE_PAINTERS = {
+  stove(ctx, w, h) {
+    ctx.fillStyle = metalGrad(ctx, 0, 0, 0, h, [[0, '#cfd8de'], [0.5, '#aebac2'], [1, '#97a4ad']]);
+    ctx.fillRect(0, 0, w, h);  // ステンレス壁
+    ctx.fillStyle = '#2b2f33';
+    ctx.fillRect(0, h * 0.62, w, h * 0.38);  // コンロ天板
+    for (const cx of [w * 0.3, w * 0.7]) {   // 五徳
+      ctx.strokeStyle = '#15181a'; ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.arc(cx, h * 0.8, Math.min(w, h) * 0.11, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 5; i++) {
+        const a = i * Math.PI * 2 / 5;
+        ctx.beginPath(); ctx.moveTo(cx, h * 0.8);
+        ctx.lineTo(cx + Math.cos(a) * Math.min(w, h) * 0.11, h * 0.8 + Math.sin(a) * Math.min(w, h) * 0.11);
+        ctx.stroke();
+      }
+    }
+  },
+  fan(ctx, w, h) {
+    paintTiles(ctx, w, h, '#e8e3d6', '#d4cebd');
+    const cx = w / 2, cy = h * 0.45, R = Math.min(w, h) * 0.3;
+    ctx.fillStyle = '#b9bdc4';
+    rr(ctx, cx - R * 1.25, cy - R * 1.25, R * 2.5, R * 2.5, 16); ctx.fill();
+    ctx.fillStyle = '#7e848d';
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#5d636b';
+    for (let i = 0; i < 4; i++) {  // 羽根
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(i * Math.PI / 2 + 0.4);
+      ctx.beginPath(); ctx.ellipse(R * 0.5, 0, R * 0.46, R * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = '#9aa0a8';
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.16, 0, Math.PI * 2); ctx.fill();
+  },
+  microwave(ctx, w, h) {
+    ctx.fillStyle = '#ddd4c4'; ctx.fillRect(0, 0, w, h);            // 庫内奥
+    ctx.fillStyle = '#cdc3b0'; ctx.fillRect(0, h * 0.72, w, h * 0.28);  // 底
+    ctx.strokeStyle = '#b5ab97'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(w / 2, h * 0.85, w * 0.3, h * 0.07, 0, 0, Math.PI * 2); ctx.stroke(); // ターンテーブル
+    ctx.fillStyle = '#c4baa6'; ctx.fillRect(w * 0.86, h * 0.1, w * 0.1, h * 0.5); // 側面パネル
+  },
+  faucet(ctx, w, h) {
+    paintTiles(ctx, w, h, '#dfe9ec', '#c7d6da');
+    const cx = w / 2;
+    ctx.fillStyle = metalGrad(ctx, cx - 30, 0, cx + 30, 0, [[0, '#8d979e'], [0.5, '#e8eef1'], [1, '#79838a']]);
+    ctx.fillRect(cx - 22, h * 0.35, 44, h * 0.4);                   // 本体
+    ctx.beginPath(); ctx.arc(cx, h * 0.35, 38, Math.PI, Math.PI * 1.5);  // 吐水口アーチ
+    ctx.lineWidth = 26; ctx.strokeStyle = ctx.fillStyle; ctx.stroke();
+    ctx.fillRect(cx - 70, h * 0.32, 36, 18);                        // ハンドル
+    ctx.fillRect(cx + 34, h * 0.32, 36, 18);
+  },
+  mirror(ctx, w, h) {
+    ctx.fillStyle = metalGrad(ctx, 0, 0, w, h, [[0, '#9fb6c4'], [0.45, '#cfe0e8'], [0.55, '#b7cdd9'], [1, '#8ba4b3']]);
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 26;
+    ctx.beginPath(); ctx.moveTo(w * 0.1, h * 0.9); ctx.lineTo(w * 0.55, h * 0.05); ctx.stroke();  // 反射帯
+    ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.moveTo(w * 0.35, h * 0.95); ctx.lineTo(w * 0.75, h * 0.2); ctx.stroke();
+    ctx.strokeStyle = '#5e6e78'; ctx.lineWidth = 14; ctx.strokeRect(7, 7, w - 14, h - 14);        // フレーム
+  },
+  kettle(ctx, w, h) {
+    ctx.fillStyle = '#e9e2d2'; ctx.fillRect(0, 0, w, h);
+    const cx = w / 2, cy = h * 0.52, R = Math.min(w, h) * 0.36;
+    ctx.fillStyle = metalGrad(ctx, cx - R, cy - R, cx + R, cy + R, [[0, '#c9d2d8'], [0.5, '#f0f4f6'], [1, '#aab6bd']]);
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();      // ケトル内側(上から)
+    ctx.strokeStyle = '#8d979e'; ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(140,170,190,0.35)';
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.78, 0, Math.PI * 2); ctx.fill(); // 水面
+  },
+  toilet(ctx, w, h) {
+    ctx.fillStyle = '#e6ecef'; ctx.fillRect(0, 0, w, h);
+    const cx = w / 2;
+    ctx.fillStyle = '#fdfdfd';
+    ctx.beginPath(); ctx.ellipse(cx, h * 0.5, w * 0.42, h * 0.42, 0, 0, Math.PI * 2); ctx.fill();   // 便器ふち
+    ctx.fillStyle = '#dde7ea';
+    ctx.beginPath(); ctx.ellipse(cx, h * 0.52, w * 0.3, h * 0.3, 0, 0, Math.PI * 2); ctx.fill();    // 内側
+    ctx.fillStyle = '#bcd9e4';
+    ctx.beginPath(); ctx.ellipse(cx, h * 0.56, w * 0.17, h * 0.16, 0, 0, Math.PI * 2); ctx.fill();  // 水たまり
+  },
+  packing(ctx, w, h) {
+    paintTiles(ctx, w, h * 0.7, '#dfe9ec', '#c7d6da');
+    ctx.fillStyle = '#cfd8de'; ctx.fillRect(0, h * 0.7, w, h * 0.3);     // 窓枠下
+    ctx.fillStyle = '#f4f6f7'; ctx.fillRect(0, h * 0.62, w, h * 0.1);    // ゴムパッキン
+    ctx.strokeStyle = '#d8dde0'; ctx.lineWidth = 2;
+    ctx.strokeRect(0, h * 0.62, w, h * 0.1);
+  },
+  drain(ctx, w, h) {
+    const cx = w / 2, cy = h * 0.5;
+    ctx.fillStyle = metalGrad(ctx, 0, 0, 0, h, [[0, '#d6dde2'], [1, '#aeb9c0']]);
+    ctx.fillRect(0, 0, w, h);                                            // シンク底
+    ctx.fillStyle = '#7e8993';
+    ctx.beginPath(); ctx.arc(cx, cy, Math.min(w, h) * 0.3, 0, Math.PI * 2); ctx.fill();  // 排水口
+    ctx.strokeStyle = '#5a646d'; ctx.lineWidth = 5;
+    for (let i = -3; i <= 3; i++) {                                      // ゴミ受けスリット
+      ctx.beginPath();
+      ctx.moveTo(cx + i * 14, cy - Math.min(w, h) * 0.22);
+      ctx.lineTo(cx + i * 14, cy + Math.min(w, h) * 0.22);
+      ctx.stroke();
+    }
+  },
+  switchplate(ctx, w, h) {
+    ctx.fillStyle = '#e7e0d0'; ctx.fillRect(0, 0, w, h);                 // 壁
+    const cx = w / 2, cy = h * 0.45;
+    ctx.fillStyle = '#fbfaf6';
+    rr(ctx, cx - 70, cy - 100, 140, 200, 14); ctx.fill();                // プレート
+    ctx.strokeStyle = '#d9d2c0'; ctx.lineWidth = 3;
+    rr(ctx, cx - 70, cy - 100, 140, 200, 14); ctx.stroke();
+    ctx.fillStyle = '#efece2';
+    rr(ctx, cx - 34, cy - 60, 68, 120, 8); ctx.fill();                   // スイッチ
+  },
+  floor(ctx, w, h) {
+    ctx.fillStyle = '#caa472'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(120,80,40,0.45)'; ctx.lineWidth = 3;
+    const step = Math.max(54, h / 8);
+    for (let y = 0; y < h; y += step) {                                  // 板の継ぎ目
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      ctx.strokeStyle = 'rgba(120,80,40,0.2)';
+      for (let i = 0; i < 3; i++) {                                      // 木目
+        const gy = y + step * (0.25 + i * 0.25);
+        ctx.beginPath(); ctx.moveTo(0, gy);
+        ctx.bezierCurveTo(w * 0.3, gy - 6, w * 0.6, gy + 6, w, gy);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(120,80,40,0.45)';
+    }
+  },
+  window(ctx, w, h) {
+    ctx.fillStyle = metalGrad(ctx, 0, 0, 0, h, [[0, '#9ec5e8'], [0.6, '#cfe4f5'], [1, '#e8f2f9']]);
+    ctx.fillRect(0, 0, w, h);                                            // 空
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.ellipse(w * 0.3, h * 0.25, 70, 28, 0, 0, Math.PI * 2); ctx.fill();  // 雲
+    ctx.beginPath(); ctx.ellipse(w * 0.7, h * 0.4, 90, 32, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8b9aa6';
+    ctx.fillRect(0, h / 2 - 7, w, 14);                                   // サッシ
+    ctx.fillRect(w / 2 - 7, 0, 14, h);
+    ctx.strokeStyle = '#6f7d88'; ctx.lineWidth = 18; ctx.strokeRect(9, 9, w - 18, h - 18);
+  },
+  fridge(ctx, w, h) {
+    ctx.fillStyle = '#f3f6f7'; ctx.fillRect(0, 0, w, h);                 // 庫内
+    ctx.fillStyle = '#dfe7ea';
+    for (const fy of [0.3, 0.6, 0.9]) {                                  // 棚板
+      ctx.fillRect(0, h * fy, w, 10);
+    }
+    ctx.fillStyle = 'rgba(125,211,252,0.18)';
+    ctx.fillRect(0, 0, 16, h); ctx.fillRect(w - 16, 0, 16, h);           // 側壁の影
+  },
+  screen(ctx, w, h) {
+    ctx.fillStyle = '#10131a'; ctx.fillRect(0, 0, w, h);
+    const g = ctx.createRadialGradient(w * 0.35, h * 0.4, 20, w * 0.5, h * 0.5, Math.max(w, h) * 0.7);
+    g.addColorStop(0, 'rgba(80,120,220,0.55)');
+    g.addColorStop(0.5, 'rgba(150,60,160,0.35)');
+    g.addColorStop(1, 'rgba(10,12,20,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);                         // 映像っぽい光
+    ctx.strokeStyle = '#2a2f3a'; ctx.lineWidth = 16; ctx.strokeRect(8, 8, w - 16, h - 16);  // ベゼル
+  },
+  sink(ctx, w, h) {
+    ctx.fillStyle = metalGrad(ctx, 0, 0, w, h, [[0, '#c4cdd3'], [0.5, '#e7edf0'], [1, '#aab5bc']]);
+    ctx.fillRect(0, 0, w, h);                                            // ステンレス
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 14; i++) {                                       // ヘアライン
+      const y = (h / 14) * i + 6;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+    ctx.fillStyle = '#8d979e';
+    ctx.beginPath(); ctx.arc(w * 0.75, h * 0.75, 30, 0, Math.PI * 2); ctx.fill();  // 排水口
+  },
+};
+
+// 汚れ描画: region {x,y,w,h} 内に描く。戻り値不要(dirt-canvas全体が消去対象)
+const DIRT_PAINTERS = {
+  oil(ctx, rg) {
+    for (let i = 0; i < 90; i++) {
+      const x = rg.x + Math.random() * rg.w;
+      const y = rg.y + Math.random() * rg.h;
+      const r = 6 + Math.random() * 26;
+      const g = ctx.createRadialGradient(x, y, 1, x, y, r);
+      g.addColorStop(0, 'rgba(150,95,20,0.85)');
+      g.addColorStop(0.7, 'rgba(120,75,15,0.55)');
+      g.addColorStop(1, 'rgba(120,75,15,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(130,80,15,0.5)';   // 垂れ
+    for (let i = 0; i < 8; i++) {
+      const x = rg.x + Math.random() * rg.w;
+      const y = rg.y + Math.random() * rg.h * 0.5;
+      ctx.lineWidth = 4 + Math.random() * 5;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (Math.random() - 0.5) * 10, y + 30 + Math.random() * 60); ctx.stroke();
+    }
+  },
+  scale(ctx, rg) {
+    ctx.fillStyle = 'rgba(235,240,240,0.6)';
+    ctx.fillRect(rg.x, rg.y, rg.w, rg.h);      // 全体の白い膜
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    for (let i = 0; i < 70; i++) {             // うろこの弧
+      const x = rg.x + Math.random() * rg.w;
+      const y = rg.y + Math.random() * rg.h;
+      const r = 8 + Math.random() * 20;
+      ctx.lineWidth = 2 + Math.random() * 2.5;
+      ctx.beginPath(); ctx.arc(x, y, r, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(225,232,232,0.75)';
+    for (let i = 0; i < 30; i++) {             // 濃い結晶
+      const x = rg.x + Math.random() * rg.w;
+      const y = rg.y + Math.random() * rg.h;
+      ctx.beginPath(); ctx.arc(x, y, 4 + Math.random() * 9, 0, Math.PI * 2); ctx.fill();
+    }
+  },
+  mold(ctx, rg) {
+    // 帯状にクラスタ
+    const bandY = rg.y + rg.h * 0.42;
+    const bandH = rg.h * 0.2;
+    for (let i = 0; i < 26; i++) {
+      const cx = rg.x + Math.random() * rg.w;
+      const cy = bandY + Math.random() * bandH;
+      for (let j = 0; j < 9; j++) {
+        const x = cx + (Math.random() - 0.5) * 38;
+        const y = cy + (Math.random() - 0.5) * 26;
+        const r = 2.5 + Math.random() * 7;
+        const g = ctx.createRadialGradient(x, y, 0.5, x, y, r);
+        g.addColorStop(0, 'rgba(20,30,22,0.95)');
+        g.addColorStop(1, 'rgba(30,45,32,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    for (let i = 0; i < 120; i++) {            // 散在する点
+      const x = rg.x + Math.random() * rg.w;
+      const y = rg.y + Math.random() * rg.h;
+      ctx.fillStyle = 'rgba(25,38,28,' + (0.3 + Math.random() * 0.5) + ')';
+      ctx.beginPath(); ctx.arc(x, y, 1 + Math.random() * 3, 0, Math.PI * 2); ctx.fill();
+    }
+  },
+  slime(ctx, rg) {
+    for (let i = 0; i < 60; i++) {
+      const x = rg.x + Math.random() * rg.w;
+      const y = rg.y + Math.random() * rg.h;
+      const r = 10 + Math.random() * 28;
+      const g = ctx.createRadialGradient(x, y, 2, x, y, r);
+      g.addColorStop(0, 'rgba(225,150,150,0.6)');
+      g.addColorStop(0.6, 'rgba(190,140,150,0.4)');
+      g.addColorStop(1, 'rgba(190,140,150,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    }
+  },
+  smudge(ctx, rg) {
+    for (let i = 0; i < 55; i++) {
+      const x = rg.x + Math.random() * rg.w;
+      const y = rg.y + Math.random() * rg.h;
+      const r = 12 + Math.random() * 24;
+      const g = ctx.createRadialGradient(x, y, 2, x, y, r);
+      g.addColorStop(0, 'rgba(60,60,65,0.5)');
+      g.addColorStop(1, 'rgba(60,60,65,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.7, Math.random() * Math.PI, 0, Math.PI * 2); ctx.fill();
+    }
+  },
+  haze(ctx, rg) {
+    ctx.fillStyle = 'rgba(220,225,228,0.55)';
+    ctx.fillRect(rg.x, rg.y, rg.w, rg.h);
+    ctx.strokeStyle = 'rgba(200,208,212,0.7)';
+    for (let i = 0; i < 26; i++) {             // 縦の垂れ筋
+      const x = rg.x + Math.random() * rg.w;
+      ctx.lineWidth = 3 + Math.random() * 7;
+      ctx.beginPath(); ctx.moveTo(x, rg.y); ctx.lineTo(x + (Math.random() - 0.5) * 16, rg.y + rg.h); ctx.stroke();
+    }
+  },
+  food(ctx, rg) {
+    const colors = ['rgba(160,80,30,0.8)', 'rgba(190,50,40,0.7)', 'rgba(120,90,30,0.75)'];
+    for (let i = 0; i < 50; i++) {
+      const x = rg.x + Math.random() * rg.w;
+      const y = rg.y + Math.random() * rg.h;
+      const r = 5 + Math.random() * 18;
+      ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      if (Math.random() < 0.4) {               // 液だれ
+        ctx.fillRect(x - 2, y, 4, 20 + Math.random() * 40);
+      }
+    }
+  },
+  stain(ctx, rg) {
+    // 黄ばみの輪(下半分に強く)
+    for (let i = 0; i < 70; i++) {
+      const x = rg.x + Math.random() * rg.w;
+      const y = rg.y + rg.h * 0.35 + Math.random() * rg.h * 0.65;
+      const r = 8 + Math.random() * 22;
+      const g = ctx.createRadialGradient(x, y, 2, x, y, r);
+      g.addColorStop(0, 'rgba(190,150,40,0.65)');
+      g.addColorStop(1, 'rgba(190,150,40,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    }
+  },
+};
+
+/* ===================== こすり磨きエンジン ===================== */
+
+const scrub = {
+  active: false,
+  eff: 0,            // 洗剤の効きめ係数
+  total: 0,          // 汚れピクセル総数(mask)
+  removal: 0,
+  lastPt: null,
+  lastBubble: 0,
+  lastMeasure: 0,
+  timerStart: 0,
+  timerRaf: 0,
+  region: null,
+  dirty: false,      // 計測が必要か
+};
+
+let sceneCtx, dirtCtx, maskCanvas, maskCtx;
+let cssW = 0, cssH = 0, maskW = 96, maskH = 128;
+
+function sizeCanvases() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cssW = innerWidth; cssH = innerHeight;
+  for (const id of ['scene-canvas', 'dirt-canvas']) {
+    const c = $(id);
+    c.width = cssW * dpr; c.height = cssH * dpr;
+    c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  sceneCtx = $('scene-canvas').getContext('2d');
+  dirtCtx = $('dirt-canvas').getContext('2d');
+  maskH = Math.max(64, Math.round(maskW * cssH / Math.max(1, cssW)));
+  maskCanvas = document.createElement('canvas');
+  maskCanvas.width = maskW; maskCanvas.height = maskH;
+  maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+}
+
+function dirtRegion() {
+  // HUDの下〜下部コントロールの上を磨きエリアにする
+  return { x: cssW * 0.05, y: cssH * 0.17, w: cssW * 0.9, h: cssH * 0.52 };
+}
+
+function setupScene(scenario) {
+  sceneCtx.clearRect(0, 0, cssW, cssH);
+  SCENE_PAINTERS[scenario.scene](sceneCtx, cssW, cssH);
+  // 周辺を夜色に溶け込ませるビネット
+  const g = sceneCtx.createRadialGradient(cssW / 2, cssH / 2, Math.min(cssW, cssH) * 0.35, cssW / 2, cssH / 2, Math.max(cssW, cssH) * 0.75);
+  g.addColorStop(0, 'rgba(11,16,38,0)');
+  g.addColorStop(1, 'rgba(11,16,38,0.85)');
+  sceneCtx.fillStyle = g;
+  sceneCtx.fillRect(0, 0, cssW, cssH);
+}
+
+function setupDirt(scenario) {
+  dirtCtx.clearRect(0, 0, cssW, cssH);
+  scrub.region = dirtRegion();
+  DIRT_PAINTERS[scenario.dirt](dirtCtx, scrub.region);
+  // maskへ転写して汚れ総数を数える
+  maskCtx.setTransform(1, 0, 0, 1, 0, 0);
+  maskCtx.globalCompositeOperation = 'source-over';
+  maskCtx.clearRect(0, 0, maskW, maskH);
+  maskCtx.drawImage($('dirt-canvas'), 0, 0, maskW, maskH);
+  scrub.total = countMaskDirt();
+  scrub.removal = 0;
+}
+
+function countMaskDirt() {
+  const data = maskCtx.getImageData(0, 0, maskW, maskH).data;
+  let n = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] >= 40) n++;
+  return n;
+}
+
+function brush(x0, y0, x1, y1) {
+  const eff = scrub.eff;
+  const radius = 10 + 22 * eff;
+  const alpha = Math.min(1, 0.05 + eff * 0.95);
+  const dist = Math.hypot(x1 - x0, y1 - y0);
+  const steps = Math.max(1, Math.ceil(dist / (radius * 0.4)));
+  const sx = maskW / cssW, sy = maskH / cssH;
+  dirtCtx.globalCompositeOperation = 'destination-out';
+  maskCtx.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = x0 + (x1 - x0) * t;
+    const y = y0 + (y1 - y0) * t;
+    const g = dirtCtx.createRadialGradient(x, y, radius * 0.2, x, y, radius);
+    g.addColorStop(0, `rgba(0,0,0,${alpha})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    dirtCtx.fillStyle = g;
+    dirtCtx.beginPath(); dirtCtx.arc(x, y, radius, 0, Math.PI * 2); dirtCtx.fill();
+    maskCtx.fillStyle = `rgba(0,0,0,${alpha})`;
+    maskCtx.beginPath(); maskCtx.arc(x * sx, y * sy, Math.max(1.5, radius * sx), 0, Math.PI * 2); maskCtx.fill();
+  }
+  dirtCtx.globalCompositeOperation = 'source-over';
+  maskCtx.globalCompositeOperation = 'source-over';
+  scrub.dirty = true;
+}
+
+function onScrubMove(e) {
+  if (!scrub.active) return;
+  e.preventDefault();
+  const pts = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+  for (const p of pts) {
+    const x = p.clientX, y = p.clientY;
+    if (scrub.lastPt) brush(scrub.lastPt.x, scrub.lastPt.y, x, y);
+    else brush(x, y, x, y);
+    scrub.lastPt = { x, y };
+  }
+  const now = performance.now();
+  if (now - scrub.lastBubble > 70) {
+    scrub.lastBubble = now;
+    if (scrub.eff >= 0.9) {
+      fxSpawn(e.clientX, e.clientY, { n: 5, speed: 1.6, size: 3, colors: ['#ffffff', '#bfe7fb', '#7dd3fc'], grav: -0.03 });
+    } else if (scrub.eff >= 0.3) {
+      fxSpawn(e.clientX, e.clientY, { n: 2, speed: 1.2, size: 2.2, colors: ['#cfe3ea'], grav: -0.02 });
+    } else {
+      fxSpawn(e.clientX, e.clientY, { n: 1, speed: 0.8, size: 1.8, colors: ['#9aa0a8'] });
+    }
+  }
+  // 計測は200msスロットル
+  if (scrub.dirty && now - scrub.lastMeasure > 200) {
+    scrub.lastMeasure = now;
+    scrub.dirty = false;
+    measureRemoval();
+  }
+}
+
+function measureRemoval() {
+  if (!scrub.total) return;
+  const remaining = countMaskDirt();
+  scrub.removal = Math.max(scrub.removal, 1 - remaining / scrub.total);
+  $('scrub-pct').textContent = Math.round(Math.min(1, scrub.removal / CLEAR_SNAP) * 100) + '%';
+  if (scrub.removal >= CLEAR_SNAP) finishScrub(true);
+}
+
+function startScrubPhase(cleanerId) {
+  const sc = state.questions[state.qIndex];
+  scrub.eff = sc.correct.includes(cleanerId) ? 1.0 : (sc.partial.includes(cleanerId) ? 0.35 : 0.05);
+  scrub.active = true;
+  scrub.lastPt = null;
+  scrub.removal = 0;
+  scrub.dirty = false;
+  scrub.timerStart = performance.now();
+  $('scrub-pct').textContent = '0%';
+  const cl = CLEANERS.find(c => c.id === cleanerId);
+  $('scrub-cleaner').textContent = `${cl.e} ${cl.name}でゴシゴシ!`;
+  show('hud-scrub', true);
+  (function tick() {
+    if (!scrub.active) return;
+    const left = Math.max(0, 1 - (performance.now() - scrub.timerStart) / SCRUB_TIME_MS);
+    $('timer-bar').style.width = (left * 100) + '%';
+    if (left <= 0) { finishScrub(false); return; }
+    scrub.timerRaf = requestAnimationFrame(tick);
+  })();
+}
+
+function finishScrub(snapped) {
+  if (!scrub.active) return;
+  scrub.active = false;
+  cancelAnimationFrame(scrub.timerRaf);
+  show('hud-scrub', false);
+
+  if (!snapped) measureRemoval2();
+  const removal = snapped ? 1 : Math.min(1, scrub.removal / CLEAR_SNAP);
+  if (snapped || removal >= 1) {
+    // スナップクリア: 残りも消して一閃
+    dirtCtx.clearRect(0, 0, cssW, cssH);
+    const sh = $('shine');
+    sh.classList.remove('run'); void sh.offsetWidth; sh.classList.add('run');
+    fxSpawn(cssW / 2, cssH * 0.42, { n: 50, speed: 3.4, size: 3, colors: ['#fff8e1', '#f5c542', '#7dd3fc'], ring: false });
+    fxSpawn(cssW / 2, cssH * 0.42, { n: 8, speed: 1.2, size: 16, colors: ['#ffffff'], ring: true });
+  }
+  const pts = Math.round(Math.min(1, removal) * 100);
+  revealQuestion(pts, false);
+}
+
+function measureRemoval2() {
+  if (!scrub.total) return;
+  const remaining = countMaskDirt();
+  scrub.removal = Math.max(scrub.removal, 1 - remaining / scrub.total);
+}
+
+/* ===================== ゲーム状態と進行 ===================== */
+
+const state = {
+  mode: null,          // 'daily' | 'free'
+  dateStr: '',
+  questions: [],
+  qIndex: 0,
+  chosen: [],          // 選んだ洗剤id
+  results: [],         // {pts, danger}
+  s2: { order: [], satisfied: 0, score: 0 },
+  taskOrderSeeded: [],
+};
+
+function show(id, on) { $(id).classList.toggle('active', on); }
+function showScreens(ids) {
+  for (const id of ['screen-title', 'screen-result', 'screen-s2', 'hud-q', 'hud-scrub',
+    'sheet-cleaner', 'sheet-reveal', 'sheet-s2']) {
+    show(id, ids.includes(id));
+  }
+}
+
+function startGame(mode) {
+  state.mode = mode;
+  state.dateStr = jstDateStr();
+
+  if (mode === 'daily') {
+    const saved = lsGet(LS_DAILY_PREFIX + state.dateStr);
+    if (saved) {
+      try { showResultScreen(JSON.parse(saved), true, false); return; } catch (e) {}
+    }
+  }
+
+  const seedStr = mode === 'daily'
+    ? `rys-osouji-v${GAME_VER}-${state.dateStr}`
+    : `free-${Date.now()}-${Math.random()}`;
+  state.questions = pickFrom(SCENARIOS, seedStr, s => s.place);
+  state.taskOrderSeeded = seededShuffle(TASKS.slice(), mulberry32(xmur3(seedStr + '-tasks')()));
+  state.qIndex = 0;
+  state.chosen = [];
+  state.results = [];
+  state.s2 = { order: [], satisfied: 0, score: 0 };
+
+  stopFireworks();
+  showScreens(['hud-q']);
+  showQuestion();
+}
+
+function showQuestion() {
+  const q = state.questions[state.qIndex];
+  setupScene(q);
+  setupDirt(q);
+  const card = $('order-card');
+  card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
+  $('q-no').textContent = `現場 ${state.qIndex + 1} / ${QUESTION_COUNT} — ${q.place}`;
+  $('q-title').textContent = q.title;
+  $('q-hint').textContent = q.look;
+  $('cl-desc').textContent = `「${q.title}」。${q.look} さて、この汚れに効くのは?`;
+  buildCleanerGrid();
+  show('sheet-cleaner', true);
+}
+
+function buildCleanerGrid() {
+  const grid = $('cleaner-grid');
+  grid.innerHTML = '';
+  for (const c of CLEANERS) {
+    const btn = document.createElement('button');
+    btn.className = 'cleaner-btn';
+    btn.innerHTML = `<div class="c-name">${c.e} ${escapeHtml(c.name)}</div><div class="c-note">${escapeHtml(c.note)}</div>`;
+    btn.addEventListener('click', () => chooseCleaner(c.id));
+    grid.appendChild(btn);
+  }
+}
+
+function chooseCleaner(cleanerId) {
+  const q = state.questions[state.qIndex];
+  state.chosen[state.qIndex] = cleanerId;
+  show('sheet-cleaner', false);
+  if (q.danger.includes(cleanerId)) {
+    dangerSequence();
+    return;
+  }
+  startScrubPhase(cleanerId);
+}
+
+function dangerSequence() {
+  const q = state.questions[state.qIndex];
+  $('danger-sub').textContent = '塩素系 × 酸性 = 有毒ガス発生!';
+  const overlay = $('danger');
+  overlay.classList.add('active');
+  setTimeout(() => {
+    overlay.classList.remove('active');
+    revealQuestion(0, true);
+  }, fxEnabled() ? 1700 : 900);
+}
+
+function revealQuestion(pts, danger) {
+  const q = state.questions[state.qIndex];
+  state.results[state.qIndex] = { pts, danger };
+
+  const chosenId = state.chosen[state.qIndex];
+  const correctNames = q.correct.map(id => {
+    const c = CLEANERS.find(x => x.id === id);
+    return `${c.e} ${c.name}`;
+  }).join(' / ');
+
+  let headline, sub;
+  if (danger) {
+    headline = '☠️ それは命に関わる!';
+    sub = `0点… でも大事なことを学びました`;
+    $('rv-tag').textContent = '⚠️ まぜるな危険';
+    $('rv-trivia').textContent = q.dangerDesc;
+    $('rv-trivia-box').classList.add('warn');
+  } else {
+    headline = pts >= 90 ? '✨ ピッカピカ!' : pts >= 60 ? '🫧 まずまずの仕上がり' : pts >= 30 ? '😅 うーん、イマイチ…' : '💦 ぜんぜん落ちない…';
+    const wasCorrect = q.correct.includes(chosenId);
+    sub = `除去率 <b>${pts}%</b> → +${pts}点` + (wasCorrect ? '' : `<br><span style="font-size:12.5px;">正解の洗剤: ${escapeHtml(correctNames)}(${escapeHtml(q.nature)}の汚れ)</span>`);
+    $('rv-tag').textContent = '📚 汚れの science';
+    $('rv-trivia').textContent = q.desc;
+    $('rv-trivia-box').classList.remove('warn');
+  }
+  $('rv-headline').textContent = headline;
+  $('rv-sub').innerHTML = sub;
+  $('btn-next').textContent = state.qIndex + 1 < QUESTION_COUNT ? '次の現場へ ▶' : '🧹 最終検定: プロの段取りへ';
+  show('sheet-reveal', true);
+}
+
+function nextQuestion() {
+  show('sheet-reveal', false);
+  state.qIndex++;
+  if (state.qIndex < QUESTION_COUNT) {
+    showQuestion();
+  } else {
+    startStage2();
+  }
+}
+
+/* ===================== ステージ2: 段取り ===================== */
+
+function startStage2() {
+  sceneCtx.clearRect(0, 0, cssW, cssH);
+  dirtCtx.clearRect(0, 0, cssW, cssH);
+  showScreens(['screen-s2']);
+  state.s2.order = [];
+  renderTaskList();
+}
+
+function renderTaskList() {
+  const list = $('task-list');
+  list.innerHTML = '';
+  for (const task of state.taskOrderSeeded) {
+    const pos = state.s2.order.indexOf(task.id);
+    const btn = document.createElement('button');
+    btn.className = 'task-item' + (pos >= 0 ? ' numbered' : '');
+    btn.innerHTML = `<span class="t-badge">${pos >= 0 ? pos + 1 : task.e}</span><span>${escapeHtml(task.name)}</span>`;
+    btn.addEventListener('click', () => onTaskTap(task.id));
+    list.appendChild(btn);
+  }
+  $('s2-status').textContent = state.s2.order.length >= TASKS.length
+    ? '段取り完成!「開始!」を押そう'
+    : `作業する順番にタップ! (${state.s2.order.length} / ${TASKS.length})`;
+  $('btn-s2-confirm').disabled = state.s2.order.length < TASKS.length;
+}
+
+function onTaskTap(taskId) {
+  const order = state.s2.order;
+  const pos = order.indexOf(taskId);
+  if (pos >= 0) {
+    if (pos === order.length - 1) order.pop();
+    else { showToast('途中のタスクは外せません(やり直しを使ってね)'); return; }
+  } else {
+    if (order.length >= TASKS.length) return;
+    order.push(taskId);
+  }
+  renderTaskList();
+}
+
+function evaluateTasks(order) {
+  const posOf = {};
+  order.forEach((id, i) => { posOf[id] = i; });
+  const satisfied = [];
+  const violated = [];
+  for (const [a, b, reason] of TASK_RULES) {
+    if (posOf[a] < posOf[b]) satisfied.push([a, b, reason]);
+    else violated.push([a, b, reason]);
+  }
+  return { satisfied, violated };
+}
+
+function confirmTasks() {
+  const { satisfied, violated } = evaluateTasks(state.s2.order);
+  const score = Math.round(500 * satisfied.length / TASK_RULES.length);
+  state.s2.satisfied = satisfied.length;
+  state.s2.score = score;
+
+  const headline = violated.length === 0 ? '🏆 完璧な段取り!' : violated.length <= 2 ? '🚀 ほぼプロの段取り!' : violated.length <= 4 ? '🧹 もう一歩!' : '🐢 段取り見直し…';
+  $('s2r-headline').textContent = headline;
+  $('s2r-sub').innerHTML = `鉄則 <b>${satisfied.length} / ${TASK_RULES.length}</b> クリア → +${score}点(500点満点)`;
+  const nameOf = id => TASKS.find(t => t.id === id).name;
+  let detail = '';
+  for (const [a, b, reason] of violated) {
+    detail += `<p class="violation">❌ 「${escapeHtml(nameOf(b))}」が「${escapeHtml(nameOf(a))}」より先 — ${escapeHtml(reason)}</p>`;
+  }
+  if (!violated.length) detail = '<p class="satisfied">⭕ すべての鉄則を満たした美しい段取りです!</p>';
+  $('s2r-detail').innerHTML = detail;
+  show('sheet-s2', true);
+}
+
+/* ===================== 結果 ===================== */
+
+function gridEmoji(r) {
+  if (r.danger) return '⚠️';
+  if (r.pts >= 90) return '🟩';
+  if (r.pts >= 60) return '🟨';
+  if (r.pts >= 30) return '🟧';
+  return '🟥';
+}
+
+function buildRecord() {
+  const s1Total = state.results.reduce((s, r) => s + r.pts, 0);
+  const total = s1Total + state.s2.score;
+  const rank = RANKS.find(r => total >= r.min);
+  const grid = state.results.map(gridEmoji).join('');
+  const modeLabel = state.mode === 'daily' ? `本日の現場 ${state.dateStr}` : 'お掃除修行';
+  const share = [
+    `🧼お掃除マイスター検定 ${modeLabel}`,
+    `🫧${grid}`,
+    `🧹段取り ${state.s2.score}/500`,
+    `${rank.emoji}段位: ${rank.name} (${total}点/1000点)`,
+    `#RYSお掃除マイスター検定 v${GAME_VER}`,
+  ].join('\n');
+  return {
+    mode: state.mode,
+    date: state.dateStr,
+    total,
+    rank: rank.name,
+    emoji: rank.emoji,
+    share,
+    qs: state.questions.map((q, i) => ({
+      label: q.title,
+      pts: state.results[i].pts,
+      danger: state.results[i].danger,
+      emoji: gridEmoji(state.results[i]),
+    })),
+    s2: { score: state.s2.score, satisfied: state.s2.satisfied },
+  };
+}
+
+function finishGame() {
+  const record = buildRecord();
+  let newBest = false;
+  const best = parseInt(lsGet(LS_BEST) || '0', 10);
+  if (record.total > best) { lsSet(LS_BEST, String(record.total)); newBest = true; }
+  if (state.mode === 'daily') lsSet(LS_DAILY_PREFIX + state.dateStr, JSON.stringify(record));
+  showResultScreen(record, false, newBest);
+}
+
+function showResultScreen(record, isReplayView, newBest) {
+  showScreens([]);
+  sceneCtx && sceneCtx.clearRect(0, 0, cssW, cssH);
+  dirtCtx && dirtCtx.clearRect(0, 0, cssW, cssH);
+
+  $('r-emoji').textContent = record.emoji;
+  $('r-rank').textContent = record.rank;
+  countUp($('r-score'), record.total, '', 1400);
+  $('r-newbest').style.display = newBest ? 'block' : 'none';
+
+  let rows = '';
+  record.qs.forEach((q, i) => {
+    const label = q.danger ? 'まぜるな危険!' : `${q.pts}点`;
+    rows += `<tr><td>${i + 1}. ${escapeHtml(q.label)}</td><td>${q.emoji} ${label}</td></tr>`;
+  });
+  rows += `<tr><td>🧹 プロの段取り(鉄則${record.s2.satisfied}/${TASK_RULES.length})</td><td>${record.s2.score}点</td></tr>`;
+  if (isReplayView) rows += `<tr><td colspan="2" style="text-align:center;color:#8fa3bd;">本日の現場は完了済み。明日また新しい現場が待っています!</td></tr>`;
+  $('r-table').innerHTML = rows;
+
+  $('btn-share').onclick = () => copyShareText(record.share);
+  show('screen-result', true);
+  startFireworks();
+}
+
+function copyShareText(text) {
+  const done = () => showToast('結果をコピーしました!SNSでシェアしよう📣');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => { if (fallbackCopy(text)) done(); else showToast('コピーできませんでした'); });
+  } else if (fallbackCopy(text)) done();
+  else showToast('コピーできませんでした');
+}
+
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) { return false; }
+}
+
+/* ===================== 初期化 ===================== */
+
+function updateBestLine() {
+  const best = parseInt(lsGet(LS_BEST) || '0', 10);
+  $('best-line').textContent = best > 0 ? `🏅 自己ベスト: ${best}点` : '';
+}
+
+function updateFxButton() {
+  $('btn-fx').textContent = fxEnabled() ? '✨ 演出: オン(タップで切替)' : '🌑 演出: オフ(タップで切替)';
+}
+
+function goTitle() {
+  stopFireworks();
+  scrub.active = false;
+  sceneCtx.clearRect(0, 0, cssW, cssH);
+  dirtCtx.clearRect(0, 0, cssW, cssH);
+  showScreens(['screen-title']);
+  updateBestLine();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  fxInit();
+  sizeCanvases();
+  startTitleBubbles();
+  addEventListener('resize', () => {
+    // 磨き途中のリサイズは仕切り直し(計測の整合を守る)
+    const wasScrubbing = scrub.active;
+    sizeCanvases();
+    if ($('hud-q').classList.contains('active') && state.questions.length) {
+      const q = state.questions[state.qIndex];
+      setupScene(q);
+      if (wasScrubbing || $('sheet-cleaner').classList.contains('active')) {
+        setupDirt(q);
+        if (wasScrubbing) { scrub.removal = 0; $('scrub-pct').textContent = '0%'; }
+      }
+    }
+  });
+
+  const dirtCanvas = $('dirt-canvas');
+  dirtCanvas.addEventListener('pointerdown', e => {
+    if (!scrub.active) return;
+    dirtCanvas.setPointerCapture(e.pointerId);
+    scrub.lastPt = null;
+    onScrubMove(e);
+  });
+  dirtCanvas.addEventListener('pointermove', onScrubMove);
+  const endStroke = () => { scrub.lastPt = null; if (scrub.dirty) { measureRemoval(); scrub.dirty = false; } };
+  dirtCanvas.addEventListener('pointerup', endStroke);
+  dirtCanvas.addEventListener('pointercancel', endStroke);
+
+  $('btn-daily').addEventListener('click', () => startGame('daily'));
+  $('btn-free').addEventListener('click', () => startGame('free'));
+  $('btn-scrub-end').addEventListener('click', () => finishScrub(false));
+  $('btn-next').addEventListener('click', nextQuestion);
+  $('btn-s2-reset').addEventListener('click', () => { state.s2.order = []; renderTaskList(); });
+  $('btn-s2-confirm').addEventListener('click', confirmTasks);
+  $('btn-s2-result').addEventListener('click', () => { show('sheet-s2', false); finishGame(); });
+  $('btn-title').addEventListener('click', goTitle);
+  $('btn-again').addEventListener('click', () => startGame('free'));
+  $('btn-fx').addEventListener('click', () => {
+    lsSet(LS_FX, fxEnabled() ? 'off' : 'on');
+    updateFxButton();
+  });
+
+  // デバッグ: ?scene=stove で各シーンを確認
+  const sceneKey = new URLSearchParams(location.search).get('scene');
+  if (sceneKey && SCENE_PAINTERS[sceneKey]) {
+    const sc = SCENARIOS.find(s => s.scene === sceneKey) || SCENARIOS[0];
+    showScreens([]);
+    setupScene({ ...sc, scene: sceneKey });
+    setupDirt(sc);
+  }
+
+  updateBestLine();
+  updateFxButton();
+});
+</script>
+</body>
+</html>
