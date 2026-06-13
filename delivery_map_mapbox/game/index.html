@@ -118,10 +118,11 @@
   .mode-btn.daily { border-color: var(--gold); background: linear-gradient(135deg, rgba(60,40,10,0.92), rgba(26,20,64,0.92)); box-shadow: 0 4px 28px rgba(245,197,66,0.22), inset 0 1px 0 rgba(255,255,255,0.1); }
   .mode-btn.daily .m-name { color: var(--gold); }
 
-  .fx-toggle {
+  .fx-toggle, .series-link {
     display: block; margin: 16px auto 0;
     background: none; border: 1px solid rgba(170,177,214,0.4); color: #aab1d6;
     border-radius: 18px; padding: 7px 16px; font-size: 12px; font-family: inherit; cursor: pointer;
+    text-decoration: none; text-align: center; width: fit-content;
   }
   .best-line { text-align: center; font-size: 12.5px; color: var(--gold); margin: 16px 0 0; letter-spacing: 0.05em; }
   .footer-note { text-align: center; font-size: 10px; color: #5b628a; margin-top: 26px; line-height: 1.8; }
@@ -354,6 +355,7 @@
 
     <div class="best-line" id="best-line"></div>
     <button id="btn-fx" class="fx-toggle"></button>
+    <a class="series-link" href="../osouji/">🧼 検定シリーズ第2弾: お掃除マイスター検定はこちら</a>
 
     <p class="footer-note">
       地図: 国土地理院(淡色地図・全国最新写真) / 住所データ: <a href="https://geolonia.github.io/japanese-addresses/" target="_blank" rel="noopener">Geolonia</a>・アドレス・ベース・レジストリ<br>

@@ -1010,6 +1010,7 @@
       <button id="menu-reload-app" type="button">🔄 アプリを更新</button>
       <button id="menu-manual" type="button">📖 使い方マニュアル</button>
       <button id="menu-game" type="button">🎮 配達員検定で遊ぶ</button>
+      <button id="menu-osouji" type="button">🧼 お掃除マイスター検定で遊ぶ</button>
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
@@ -5541,6 +5542,10 @@ $('menu-manual').addEventListener('click', () => {
 $('menu-game').addEventListener('click', () => {
   closeModal('modal-menu');
   window.open('game/', '_blank', 'noopener');
+});
+$('menu-osouji').addEventListener('click', () => {
+  closeModal('modal-menu');
+  window.open('osouji/', '_blank', 'noopener');
 });
 
 $('btn-reset-usage').addEventListener('click', resetUsage);
