@@ -1,0 +1,70 @@
+name: Codex update notification icons once
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/codex-update-notification-icons-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Update notification icon references
+        shell: python
+        run: |
+          from pathlib import Path
+
+          replacements = {
+            'delivery_map_mapbox/index.html': {
+              "const APP_VERSION = 'v2026.06.16-2';": "const APP_VERSION = 'v2026.06.16-3';",
+            },
+            'delivery_map_mapbox/test/index.html': {
+              "const APP_VERSION = 'v2026.06.16-test.16';": "const APP_VERSION = 'v2026.06.16-test.17';",
+            },
+            'delivery_map_mapbox/manifest.webmanifest': {
+              'app-icon-192.png?v=20260616-2': 'app-icon-192.png?v=20260616-3',
+              'app-icon-512.png?v=20260616-2': 'app-icon-512.png?v=20260616-3',
+            },
+            'delivery_map_mapbox/test/manifest.webmanifest': {
+              'app-icon-192.png?v=20260616-test-16': 'app-icon-192.png?v=20260616-test-17',
+              'app-icon-512.png?v=20260616-test-16': 'app-icon-512.png?v=20260616-test-17',
+            },
+            'delivery_map_mapbox/service-worker.js': {
+              "icon: './app-icon-192.png?v=20260616-2',": "icon: new URL('./app-icon-192.png?v=20260616-3', self.registration.scope).href,",
+              "badge: './app-icon-192.png?v=20260616-2',": "badge: new URL('./app-icon-192.png?v=20260616-3', self.registration.scope).href,",
+            },
+            'delivery_map_mapbox/test/service-worker.js': {
+              "icon: './app-icon-192.png?v=20260616-test-16',": "icon: new URL('./app-icon-192.png?v=20260616-test-17', self.registration.scope).href,",
+              "badge: './app-icon-192.png?v=20260616-test-16',": "badge: new URL('./app-icon-192.png?v=20260616-test-17', self.registration.scope).href,",
+            },
+          }
+
+          for file_name, reps in replacements.items():
+            path = Path(file_name)
+            text = path.read_text(encoding='utf-8')
+            for old, new in reps.items():
+              if old not in text:
+                raise SystemExit(f'missing expected text in {file_name}: {old}')
+              text = text.replace(old, new, 1)
+            path.write_text(text, encoding='utf-8')
+
+      - name: Validate JavaScript
+        run: |
+          node -e "const fs=require('fs'); for (const p of ['delivery_map_mapbox/index.html','delivery_map_mapbox/test/index.html']) { const html=fs.readFileSync(p,'utf8'); const m=html.match(/<script>([\\s\\S]*)<\\/script>/); new Function(m[1]); console.log(p + ' JS syntax OK'); }"
+          node --check delivery_map_mapbox/service-worker.js
+          node --check delivery_map_mapbox/test/service-worker.js
+      - name: Commit and push
+        run: |
+          git config user.name "codex-app"
+          git config user.email "codex-app@users.noreply.github.com"
+          git rm .github/workflows/codex-update-notification-icons-once.yml
+          git add delivery_map_mapbox/index.html delivery_map_mapbox/test/index.html delivery_map_mapbox/manifest.webmanifest delivery_map_mapbox/test/manifest.webmanifest delivery_map_mapbox/service-worker.js delivery_map_mapbox/test/service-worker.js
+          git commit -m "Update notification icons to current app icon"
+          git push
