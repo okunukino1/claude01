@@ -117,13 +117,36 @@ async def scrape_indeed(target_date) -> tuple[list, list]:
         page.on("response", on_response)
 
         # ── ログイン ────────────────────────────────────────────────────────────
-        print("Indeedにログイン中...")
-        await page.goto("https://employers.indeed.com/p/login", wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(1000)
+        print("Indeedにアクセス中...")
+        await page.goto("https://employers.indeed.com/", wait_until="networkidle", timeout=30000)
+        await page.screenshot(path="debug_01_top.png")
+        print(f"トップページURL: {page.url}")
 
-        # メールアドレス入力
-        email_sel = 'input[type="email"], input[name="__email"], input[id*="email"]'
-        await page.locator(email_sel).first.fill(INDEED_EMAIL, timeout=10000)
+        # ログインページへ移動
+        await page.goto("https://employers.indeed.com/p/login", wait_until="networkidle", timeout=30000)
+        await page.wait_for_timeout(2000)
+        await page.screenshot(path="debug_02_login.png")
+        print(f"ログインページURL: {page.url}")
+
+        # ページのHTML（input要素）をデバッグ出力
+        inputs = await page.evaluate("() => Array.from(document.querySelectorAll('input')).map(i => ({type: i.type, name: i.name, id: i.id, placeholder: i.placeholder}))")
+        print(f"Input要素一覧: {inputs}")
+
+        # メールアドレス入力（広いセレクターで対応）
+        try:
+            await page.wait_for_selector("input", timeout=15000)
+            email_input = page.locator(
+                'input[type="email"], input[name="email"], input[name="__email"], '
+                'input[autocomplete="email"], input[autocomplete="username"]'
+            ).first
+            await email_input.fill(INDEED_EMAIL, timeout=15000)
+            print("メールアドレス入力完了")
+        except Exception as e:
+            html = await page.content()
+            with open("debug_login_page.html", "w", encoding="utf-8") as f:
+                f.write(html)
+            raise RuntimeError(f"メール入力フィールドが見つかりません: {e}")
+
         await page.wait_for_timeout(500)
 
         # パスワードが同一ページにある場合（シングルステップ）
@@ -132,11 +155,13 @@ async def scrape_indeed(target_date) -> tuple[list, list]:
             # マルチステップ：メール送信 → パスワードページ
             await page.keyboard.press("Enter")
             await page.wait_for_timeout(2000)
+            await page.screenshot(path="debug_03_after_email.png")
 
-        await page.locator('input[type="password"]').first.fill(INDEED_PASSWORD, timeout=10000)
+        await page.locator('input[type="password"]').first.fill(INDEED_PASSWORD, timeout=15000)
         await page.wait_for_timeout(500)
         await page.locator('button[type="submit"]').last.click()
         await page.wait_for_load_state("networkidle", timeout=30000)
+        await page.screenshot(path="debug_04_after_login.png")
 
         if "login" in page.url.lower() or "signin" in page.url.lower():
             await page.screenshot(path="debug_login_failed.png")

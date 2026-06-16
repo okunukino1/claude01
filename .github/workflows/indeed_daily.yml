@@ -57,4 +57,5 @@ jobs:
           path: |
             debug_*.png
             debug_*.json
+            debug_*.html
           retention-days: 7
