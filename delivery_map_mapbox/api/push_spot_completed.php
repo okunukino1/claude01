@@ -68,6 +68,8 @@ try {
   $company = spot_completed_trim($input['company'] ?? '', 80);
   if ($company === '') $company = 'スポット集荷';
   $timeCode = spot_completed_trim($input['time_code'] ?? '', 20);
+  $pickupTime = spot_completed_trim($input['pickup_time'] ?? '', 80);
+  if ($pickupTime === '') $pickupTime = $timeCode;
   $completedBy = spot_completed_trim($input['completed_by'] ?? '', 60);
   $date = preg_replace('/\D/', '', (string)($input['spot_pickup_date'] ?? ''));
   $date = substr($date, 0, 8);
@@ -85,13 +87,13 @@ try {
     exit;
   }
 
-  $bodyParts = array_values(array_filter([$company, $timeCode, $completedBy], function($v) {
+  $bodyParts = array_values(array_filter([$company, $pickupTime, $completedBy], function($v) {
     return trim((string)$v) !== '';
   }));
   $event = [
     'key' => $key,
     'course' => $course,
-    'title' => $company . ' 集荷済み',
+    'title' => $course . '/' . $company . '/ 集荷済み',
     'body' => implode(' / ', $bodyParts),
     'recipients' => null,
     'delivered' => [],

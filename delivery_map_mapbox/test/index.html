@@ -1338,7 +1338,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.16-test.13';
+const APP_VERSION = 'v2026.06.16-test.14';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -3784,7 +3784,7 @@ async function toggleDone(id) {
   renderMarkers();
   renderList();
   syncPickupProgress(d, operatorName);
-  if (nextCompleted && isSpotPickupDelivery(d)) notifySpotPickupCompleted(d, operatorName);
+  if (nextCompleted && isPickupCompletionNotificationTarget(d)) notifySpotPickupCompleted(d, operatorName);
   if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
 }
 
@@ -3911,7 +3911,7 @@ async function toggleEditedItemDone() {
   editingItemId = null;
   showToast(d.completed ? '完了にしました' : '未完了に戻しました');
   syncPickupProgress(d, operatorName);
-  if (nextCompleted && isSpotPickupDelivery(d)) notifySpotPickupCompleted(d, operatorName);
+  if (nextCompleted && isPickupCompletionNotificationTarget(d)) notifySpotPickupCompleted(d, operatorName);
   if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
 }
 
@@ -4482,17 +4482,39 @@ function spotPickupCourseForDelivery(d) {
   return PICKUP_SHEETS.includes(selected) ? selected : '';
 }
 
+function isPickupCompletionNotificationTarget(d) {
+  return !!(d && (isSpotPickupDelivery(d) || (isPickupBackedDelivery(d) && isPickupListSpotDelivery(d))));
+}
+
+function pickupCompletionCompany(d) {
+  const display = isPickupBackedDelivery(d) ? pickupListDisplay(d) : null;
+  return String(d.spotPickupCompany || d.pickupCompany || (display && display.company) || '').trim() || '集荷先';
+}
+
+function pickupCompletionTime(d) {
+  const direct = normalizePickupTime(d.spotPickupTime || d.pickupTime || d.time || '');
+  if (direct) return direct;
+  const lines = String(d.note || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  for (const line of lines) {
+    const match = line.match(/^(?:時間|希望時間帯)[:：]\s*(.+)$/);
+    if (match && match[1]) return normalizePickupTime(match[1]);
+  }
+  return '';
+}
+
 function notifySpotPickupCompleted(d, operatorName) {
-  if (!isSpotPickupDelivery(d) || !d.completed) return;
+  if (!isPickupCompletionNotificationTarget(d) || !d.completed) return;
   const course = spotPickupCourseForDelivery(d);
   if (!course) return;
-  const company = String(d.spotPickupCompany || d.pickupCompany || '').trim() || 'スポット集荷';
+  const company = pickupCompletionCompany(d);
+  const pickupTime = pickupCompletionTime(d);
   const payload = {
     course,
     company,
-    time_code: spotPickupTimeCode(d.spotPickupTime || ''),
+    pickup_time: pickupTime,
+    time_code: spotPickupTimeCode(d.spotPickupTime || pickupTime || ''),
     completed_by: operatorName || d.completedBy || '',
-    spot_pickup_id: d.spotPickupId || d.pickupId || d.id || '',
+    spot_pickup_id: d.spotPickupId || pickupProgressKey(d) || d.pickupId || d.id || '',
     spot_pickup_date: d.spotPickupDate || '',
     natural_key: spotPickupNaturalKey(d),
     address: d.address || '',
