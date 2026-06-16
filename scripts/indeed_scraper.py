@@ -2,31 +2,44 @@
 """
 Indeed Analytics → Google Sheets 日次自動転記スクリプト
 
-【必要な環境変数】
-  INDEED_EMAIL               : Indeedアカウントのメールアドレス
-  INDEED_PASSWORD            : Indeedアカウントのパスワード
-  SPREADSHEET_ID             : Google SheetsのスプレッドシートID
-  GOOGLE_SERVICE_ACCOUNT_JSON: サービスアカウントキー（JSON文字列）
-  SHEET_GID                  : シートのGID（デフォルト: 1404155345）
-  TARGET_DATE                : 対象日（YYYY-MM-DD、省略時は前日）
+ローカル実行時は同フォルダの config.env から設定を読み込みます。
+GitHub Actions 実行時は環境変数から読み込みます。
 """
 import asyncio
 import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from playwright.async_api import async_playwright
 import gspread
 from google.oauth2.service_account import Credentials
+
+# ── config.env の読み込み（ローカル実行時） ───────────────────────────────────
+_config_path = Path(__file__).parent / "config.env"
+if _config_path.exists():
+    for _line in _config_path.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            if _v and not os.environ.get(_k.strip()):
+                os.environ[_k.strip()] = _v.strip()
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
 JST = timezone(timedelta(hours=9))
 INDEED_EMAIL    = os.environ["INDEED_EMAIL"]
 INDEED_PASSWORD = os.environ["INDEED_PASSWORD"]
 SPREADSHEET_ID  = os.environ["SPREADSHEET_ID"]
-GOOGLE_SA_JSON  = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
 SHEET_GID       = int(os.environ.get("SHEET_GID", "1404155345"))
 TARGET_DATE     = os.environ.get("TARGET_DATE", "")
+
+# サービスアカウント: JSONファイルパス指定 or JSON文字列（GitHub Actions用）
+_sa_file = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON_FILE", "")
+if _sa_file:
+    _sa_file_path = Path(__file__).parent / _sa_file
+    GOOGLE_SA_JSON = _sa_file_path.read_text(encoding="utf-8")
+else:
+    GOOGLE_SA_JSON = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
 
 # Indeed アナリティクスURL（月次＋日別表示）
 ANALYTICS_URL = (
