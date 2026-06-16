@@ -1,0 +1,204 @@
+from pathlib import Path
+import re
+
+VERSION = 'v2026.06.16-test.13'
+ROOT = Path('delivery_map_mapbox')
+HTML_PATH = ROOT / 'test/index.html'
+API_PATH = ROOT / 'api/push_spot_completed.php'
+WORKFLOW_PATH = Path('.github/workflows/add-spot-completion-push-test-once.yml')
+SCRIPT_PATH = Path('.github/scripts/add_spot_completion_push_test.py')
+
+html = HTML_PATH.read_text(encoding='utf-8')
+html = re.sub(r"const APP_VERSION = '[^']+';", f"const APP_VERSION = '{VERSION}';", html, count=1)
+html = re.sub(r'(<span class="app-version">)v[^<]+(</span>)', rf'\1{VERSION}\2', html)
+
+const_anchor = "const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';"
+if 'SPOT_COMPLETION_PUSH_API' not in html:
+    if const_anchor not in html:
+        raise SystemExit('shared geocode cache constant anchor not found')
+    html = html.replace(
+        const_anchor,
+        const_anchor + "\nconst SPOT_COMPLETION_PUSH_API = '../api/push_spot_completed.php';",
+        1,
+    )
+
+helper = r'''
+function spotPickupCourseForDelivery(d) {
+  const sheet = String(d && d.pickupSheet || '');
+  if (PICKUP_SHEETS.includes(sheet)) return sheet;
+  for (const [course, spotSheet] of Object.entries(PICKUP_SPOT_SHEETS_BY_COURSE)) {
+    if (spotSheet === sheet) return course;
+  }
+  const selected = getSelectedPickupSheet();
+  return PICKUP_SHEETS.includes(selected) ? selected : '';
+}
+
+function notifySpotPickupCompleted(d, operatorName) {
+  if (!isSpotPickupDelivery(d) || !d.completed) return;
+  const course = spotPickupCourseForDelivery(d);
+  if (!course) return;
+  const company = String(d.spotPickupCompany || d.pickupCompany || '').trim() || 'スポット集荷';
+  const payload = {
+    course,
+    company,
+    time_code: spotPickupTimeCode(d.spotPickupTime || ''),
+    completed_by: operatorName || d.completedBy || '',
+    spot_pickup_id: d.spotPickupId || d.pickupId || d.id || '',
+    spot_pickup_date: d.spotPickupDate || '',
+    natural_key: spotPickupNaturalKey(d),
+    address: d.address || '',
+    completed_at: localIsoString(d.completedAt || Date.now())
+  };
+  fetch(SPOT_COMPLETION_PUSH_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(async res => {
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok || (data && data.ok === false)) {
+      console.warn('spot completion push failed', data.error || res.status);
+    }
+  }).catch(e => console.warn('spot completion push failed', e));
+}
+
+'''
+if 'function notifySpotPickupCompleted(' not in html:
+    anchor = 'function dedupeSpotPickupItems(items) {'
+    if anchor not in html:
+        raise SystemExit('dedupeSpotPickupItems anchor not found')
+    html = html.replace(anchor, helper + anchor, 1)
+
+sync_needle = "  syncPickupProgress(d, operatorName);\n  if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();"
+sync_repl = "  syncPickupProgress(d, operatorName);\n  if (nextCompleted && isSpotPickupDelivery(d)) notifySpotPickupCompleted(d, operatorName);\n  if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();"
+html = html.replace(sync_needle, sync_repl, 2)
+if html.count('notifySpotPickupCompleted(d, operatorName)') < 2:
+    raise SystemExit('completion hooks missing')
+
+HTML_PATH.write_text(html, encoding='utf-8', newline='\n')
+
+API_PATH.write_text(r'''<?php
+header('Content-Type: application/json; charset=utf-8');
+header('X-Content-Type-Options: nosniff');
+header('Cache-Control: no-store');
+
+$configFile = __DIR__ . '/config.php';
+if (!file_exists($configFile)) {
+  http_response_code(500);
+  echo json_encode(['error' => 'サーバー設定ファイルがありません'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+require_once $configFile;
+require_once __DIR__ . '/request_guard.php';
+require_once __DIR__ . '/push_common.php';
+
+delivery_app_require_same_origin_request();
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+  http_response_code(405);
+  echo json_encode(['error' => 'POSTのみ対応しています'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+function spot_completed_state_path() {
+  return push_private_dir() . '/push_spot_completed_state.json';
+}
+
+function spot_completed_read_state() {
+  $state = push_storage_read(spot_completed_state_path(), ['sent_keys' => []]);
+  if (!isset($state['sent_keys']) || !is_array($state['sent_keys'])) $state['sent_keys'] = [];
+  return $state;
+}
+
+function spot_completed_write_state($state) {
+  if (!isset($state['sent_keys']) || !is_array($state['sent_keys'])) $state['sent_keys'] = [];
+  if (count($state['sent_keys']) > 5000) {
+    uasort($state['sent_keys'], function($a, $b) { return strcmp((string)$a, (string)$b); });
+    $state['sent_keys'] = array_slice($state['sent_keys'], -5000, null, true);
+  }
+  push_storage_write(spot_completed_state_path(), $state);
+}
+
+function spot_completed_trim($value, $max = 120) {
+  $s = trim((string)$value);
+  if (function_exists('mb_substr')) return mb_substr($s, 0, $max, 'UTF-8');
+  return substr($s, 0, $max);
+}
+
+try {
+  if (!push_is_configured()) {
+    http_response_code(503);
+    echo json_encode(['error' => '通知サーバー設定が未完了です'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  $input = json_decode((string)file_get_contents('php://input'), true);
+  if (!is_array($input)) throw new InvalidArgumentException('送信データが正しくありません');
+
+  $course = spot_completed_trim($input['course'] ?? '', 60);
+  $courses = push_filter_courses([$course]);
+  if (count($courses) === 0) {
+    http_response_code(400);
+    echo json_encode(['error' => '通知対象コースが不正です'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $course = $courses[0];
+
+  $company = spot_completed_trim($input['company'] ?? '', 80);
+  if ($company === '') $company = 'スポット集荷';
+  $timeCode = spot_completed_trim($input['time_code'] ?? '', 20);
+  $completedBy = spot_completed_trim($input['completed_by'] ?? '', 60);
+  $date = preg_replace('/\D/', '', (string)($input['spot_pickup_date'] ?? ''));
+  $date = substr($date, 0, 8);
+  if ($date === '') $date = date('Ymd');
+
+  $identity = spot_completed_trim($input['spot_pickup_id'] ?? '', 160);
+  if ($identity === '') $identity = spot_completed_trim($input['natural_key'] ?? '', 240);
+  if ($identity === '') $identity = spot_completed_trim(($input['address'] ?? '') . '|' . $company . '|' . $timeCode, 240);
+  if ($identity === '') throw new InvalidArgumentException('スポット集荷IDが不正です');
+
+  $key = hash('sha256', implode('|', ['completed', $date, $course, $identity]));
+  $state = spot_completed_read_state();
+  if (isset($state['sent_keys'][$key])) {
+    echo json_encode(['ok' => true, 'duplicate' => true, 'sent' => 0], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+
+  $bodyParts = array_values(array_filter([$company, $timeCode, $completedBy], function($v) {
+    return trim((string)$v) !== '';
+  }));
+  $event = [
+    'key' => $key,
+    'course' => $course,
+    'title' => $company . ' 集荷済み',
+    'body' => implode(' / ', $bodyParts),
+    'recipients' => null,
+    'delivered' => [],
+  ];
+
+  $subscriptionData = push_read_subscriptions();
+  $result = push_send_event($event, $subscriptionData);
+  push_storage_write(push_subscriptions_path(), $subscriptionData);
+
+  if (!empty($result['complete']) || (int)($result['sent'] ?? 0) > 0) {
+    $state['sent_keys'][$key] = date('c');
+    spot_completed_write_state($state);
+  }
+
+  echo json_encode([
+    'ok' => true,
+    'sent' => (int)($result['sent'] ?? 0),
+    'failed' => (int)($result['failed'] ?? 0),
+    'course' => $course,
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+} catch (Throwable $e) {
+  http_response_code(400);
+  echo json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+}
+''', encoding='utf-8', newline='\n')
+
+for path in [WORKFLOW_PATH, SCRIPT_PATH]:
+    if path.exists():
+        path.unlink()
+
+print('patched spot completion push notification for test app')
