@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ff5722">
+<title>RYS集荷ライト</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<style>
+:root { --orange:#ff5722; --dark:#0b0f19; --paper:#f6f4ee; --line:#ddd7c8; --blue:#0284c7; --green:#16a34a; --muted:#6b7280; }
+* { box-sizing:border-box; }
+body { margin:0; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--paper); color:#111827; }
+button, select, input { font:inherit; }
+.header { height:54px; background:#080d17; color:#fff; display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:3px solid var(--orange); }
+.title { font-weight:800; font-size:18px; white-space:nowrap; }
+.badge { background:var(--orange); color:#fff; border-radius:4px; padding:2px 6px; font-size:12px; font-weight:700; }
+.version { color:#c7ccd7; font-size:12px; margin-left:auto; }
+.toolbar { display:grid; grid-template-columns:1fr auto auto; gap:8px; padding:10px; background:#fff7ed; border-bottom:1px solid var(--line); }
+select, .btn { min-height:42px; border:2px solid #111827; border-radius:8px; background:#fff; color:#111827; font-weight:700; padding:6px 10px; }
+.btn.primary { background:var(--orange); color:#fff; border-color:var(--orange); }
+.btn.small { min-height:34px; padding:4px 8px; font-size:13px; }
+.map-wrap { position:relative; height:44vh; min-height:260px; background:#e5e7eb; border-bottom:4px solid #111827; }
+#map { position:absolute; inset:0; }
+.map-msg { position:absolute; left:10px; bottom:10px; right:10px; z-index:2; background:rgba(17,24,39,.86); color:#fff; padding:8px 10px; border-radius:8px; font-size:13px; display:none; }
+.map-msg.show { display:block; }
+.marker { width:34px; height:34px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); border:3px solid #111827; background:var(--blue); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 6px rgba(0,0,0,.3); }
+.marker span { transform:rotate(45deg); font-size:13px; font-weight:900; }
+.marker.spot { background:var(--orange); }
+.marker.done { background:#9ca3af; opacity:.65; }
+.user-dot { width:18px; height:18px; border-radius:50%; background:#2563eb; border:3px solid #fff; box-shadow:0 0 0 2px #2563eb,0 2px 8px rgba(0,0,0,.35); }
+.status { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 10px; background:#fff; border-bottom:1px solid var(--line); font-size:13px; color:#374151; }
+.tabs { display:flex; gap:8px; padding:8px 10px; background:var(--paper); border-bottom:1px solid var(--line); }
+.tab { flex:1; border:2px solid var(--line); border-radius:8px; background:#fff; padding:9px 6px; font-weight:800; }
+.tab.active { background:var(--orange); color:#fff; border-color:var(--orange); }
+.list { padding-bottom:80px; }
+.item { display:grid; grid-template-columns:44px 1fr; gap:8px; padding:10px; border-bottom:1px solid var(--line); background:#fff; }
+.item.done { background:#f3f4f6; color:#6b7280; }
+.num { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:900; color:#fff; background:var(--blue); }
+.num.spot { background:var(--orange); }
+.num.done { background:#9ca3af; }
+.company { font-weight:900; font-size:16px; line-height:1.25; }
+.addr { margin-top:3px; color:#374151; font-size:13px; line-height:1.25; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.meta { margin-top:4px; color:var(--muted); font-size:12px; line-height:1.3; }
+.actions { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:8px; }
+.actions button { min-height:38px; border:2px solid var(--line); border-radius:8px; background:#fff; font-weight:800; }
+.actions .done-btn { border-color:var(--green); color:var(--green); }
+.item.done .done-btn { border-color:#6b7280; color:#6b7280; }
+.actions .nav-btn { background:var(--orange); color:#fff; border-color:var(--orange); }
+.empty { padding:28px 16px; color:#6b7280; text-align:center; }
+.toast { position:fixed; left:12px; right:12px; bottom:16px; z-index:20; background:#111827; color:#fff; padding:12px 14px; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.25); display:none; }
+.toast.show { display:block; }
+.toast.error { background:#b91c1c; }
+.loading { position:fixed; inset:0; z-index:30; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.35); color:#fff; font-weight:800; }
+.loading.show { display:flex; }
+.spinner { width:36px; height:36px; border:4px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; margin-right:10px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (max-height:680px) { .map-wrap { height:38vh; min-height:220px; } .company{font-size:15px;} }
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="title">RYS集荷ライト</div>
+  <div class="badge">軽量版</div>
+  <div class="version" id="version"></div>
+</header>
+<section class="toolbar">
+  <select id="course" aria-label="集荷コース"></select>
+  <button class="btn" id="locate" type="button">現在地</button>
+  <button class="btn primary" id="reload" type="button">更新</button>
+</section>
+<section class="map-wrap">
+  <div id="map"></div>
+  <div class="map-msg" id="map-msg"></div>
+</section>
+<section class="status">
+  <div id="status-text">未読み込み</div>
+  <button class="btn small" id="operator" type="button">担当者</button>
+</section>
+<section class="tabs">
+  <button class="tab active" id="tab-regular" type="button" data-tab="regular">定期集荷</button>
+  <button class="tab" id="tab-spot" type="button" data-tab="spot">スポット集荷</button>
+</section>
+<main class="list" id="list"></main>
+<div class="toast" id="toast"></div>
+<div class="loading" id="loading"><div class="spinner"></div><div id="loading-text">読み込み中...</div></div>
+<script>
+'use strict';
+
+const APP_VERSION = 'v2026.06.16-light.1';
+const COURSES = ['小舟町店', '浜町店 南', '浜町店 北'];
+const SPOT_SHEETS = { '小舟町店': '小舟町店スポット', '浜町店 南': '浜町店 南スポット', '浜町店 北': '浜町店 北スポット' };
+const DEFAULT_CENTER = [139.7756, 35.6864];
+const DEFAULT_ZOOM = 15.4;
+const CACHE_PREFIX = 'rys-pickup-light-cache:';
+const COURSE_KEY = 'rys-pickup-light-course';
+const TAB_KEY = 'rys-pickup-light-tab';
+const OPERATOR_KEY = 'rys-pickup-light-operator';
+
+let map = null;
+let mapReady = false;
+let markers = new Map();
+let userMarker = null;
+let items = [];
+let activeTab = localStorage.getItem(TAB_KEY) || 'regular';
+let selectedCourse = localStorage.getItem(COURSE_KEY) || COURSES[0];
+let refreshTimer = null;
+
+function $(id) { return document.getElementById(id); }
+function showToast(message, isError = false) {
+  const el = $('toast');
+  el.textContent = message;
+  el.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => { el.className = 'toast' + (isError ? ' error' : ''); }, 3000);
+}
+function showLoading(message) { $('loading-text').textContent = message || '読み込み中...'; $('loading').classList.add('show'); }
+function hideLoading() { $('loading').classList.remove('show'); }
+function showMapMessage(message) { const el = $('map-msg'); el.textContent = message || ''; el.classList.toggle('show', !!message); }
+function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function isWeekend() { const d = new Date(); return d.getDay() === 0 || d.getDay() === 6; }
+function normalizeTab(value) { return value === 'spot' ? 'spot' : 'regular'; }
+function currentTab() { return isWeekend() ? 'spot' : normalizeTab(activeTab); }
+function isTruthy(value) { const s = String(value ?? '').trim().toUpperCase(); return value === true || ['TRUE','1','YES','Y','ON','済','✓'].includes(s); }
+function formatTime(value) {
+  if (!value) return '';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 16);
+  return d.toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit' });
+}
+function localIsoString(value = Date.now()) {
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+}
+function cacheKey(course) { return CACHE_PREFIX + course; }
+function spotSheetFor(course) { return SPOT_SHEETS[course] || ''; }
+function isSpotSheet(sheet) { return Object.values(SPOT_SHEETS).includes(sheet); }
+function itemKey(item) { return `${item.sheet || ''}:${item.row || ''}:${item.id || ''}:${item.address || ''}`; }
+function itemListTab(item) { return item.listTab === 'spot' || isSpotSheet(item.sheet) || item.source === 'ecohai-spot' ? 'spot' : 'regular'; }
+function itemCompany(item) { return item.company || item.name || item.address || '集荷先'; }
+function itemDetail(item) { return [item.time, item.notes, item.phone].filter(Boolean).join(' / '); }
+function markerLabel(item, index) { return itemListTab(item) === 'spot' ? spotPickupTimeCode(item.time) : String(index + 1); }
+function normalizePickupTime(value) {
+  const s = String(value || '').trim();
+  const m = s.match(/^1899-12-30T(\d{2}):(\d{2})/);
+  return m ? `${Number(m[1])}:${m[2]}` : s;
+}
+function spotPickupTimeCode(value) {
+  const s = String(value || '').normalize('NFKC').replace(/[~〜ー－–—\s]/g, '');
+  if (/9時?13時|09時?13時|9:00?13|09:00?13/.test(s)) return '09';
+  if (/14時?16時|14:00?16/.test(s)) return '14';
+  if (/16時?18時|16:00?18/.test(s)) return '16';
+  const hour = s.match(/(\d{1,2})(?:時|:)/);
+  return hour ? hour[1].padStart(2, '0') : '?';
+}
+function naturalKey(item) {
+  const date = String(item.date || item.spotPickupDate || '').replace(/\D/g, '').slice(0, 8);
+  const company = String(item.company || '').replace(/\s+/g, '');
+  const address = String(item.address || '').replace(/\s+/g, '');
+  const time = String(item.time || '').replace(/\s+/g, '');
+  const phone = String(item.phone || '').replace(/\D/g, '');
+  return [date, company, address, time, phone].join('|');
+}
+
+async function fetchJson(url, options = {}) {
+  const res = await fetch(url, { cache:'no-store', ...options });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || data.error) throw new Error((data && data.error) || `通信エラー ${res.status}`);
+  return data;
+}
+async function fetchPickupSheet(sheet) {
+  const params = new URLSearchParams({ sheet, refresh:String(Date.now()) });
+  return fetchJson(`../api/pickup_sheet.php?${params}`);
+}
+async function fetchSpotPickups(sheet) {
+  const params = new URLSearchParams({ sheet, refresh:String(Date.now()) });
+  const data = await fetchJson(`../api/spot_pickups.php?${params}`);
+  if (!Array.isArray(data.items) || data.items.length === 0) return null;
+  return data;
+}
+async function triggerSpotTouch() {
+  try { await fetch('../api/spot_pickups_touch.php', { method:'POST' }); } catch (e) { console.warn('spot touch failed', e); }
+}
+function toPickupItem(raw, fallbackSheet, forcedTab) {
+  const sheet = raw.sheet || raw.spot_sheet || fallbackSheet || '';
+  const lat = raw.lat !== '' && raw.lat != null && Number.isFinite(Number(raw.lat)) ? Number(raw.lat) : null;
+  const lng = raw.lng !== '' && raw.lng != null && Number.isFinite(Number(raw.lng)) ? Number(raw.lng) : null;
+  const completed = isTruthy(raw.collected);
+  return {
+    id: String(raw.id || ''),
+    row: raw.row || null,
+    sheet,
+    company: raw.company || '',
+    address: raw.address || '',
+    time: normalizePickupTime(raw.time || ''),
+    notes: raw.notes || raw.detail || '',
+    phone: raw.phone || '',
+    source: raw.source || '',
+    listTab: forcedTab || (String(raw.list_tab || '').toLowerCase() === 'spot' ? 'spot' : (isSpotSheet(sheet) ? 'spot' : 'regular')),
+    lat,
+    lng,
+    completed,
+    completedAt: completed ? (Date.parse(raw.collected_at || '') || Date.now()) : null,
+    completedBy: completed ? (raw.collected_by || '') : '',
+    date: raw.date || raw.spotPickupDate || ''
+  };
+}
+async function loadCourse({ background = false } = {}) {
+  const course = selectedCourse;
+  if (!background) showLoading('集荷データを読み込み中...');
+  try {
+    const [regular, spot] = await Promise.all([
+      fetchPickupSheet(course),
+      (async () => {
+        const spotSheet = spotSheetFor(course);
+        if (!spotSheet) return null;
+        try {
+          const prefetched = await fetchSpotPickups(spotSheet);
+          if (prefetched) return prefetched;
+        } catch (e) { console.warn('spot prefetch failed', e); }
+        return fetchPickupSheet(spotSheet);
+      })()
+    ]);
+    const merged = new Map();
+    (regular.items || []).forEach(raw => {
+      const item = toPickupItem(raw, course, String(raw.list_tab || '').toLowerCase() === 'spot' ? 'spot' : undefined);
+      merged.set(itemKey(item), item);
+    });
+    if (spot && Array.isArray(spot.items)) {
+      (spot.items || []).forEach(raw => {
+        const item = toPickupItem(raw, raw.sheet || raw.spot_sheet || spotSheetFor(course), 'spot');
+        merged.set(itemKey(item), item);
+      });
+    }
+    items = [...merged.values()].filter(item => item.address);
+    localStorage.setItem(cacheKey(course), JSON.stringify({ savedAt:Date.now(), items }));
+    render();
+    if (!background) showToast('更新しました');
+  } catch (e) {
+    console.error(e);
+    showToast(e.message || '集荷データの取得に失敗しました', true);
+  } finally {
+    if (!background) hideLoading();
+  }
+}
+function loadCachedCourse(course) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(cacheKey(course)) || 'null');
+    if (cached && Array.isArray(cached.items)) {
+      items = cached.items;
+      render();
+      $('status-text').textContent = `保存済みデータを表示中 / 最新確認前`;
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+async function initMap() {
+  try {
+    const cfg = await fetchJson('../api/maps_config.php');
+    mapboxgl.accessToken = cfg.mapboxAccessToken;
+    map = new mapboxgl.Map({
+      container:'map',
+      style: cfg.mapboxStyle || 'mapbox://styles/mapbox/streets-v12',
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+      pitch:0,
+      bearing:0,
+      attributionControl:false,
+      cooperativeGestures:false,
+      fadeDuration:0
+    });
+    map.addControl(new mapboxgl.AttributionControl({ compact:true }), 'bottom-right');
+    map.addControl(new mapboxgl.NavigationControl({ showCompass:false }), 'top-right');
+    await new Promise(resolve => map.on('load', resolve));
+    mapReady = true;
+    renderMarkers();
+  } catch (e) {
+    console.error(e);
+    showMapMessage('地図を読み込めませんでした。リスト操作は利用できます。');
+  }
+}
+function createMarker(item, index) {
+  const el = document.createElement('div');
+  el.className = 'marker' + (itemListTab(item) === 'spot' ? ' spot' : '') + (item.completed ? ' done' : '');
+  const span = document.createElement('span');
+  span.textContent = markerLabel(item, index);
+  el.appendChild(span);
+  el.addEventListener('click', () => scrollToItem(itemKey(item)));
+  return new mapboxgl.Marker({ element:el, anchor:'bottom' }).setLngLat([item.lng, item.lat]).addTo(map);
+}
+function renderMarkers() {
+  if (!mapReady || !map) return;
+  const visible = visibleItems();
+  const markerIds = new Set(visible.filter(i => i.lat != null && i.lng != null).map(itemKey));
+  markers.forEach((marker, key) => { if (!markerIds.has(key)) { marker.remove(); markers.delete(key); } });
+  visible.forEach((item, index) => {
+    if (item.lat == null || item.lng == null) return;
+    const key = itemKey(item);
+    let marker = markers.get(key);
+    if (!marker) {
+      marker = createMarker(item, index);
+      markers.set(key, marker);
+    } else {
+      marker.setLngLat([item.lng, item.lat]);
+      const el = marker.getElement();
+      el.className = 'marker' + (itemListTab(item) === 'spot' ? ' spot' : '') + (item.completed ? ' done' : '');
+      const span = el.querySelector('span');
+      if (span) span.textContent = markerLabel(item, index);
+    }
+  });
+}
+function fitVisibleMarkers() {
+  if (!mapReady || !map) return;
+  const coords = visibleItems().filter(i => i.lat != null && i.lng != null).map(i => [i.lng, i.lat]);
+  if (coords.length === 0) return;
+  if (coords.length === 1) { map.flyTo({ center:coords[0], zoom:16, speed:1.2 }); return; }
+  const bounds = coords.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0]));
+  map.fitBounds(bounds, { padding:50, maxZoom:16.5, duration:500 });
+}
+function locateUser() {
+  if (!navigator.geolocation) { showToast('この端末では現在地を取得できません', true); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    const lngLat = [pos.coords.longitude, pos.coords.latitude];
+    if (mapReady && map) {
+      if (!userMarker) {
+        const el = document.createElement('div');
+        el.className = 'user-dot';
+        userMarker = new mapboxgl.Marker({ element:el }).setLngLat(lngLat).addTo(map);
+      } else {
+        userMarker.setLngLat(lngLat);
+      }
+      map.flyTo({ center:lngLat, zoom:16.5, speed:1.3 });
+    }
+  }, err => showToast('現在地を取得できません: ' + err.message, true), { enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
+}
+
+function visibleItems() {
+  const tab = currentTab();
+  return items.filter(item => itemListTab(item) === tab);
+}
+function renderTabs() {
+  const tab = currentTab();
+  const regularCount = isWeekend() ? 0 : items.filter(i => itemListTab(i) === 'regular').length;
+  const spotCount = items.filter(i => itemListTab(i) === 'spot').length;
+  $('tab-regular').hidden = isWeekend();
+  $('tab-regular').classList.toggle('active', tab === 'regular');
+  $('tab-spot').classList.toggle('active', tab === 'spot');
+  $('tab-regular').textContent = `定期集荷 (${regularCount})`;
+  $('tab-spot').textContent = `スポット集荷 (${spotCount})`;
+}
+function renderList() {
+  const list = $('list');
+  const visible = visibleItems();
+  const done = visible.filter(i => i.completed).length;
+  const pins = visible.filter(i => i.lat != null && i.lng != null).length;
+  $('status-text').textContent = `${selectedCourse} / ${done}/${visible.length}件 完了 / ピン ${pins}件 / ${formatTime(Date.now())}`;
+  if (visible.length === 0) {
+    list.innerHTML = `<div class="empty">このタブの集荷はありません</div>`;
+    return;
+  }
+  list.innerHTML = visible.map((item, index) => {
+    const key = escapeHtml(itemKey(item));
+    const tab = itemListTab(item);
+    const detail = itemDetail(item);
+    const completed = item.completed ? `集荷済み: ${escapeHtml(item.completedBy || '')} ${escapeHtml(formatTime(item.completedAt) || '')}` : '';
+    const noPin = item.lat == null || item.lng == null ? ' / 地図ピンなし' : '';
+    return `<article class="item${item.completed ? ' done' : ''}" data-key="${key}">
+      <div class="num ${tab}${item.completed ? ' done' : ''}">${escapeHtml(markerLabel(item, index))}</div>
+      <div>
+        <div class="company">${escapeHtml(itemCompany(item))}</div>
+        <div class="addr">${escapeHtml(item.address)}</div>
+        <div class="meta">${escapeHtml([detail, completed].filter(Boolean).join(' / '))}${escapeHtml(noPin)}</div>
+        <div class="actions">
+          <button class="done-btn" type="button" data-action="done" data-key="${key}">${item.completed ? '戻す' : '完了'}</button>
+          <button class="nav-btn" type="button" data-action="nav" data-key="${key}">ナビ</button>
+          <button type="button" data-action="focus" data-key="${key}">地図</button>
+        </div>
+      </div>
+    </article>`;
+  }).join('');
+}
+function render() { renderTabs(); renderList(); renderMarkers(); }
+function findItem(key) { return items.find(item => itemKey(item) === key); }
+function scrollToItem(key) {
+  const el = document.querySelector(`[data-key="${CSS.escape(key)}"]`);
+  if (el) el.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+function focusItem(item) {
+  if (!item || item.lat == null || item.lng == null) { showToast('この集荷先には地図位置がありません', true); return; }
+  if (mapReady && map) map.flyTo({ center:[item.lng, item.lat], zoom:17, speed:1.2 });
+}
+function openNavigation(item) {
+  if (!item) return;
+  let url = '';
+  if (item.lat != null && item.lng != null) url = `https://www.google.com/maps/dir/?api=1&destination=${item.lat},${item.lng}`;
+  else url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address)}`;
+  window.open(url, '_blank', 'noopener');
+}
+function getOperatorName() { return (localStorage.getItem(OPERATOR_KEY) || '').trim(); }
+function ensureOperatorName() {
+  const current = getOperatorName();
+  if (current) return current;
+  const name = (prompt('集荷者名を入力してください', current) || '').trim();
+  if (name) localStorage.setItem(OPERATOR_KEY, name);
+  return name;
+}
+function editOperator() {
+  const current = getOperatorName();
+  const name = (prompt('集荷者名', current) || '').trim();
+  if (name) { localStorage.setItem(OPERATOR_KEY, name); showToast('担当者名を保存しました'); }
+}
+function progressPayload(item, operatorName) {
+  return {
+    sheet:item.sheet,
+    row:item.row,
+    id:item.id || '',
+    collected:!!item.completed,
+    collected_at:item.completed ? localIsoString(item.completedAt || Date.now()) : '',
+    collected_by:item.completed ? (operatorName || item.completedBy || '') : ''
+  };
+}
+async function postProgress(item, operatorName) {
+  return fetchJson('../api/pickup_progress.php', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body:JSON.stringify(progressPayload(item, operatorName))
+  });
+}
+function isNotificationTarget(item) { return item && itemListTab(item) === 'spot'; }
+function notifyCompleted(item, operatorName) {
+  if (!isNotificationTarget(item) || !item.completed) return;
+  const payload = {
+    course:selectedCourse,
+    company:itemCompany(item),
+    completed_time:formatTime(item.completedAt || Date.now()),
+    time_code:spotPickupTimeCode(item.time || ''),
+    completed_by:operatorName || item.completedBy || '',
+    spot_pickup_id:item.id || itemKey(item),
+    spot_pickup_date:item.date || '',
+    natural_key:naturalKey(item),
+    address:item.address || '',
+    completed_at:localIsoString(item.completedAt || Date.now())
+  };
+  fetch('../api/push_spot_completed.php', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body:JSON.stringify(payload)
+  }).catch(e => console.warn('completion push failed', e));
+}
+async function toggleDone(item) {
+  if (!item || !item.row || !item.sheet) { showToast('この集荷先は完了同期に必要な情報がありません', true); return; }
+  const nextDone = !item.completed;
+  const operatorName = nextDone ? ensureOperatorName() : getOperatorName();
+  if (nextDone && !operatorName) { showToast('集荷者名が必要です', true); return; }
+  const before = { completed:item.completed, completedAt:item.completedAt, completedBy:item.completedBy };
+  item.completed = nextDone;
+  item.completedAt = nextDone ? Date.now() : null;
+  item.completedBy = nextDone ? operatorName : '';
+  render();
+  try {
+    await postProgress(item, operatorName);
+    localStorage.setItem(cacheKey(selectedCourse), JSON.stringify({ savedAt:Date.now(), items }));
+    if (nextDone) notifyCompleted(item, operatorName);
+    showToast(nextDone ? '集荷完了にしました' : '未完了に戻しました');
+  } catch (e) {
+    Object.assign(item, before);
+    render();
+    showToast(e.message || '完了同期に失敗しました', true);
+  }
+}
+
+function setupCourseSelect() {
+  $('course').innerHTML = COURSES.map(c => `<option value="${escapeHtml(c)}">集荷 (${escapeHtml(c)})</option>`).join('');
+  $('course').value = selectedCourse;
+}
+function selectCourse(course) {
+  selectedCourse = COURSES.includes(course) ? course : COURSES[0];
+  localStorage.setItem(COURSE_KEY, selectedCourse);
+  loadCachedCourse(selectedCourse);
+  loadCourse();
+}
+function selectTab(tab) {
+  activeTab = normalizeTab(tab);
+  localStorage.setItem(TAB_KEY, activeTab);
+  render();
+  fitVisibleMarkers();
+}
+function bindEvents() {
+  $('course').addEventListener('change', e => selectCourse(e.target.value));
+  $('reload').addEventListener('click', () => { triggerSpotTouch().finally(() => loadCourse()); });
+  $('locate').addEventListener('click', locateUser);
+  $('operator').addEventListener('click', editOperator);
+  document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => selectTab(btn.dataset.tab)));
+  $('list').addEventListener('click', e => {
+    const button = e.target.closest('button[data-action]');
+    if (!button) return;
+    const item = findItem(button.dataset.key);
+    if (button.dataset.action === 'done') toggleDone(item);
+    if (button.dataset.action === 'nav') openNavigation(item);
+    if (button.dataset.action === 'focus') focusItem(item);
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadCourse({ background:true }); });
+}
+async function init() {
+  $('version').textContent = APP_VERSION;
+  if (isWeekend()) activeTab = 'spot';
+  setupCourseSelect();
+  bindEvents();
+  loadCachedCourse(selectedCourse);
+  initMap().then(() => fitVisibleMarkers());
+  await triggerSpotTouch();
+  await loadCourse();
+  fitVisibleMarkers();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(e => console.warn('sw failed', e));
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => { if (!document.hidden) loadCourse({ background:true }); }, 60000);
+}
+init().catch(e => { console.error(e); hideLoading(); showToast(e.message || '初期化に失敗しました', true); });
+</script>
+</body>
+</html>
