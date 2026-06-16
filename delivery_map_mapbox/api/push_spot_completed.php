@@ -68,8 +68,12 @@ try {
   $company = spot_completed_trim($input['company'] ?? '', 80);
   if ($company === '') $company = 'スポット集荷';
   $timeCode = spot_completed_trim($input['time_code'] ?? '', 20);
-  $pickupTime = spot_completed_trim($input['pickup_time'] ?? '', 80);
-  if ($pickupTime === '') $pickupTime = $timeCode;
+  $completedTime = spot_completed_trim($input['completed_time'] ?? '', 20);
+  if ($completedTime === '') {
+    $completedAt = spot_completed_trim($input['completed_at'] ?? '', 40);
+    $timestamp = $completedAt !== '' ? strtotime($completedAt) : false;
+    $completedTime = $timestamp ? date('H:i', $timestamp) : date('H:i');
+  }
   $completedBy = spot_completed_trim($input['completed_by'] ?? '', 60);
   $date = preg_replace('/\D/', '', (string)($input['spot_pickup_date'] ?? ''));
   $date = substr($date, 0, 8);
@@ -87,7 +91,7 @@ try {
     exit;
   }
 
-  $bodyParts = array_values(array_filter([$company, $pickupTime, $completedBy], function($v) {
+  $bodyParts = array_values(array_filter([$company, $completedTime, $completedBy], function($v) {
     return trim((string)$v) !== '';
   }));
   $event = [
