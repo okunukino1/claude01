@@ -1,0 +1,28 @@
+name: Deploy QR Creator to お名前.com
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'delivery_map_mapbox/qr/**'
+      - '.github/workflows/deploy-qr.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: FTP Deploy QR Creator to お名前.com
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./delivery_map_mapbox/qr/
+          server-dir: rys-services.com/qr/
+          exclude: |
+            **/.git*
+          log-level: standard
