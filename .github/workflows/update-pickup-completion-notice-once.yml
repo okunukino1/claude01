@@ -1,0 +1,89 @@
+name: Update pickup completion notice once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/update-pickup-completion-notice-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Patch test app
+        run: python3 .github/scripts/update_pickup_completion_notice.py
+
+      - name: Validate patched files
+        run: |
+          php -l delivery_map_mapbox/api/push_spot_completed.php
+          grep -q "v2026.06.16-test.14" delivery_map_mapbox/test/index.html
+          grep -q "isPickupCompletionNotificationTarget" delivery_map_mapbox/test/index.html
+          grep -q "pickup_time" delivery_map_mapbox/test/index.html
+          grep -q "course.*company.*集荷済み" delivery_map_mapbox/api/push_spot_completed.php
+          node -e "const fs=require('fs'); const html=fs.readFileSync('delivery_map_mapbox/test/index.html','utf8'); const scripts=[...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)].map(m=>m[1]); scripts.forEach(s=>new Function(s)); console.log('scripts ok', scripts.length);"
+
+      - name: Commit test app changes
+        run: |
+          git config user.name "codex-test-bot"
+          git config user.email "codex-test-bot@users.noreply.github.com"
+          git add delivery_map_mapbox/test/index.html delivery_map_mapbox/api/push_spot_completed.php .github/scripts/update_pickup_completion_notice.py .github/workflows/update-pickup-completion-notice-once.yml
+          git commit -m "Update pickup completion notifications in test app"
+          git push
+
+      - name: Set up PHP for Web Push dependencies
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          tools: composer:v2
+
+      - name: Install Web Push dependencies
+        run: composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader --working-dir=delivery_map_mapbox
+
+      - name: FTP Deploy to server
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./delivery_map_mapbox/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}
+          exclude: |
+            **/config.php
+            **/.git*
+            **/node_modules/**
+            **/data/private/*.json
+            **/game/tools/**
+            **/vendor/**/.github/**
+            **/vendor/**/docs/**
+            **/vendor/**/test/**
+            **/vendor/**/tests/**
+            **/vendor/**/*.md
+            **/vendor/**/LICENSE*
+            **/vendor/**/composer.json
+            **/vendor/**/*.lock
+            **/vendor/**/*.neon
+            **/vendor/**/*.xml
+            **/vendor/**/.coveralls.yml
+            **/vendor/**/.styleci.yml
+            **/vendor/**/.travis.yml
+          log-level: standard
+
+      - name: Refresh spot pickup cache
+        continue-on-error: true
+        env:
+          SPOT_PICKUP_REFRESH_URL: ${{ secrets.SPOT_PICKUP_REFRESH_URL }}
+        run: |
+          if [ -n "$SPOT_PICKUP_REFRESH_URL" ]; then
+            curl --fail --show-error --silent --max-time 60 "$SPOT_PICKUP_REFRESH_URL"
+          else
+            echo "SPOT_PICKUP_REFRESH_URL is not set; skipping spot pickup refresh."
+          fi
