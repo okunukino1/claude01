@@ -1,0 +1,196 @@
+name: Codex test speed OCR address once
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/codex-test-speed-ocr-address-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply test app improvements
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p = Path('delivery_map_mapbox/test/index.html')
+          text = p.read_text(encoding='utf-8')
+          text = text.replace("const APP_VERSION = 'v2026.06.16-test.15';", "const APP_VERSION = 'v2026.06.16-test.16';")
+
+          warmup = """function runWhenIdle(fn, timeout = 1200) {
+            if (window.requestIdleCallback) {
+              window.requestIdleCallback(fn, { timeout });
+            } else {
+              setTimeout(fn, Math.min(timeout, 1200));
+            }
+          }
+
+          function warmupAppCaches() {
+            runWhenIdle(() => {
+              try {
+                if (!addrData && localStorage.getItem(ADDR_DATA_KEY)) {
+                  ensureAddressData({ showProgress: false }).catch(e => console.warn('address data warmup failed', e));
+                }
+                const selectedCourse = getSelectedPickupSheet();
+                const spotSheet = selectedCourse ? spotSheetForPickupCourse(selectedCourse) : '';
+                if (spotSheet) {
+                  fetchPrefetchedSpotPickupItems(spotSheet).catch(e => console.warn('spot pickup warmup failed', e));
+                }
+              } catch (e) {
+                console.warn('cache warmup failed', e);
+              }
+            });
+          }
+
+          """.replace('          ', '')
+          hide_marker = "function hideLoading() { $('loading').classList.remove('show'); }\n\n"
+          if 'function runWhenIdle' not in text:
+            text = text.replace(hide_marker, hide_marker + warmup, 1)
+
+          text = text.replace('async function ensureAddressData() {', 'async function ensureAddressData(options = {}) {', 1)
+          text = text.replace('  addrLoading = true;\n  try {', '  const showProgress = options.showProgress !== false;\n  addrLoading = true;\n  try {', 1)
+          text = text.replace("    showLoading('番地データを取得中...');\n    const data = await fetchAddressData((c, t) => {\n      $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;\n    });", "    if (showProgress) showLoading('番地データを取得中...');\n    const data = await fetchAddressData((c, t) => {\n      if (showProgress) $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;\n    });", 1)
+          text = text.replace('    hideLoading();\n  }\n}\n\nfunction addAddressLayer', '    if (showProgress) hideLoading();\n  }\n}\n\nfunction addAddressLayer', 1)
+
+          text = text.replace("    minzoom: 17,\n    layout: {", "    minzoom: 17,\n    maxzoom: 19,\n    layout: {", 1)
+          text = text.replace("        17, 9,\n        18, 11,\n        20, 13", "        17, 9,\n        18, 11,\n        19, 12", 1)
+          layer_anchor = """      'text-halo-width': 1.5
+            }
+          });
+          }
+
+          function addOptimizedRouteLayer""".replace('          ', '')
+          layer_replacement = """      'text-halo-width': 1.5
+            }
+          });
+          map.addLayer({
+            id: 'addr-points-dot',
+            type: 'circle',
+            source: 'addr-points',
+            minzoom: 18.5,
+            paint: {
+              'circle-radius': ['interpolate', ['linear'], ['zoom'], 18.5, 1.5, 20, 3.5],
+              'circle-color': '#2563eb',
+              'circle-opacity': 0.5,
+              'circle-stroke-color': 'rgba(255,255,255,0.95)',
+              'circle-stroke-width': 1
+            }
+          });
+          map.addLayer({
+            id: 'addr-points-label-dense',
+            type: 'symbol',
+            source: 'addr-points',
+            minzoom: 19,
+            layout: {
+              'text-field': ['get', 'label'],
+              'text-size': ['interpolate', ['linear'], ['zoom'], 19, 12, 21, 16],
+              'text-allow-overlap': true,
+              'text-ignore-placement': true,
+              'text-padding': 1,
+              'text-anchor': 'center'
+            },
+            paint: {
+              'text-color': '#0f172a',
+              'text-halo-color': 'rgba(255,255,255,0.98)',
+              'text-halo-width': 2
+            }
+          });
+          }
+
+          function addOptimizedRouteLayer""".replace('          ', '')
+          if "addr-points-label-dense" not in text:
+            text = text.replace(layer_anchor, layer_replacement, 1)
+          text = text.replace("  if (map.getLayer('addr-points-label')) map.removeLayer('addr-points-label');\n  if (map.getSource('addr-points')) map.removeSource('addr-points');", "  if (map.getLayer('addr-points-label-dense')) map.removeLayer('addr-points-label-dense');\n  if (map.getLayer('addr-points-dot')) map.removeLayer('addr-points-dot');\n  if (map.getLayer('addr-points-label')) map.removeLayer('addr-points-label');\n  if (map.getSource('addr-points')) map.removeSource('addr-points');", 1)
+
+          ocr_helpers = r"""function normalizeOcrField(value) {
+            return String(value || '')
+              .normalize('NFKC')
+              .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u30fc\uff70]/g, '-')
+              .replace(/[\t\r\n]+/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+          }
+
+          function normalizeOcrAddressNumbering(value) {
+            return normalizeOcrField(value)
+              .replace(/(\d+)\s*\u4e01\u76ee/g, '$1-')
+              .replace(/(\d+)\s*\u756a\u5730?/g, '$1-')
+              .replace(/(\d+)\s*\u53f7/g, '$1')
+              .replace(/\s*-\s*/g, '-')
+              .replace(/-+/g, '-')
+              .replace(/-\s*$/g, '')
+              .trim();
+          }
+
+          function splitOcrAddressFields(data) {
+            const source = data || {};
+            let address = normalizeOcrField(source.address || '');
+            const noteParts = [];
+            const sourceNote = normalizeOcrField(source.note || source.building || '');
+            if (sourceNote) noteParts.push(sourceNote);
+
+            address = address.replace(/\u3012?\s*(\d{3})\s*-?\s*(\d{4})/, () => '').trim();
+            address = normalizeOcrAddressNumbering(address);
+
+            const prefecture = '(?:\\u6771\\u4eac\\u90fd|\\u5317\\u6d77\\u9053|\\u5927\\u962a\\u5e9c|\\u4eac\\u90fd\\u5e9c|[\\u4e00-\\u9fff]{2,3}\\u770c)';
+            const corePattern = new RegExp('^\\s*((?:' + prefecture + ')?[\\s\\S]*?\\d+(?:-\\d+){0,3})([\\s\\S]*)$');
+            const match = address.match(corePattern);
+            if (match && match[1] && match[1].length >= 6) {
+              address = match[1].trim();
+              const rest = normalizeOcrField(match[2] || '');
+              if (rest) noteParts.unshift(rest);
+            }
+
+            const seen = new Set();
+            const note = noteParts
+              .map(normalizeOcrField)
+              .filter(Boolean)
+              .filter(part => {
+                const key = part.replace(/\s+/g, '').toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              })
+              .join('\n');
+
+            return {
+              address: address.trim(),
+              note
+            };
+          }
+
+          """.replace('          ', '')
+          close_marker = "function closePhotoPreview() {\n  closeModal('modal-photo-preview');\n  resetPhotoPreviewState();\n}\n\n"
+          if 'function splitOcrAddressFields' not in text:
+            text = text.replace(close_marker, close_marker + ocr_helpers, 1)
+          text = text.replace("    $('add-address').value = data.address || '';\n    $('add-note').value = data.note || data.building || '';\n    openModal('modal-add');\n    prefetchGeocodeAddress(data.address || '');", "    const ocrFields = splitOcrAddressFields(data);\n    $('add-address').value = ocrFields.address || data.address || '';\n    $('add-note').value = ocrFields.note || data.note || data.building || '';\n    openModal('modal-add');\n    prefetchGeocodeAddress(ocrFields.address || data.address || '');", 1)
+          text = text.replace('    hideLoading();\n    initDeliverySync();', '    hideLoading();\n    warmupAppCaches();\n    initDeliverySync();', 1)
+          text = text.replace('      ensureAddressData().then(data => {', '      ensureAddressData({ showProgress: false }).then(data => {', 1)
+          p.write_text(text, encoding='utf-8')
+
+          for fp in [Path('delivery_map_mapbox/test/manifest.webmanifest'), Path('delivery_map_mapbox/test/service-worker.js')]:
+            s = fp.read_text(encoding='utf-8')
+            s = s.replace('20260610-test-6', '20260616-test-16')
+            fp.write_text(s, encoding='utf-8')
+
+      - name: Validate JavaScript
+        run: |
+          node -e "const fs=require('fs'); const html=fs.readFileSync('delivery_map_mapbox/test/index.html','utf8'); const m=html.match(/<script>([\\s\\S]*)<\\/script>/); new Function(m[1]); console.log('index JS syntax OK');"
+          node --check delivery_map_mapbox/test/service-worker.js
+      - name: Commit and push
+        run: |
+          git config user.name "codex-app"
+          git config user.email "codex-app@users.noreply.github.com"
+          git rm .github/workflows/codex-test-speed-ocr-address-once.yml
+          git add delivery_map_mapbox/test/index.html delivery_map_mapbox/test/manifest.webmanifest delivery_map_mapbox/test/service-worker.js
+          git commit -m "Improve test app speed OCR and address labels"
+          git push
