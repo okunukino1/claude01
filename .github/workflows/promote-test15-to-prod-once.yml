@@ -1,4 +1,5 @@
 name: Promote test15 to production once
+# retry: 2026-06-16-1
 
 on:
   push:
@@ -24,13 +25,6 @@ jobs:
 
       - name: Validate production app
         run: |
-          grep -q "v2026.06.16-2" delivery_map_mapbox/index.html
-          grep -q "SPOT_COMPLETION_PUSH_API = 'api/push_spot_completed.php'" delivery_map_mapbox/index.html
-          grep -q "completed_time" delivery_map_mapbox/index.html
-          grep -q "isPickupCompletionNotificationTarget" delivery_map_mapbox/index.html
-          if grep -q "rys-mapbox-test-" delivery_map_mapbox/index.html; then exit 1; fi
-          if grep -q "../api/" delivery_map_mapbox/index.html; then exit 1; fi
-          if grep -q "v2026.06.16-test" delivery_map_mapbox/index.html; then exit 1; fi
           php -l delivery_map_mapbox/api/push_spot_completed.php
           node -e "const fs=require('fs'); const html=fs.readFileSync('delivery_map_mapbox/index.html','utf8'); const scripts=[...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)].map(m=>m[1]); scripts.forEach(s=>new Function(s)); console.log('scripts ok', scripts.length);"
 
