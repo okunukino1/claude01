@@ -24,8 +24,8 @@ self.addEventListener('push', event => {
   const title = data.title || 'RYS配送マップ';
   const options = {
     body: data.body || '',
-    icon: './app-icon-192.png?v=20260610-3',
-    badge: './app-icon-192.png?v=20260610-3',
+    icon: './app-icon-192.png?v=20260616-1',
+    badge: './app-icon-192.png?v=20260616-1',
     tag: data.tag || 'spot-pickup',
     renotify: true,
     data: {

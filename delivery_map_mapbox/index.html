@@ -7,9 +7,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#ff5722">
 <title>RYS配送マップ</title>
-<link rel="manifest" href="manifest.webmanifest?v=20260610-3">
-<link rel="icon" href="app-icon-192.png?v=20260610-3" type="image/png">
-<link rel="apple-touch-icon" href="app-icon-512.png?v=20260610-3">
+<link rel="manifest" href="manifest.webmanifest?v=20260616-1">
+<link rel="icon" href="app-icon-192.png?v=20260616-1" type="image/png">
+<link rel="apple-touch-icon" href="app-icon-512.png?v=20260616-1">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
 <style>
   :root {
@@ -125,7 +125,7 @@
   .delivery-marker.spot.done .delivery-pin .pin-shape {
     background: var(--spot-done);
     border-color: var(--spot-done-border);
-    opacity: 1;
+    opacity: 0.6;
   }
   .delivery-pin .pin-num {
     position: absolute;
@@ -322,6 +322,57 @@
   }
   body.list-collapsed .pickup-list-tabs {
     display: none !important;
+  }
+  body.list-collapsed .list-search {
+    display: none;
+  }
+  /* PIN欄: type="password"を使うとChromeが検索欄にログイン情報を
+     自動入力してしまうため、textのまま伏せ字表示にする */
+  .masked-input {
+    -webkit-text-security: disc;
+    text-security: disc;
+  }
+  .list-search {
+    display: flex;
+    gap: 6px;
+    padding: 6px 10px;
+    background: white;
+    border-bottom: 1px solid #e0dac4;
+    flex-shrink: 0;
+  }
+  .list-search input {
+    flex: 1;
+    min-width: 0;
+    min-height: 36px;
+    border: 1.5px solid #b8b29f;
+    border-radius: 6px;
+    padding: 0 10px;
+    font-size: 14px;
+    background: #f7f5ec;
+    color: var(--ink);
+  }
+  .list-search input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: white;
+  }
+  .list-search .search-clear {
+    width: 40px;
+    min-height: 36px;
+    border: 1.5px solid #b8b29f;
+    background: #f7f5ec;
+    color: var(--ink);
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 700;
+    flex-shrink: 0;
+    display: none;
+  }
+  .list-search.has-query .search-clear {
+    display: block;
+  }
+  .delivery-marker.search-dim {
+    opacity: 0.25;
   }
   .pickup-list-tabs {
     display: none;
@@ -842,6 +893,31 @@
     text-decoration: underline;
   }
 
+  .delivery-sync-status {
+    padding: 9px 12px;
+    border-radius: 6px;
+    font-size: calc(13px * var(--text-scale));
+    font-weight: 700;
+    margin-bottom: 12px;
+    line-height: 1.4;
+  }
+  .delivery-sync-status.connected {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+  }
+  .delivery-sync-status.disconnected {
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    border: 1px solid #d8d0b7;
+  }
+  .delivery-sync-last-at {
+    font-size: calc(12px * var(--text-scale));
+    color: var(--ink-soft);
+    margin: -4px 0 12px;
+    min-height: 18px;
+  }
+
   /* Text sizing is intentionally separate from map and marker dimensions. */
   .topbar h1,
   .num-badge,
@@ -943,7 +1019,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="app-version" id="app-version-label">v2026.06.10-3</span></h1>
+  <h1>RYS配送マップ<span class="app-version" id="app-version-label">v2026.06.16-1</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -978,6 +1054,10 @@
     <button class="pickup-list-tab selected" id="pickup-tab-regular" type="button" role="tab" data-pickup-list-tab="regular" aria-selected="true">定期集荷 <span class="tab-count" id="pickup-tab-regular-count"></span></button>
     <button class="pickup-list-tab" id="pickup-tab-spot" type="button" role="tab" data-pickup-list-tab="spot" aria-selected="false">スポット集荷 <span class="tab-count" id="pickup-tab-spot-count"></span></button>
   </div>
+  <div class="list-search" id="list-search">
+    <input type="search" id="list-search-input" placeholder="🔍 リスト内検索（住所・名前・メモ・番号）" autocomplete="off" enterkeyhint="search" aria-label="リスト内検索">
+    <button class="search-clear" id="btn-list-search-clear" type="button" aria-label="検索をクリア">✕</button>
+  </div>
   <div class="list-body" id="list-body"></div>
 </div>
 
@@ -986,7 +1066,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.10-3</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.16-1</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -996,6 +1076,7 @@
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
+      <button id="menu-delivery-sync" type="button">🔗 デバイス間データ共有</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
       <button id="menu-clear-done" type="button">✓ 完了分を削除</button>
@@ -1004,13 +1085,12 @@
       <button id="menu-cache-admin" type="button">🗄 DBキャッシュ管理</button>
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
+      <button id="menu-toggle-gsi" type="button">🗺 番地ライン(地理院) ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
       <button id="menu-text-size" type="button">Aa 文字サイズ</button>
       <button id="menu-notifications" type="button">🔔 通知設定</button>
       <button id="menu-reload-app" type="button">🔄 アプリを更新</button>
       <button id="menu-manual" type="button">📖 使い方マニュアル</button>
-      <button id="menu-game" type="button">🎮 配達員検定で遊ぶ</button>
-      <button id="menu-osouji" type="button">🧼 お掃除マイスター検定で遊ぶ</button>
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
@@ -1022,7 +1102,7 @@
   <div class="modal">
     <h3>DBキャッシュ管理</h3>
     <label>管理PIN</label>
-    <input type="password" id="cache-admin-pin" autocomplete="off" placeholder="DB管理PIN">
+    <input type="text" id="cache-admin-pin" class="masked-input" autocomplete="one-time-code" placeholder="DB管理PIN">
     <div class="modal-help">
       伝票撮影で一度検索した住所の位置を確認・修正できます。通常は「編集」→「住所から位置を再検索」→「保存」の順で使います。
     </div>
@@ -1132,6 +1212,28 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-delivery-sync">
+  <div class="modal">
+    <h3>デバイス間データ共有</h3>
+    <div class="delivery-sync-status disconnected" id="delivery-sync-status">未接続</div>
+    <div class="delivery-sync-last-at" id="delivery-sync-last-at"></div>
+    <label>共有コード</label>
+    <input type="text" id="delivery-sync-code-input"
+           placeholder="共有コード（例: myteam-2024）"
+           autocomplete="off" autocapitalize="none">
+    <div class="modal-help">
+      同じコードを入力した端末同士でリストをリアルタイム共有します（10秒ごとに同期）。推測されにくいコードを使ってください。
+    </div>
+    <div class="modal-actions">
+      <button class="danger" id="btn-delivery-sync-disconnect" type="button">共有を解除</button>
+      <button class="primary" id="btn-delivery-sync-connect" type="button">共有を開始</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-delivery-sync">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-pickup-import">
   <div class="modal">
     <h3>モード・集荷コースを選択</h3>
@@ -1236,13 +1338,14 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.10-3';
+const APP_VERSION = 'v2026.06.16-1';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
 const APP_MODE_KEY = 'rys-mapbox-app-mode';
 const USAGE_KEY = 'rys-mapbox-usage-v1';
 const NEIGHBORHOOD_KEY = 'rys-mapbox-neighborhoods-visible';
+const GSI_OVERLAY_KEY = 'rys-mapbox-gsi-overlay-visible';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-addr-visible';
@@ -1259,6 +1362,11 @@ const APP_VERSION_CHECK_KEY = 'rys-mapbox-version-check-v1';
 const APP_VERSION_PROMPTED_KEY = 'rys-mapbox-version-prompted-v1';
 const GEOCODE_CACHE_KEY = 'rys-mapbox-geocode-cache-v1';
 const GEOCODE_CACHE_ADMIN_PIN_KEY = 'rys-mapbox-geocode-cache-admin-pin-v1';
+const DELIVERY_SYNC_CODE_KEY = 'rys-mapbox-delivery-sync-code-v1';
+const DELIVERY_SYNC_DEVICE_ID_KEY = 'rys-mapbox-delivery-sync-device-id-v1';
+const DELIVERY_SYNC_INTERVAL_MS = 10000;
+const DELIVERY_SYNC_PUSH_DEBOUNCE_MS = 3000;
+const DELIVERY_SYNC_API = 'api/delivery_sync.php';
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = 'api/delivery_geocode_cache.php';
 const SPOT_PICKUP_PREFETCH_API = 'api/spot_pickups.php';
@@ -1338,6 +1446,15 @@ let operatorSaveCallback = null;
 let operatorCancelCallback = null;
 let pickupSyncTimer = null;
 let pickupSyncInFlight = false;
+let deliverySyncCode = '';
+let deliverySyncEnabled = false;
+let deliverySyncDeviceId = '';
+let deliverySyncTimer = null;
+let deliverySyncPushTimer = null;
+let deliverySyncInFlight = false;
+let deliverySyncLastServerAt = '';
+let deliverySyncLastError = '';
+let deliverySyncLastPushedAt = '';
 let pickupPendingRetryInFlight = false;
 let pickupLastSyncedAt = null;
 let pickupLastSpotTouchAt = 0;
@@ -1349,6 +1466,9 @@ let gpsWatchId = null;
 let gpsActive = false;
 let gpsAutoFollow = false;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
+let gsiOverlayVisible = localStorage.getItem(GSI_OVERLAY_KEY) !== '0';
+let listSearchQuery = '';
+let optimizedRouteOrderedIds = [];
 let recognition = null;
 let mapStyleLoaded = false;
 
@@ -1760,6 +1880,7 @@ function saveDeliveries() {
     const sheetName = getSelectedPickupSheet();
     if (sheetName) saveRegularPickupCache(sheetName, deliveries);
   }
+  scheduleSyncPush();
 }
 function loadDeliveries() {
   migrateMisfiledPickupDeliveries();
@@ -2042,6 +2163,7 @@ async function switchAppMode(mode, showMessage = true, options = {}) {
   appMode = mode;
   localStorage.setItem(APP_MODE_KEY, appMode);
   activeDeliveryId = null;
+  clearListSearch();
   clearOptimizedRouteGeometry();
   loadDeliveries();
   renderMarkers();
@@ -2122,6 +2244,7 @@ function initMap() {
       mapStyleLoaded = true;
       try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
       addGeoshapeNeighborhoodLayers();
+      addGsiOverlayLayer();
       if (pendingAddrData) {
         addAddressLayer(pendingAddrData);
         pendingAddrData = null;
@@ -2162,69 +2285,16 @@ const GEOSHAPE_ADMIN_LAYER_CANDIDATES = [
 
 const ESTAT_BOUNDARY_TILES = 'https://ubukawa.github.io/estat01/04_tiles/zxy-s/{z}/{x}/{y}.pbf';
 
-// 国土地理院ベクトルタイルは補助線として使う。
-// ftCode=6101 は「特定地区界」。町丁目そのものではない地域もあるため、主データにはしない。
-const GSI_BOUNDARY_TILES = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf';
 const NEIGHBORHOOD_LAYER_IDS = [];
 const OPTIMIZED_ROUTE_SOURCE_ID = 'optimized-route';
 const OPTIMIZED_ROUTE_LAYER_ID = 'optimized-route-line';
+const NEXT_SEGMENT_SOURCE_ID = 'next-segment';
+const NEXT_SEGMENT_LAYER_ID = 'next-segment-line';
 
 function addNeighborhoodLayer(layer) {
   if (map.getLayer(layer.id)) return;
   map.addLayer(layer);
   NEIGHBORHOOD_LAYER_IDS.push(layer.id);
-}
-
-function addLocalNeighborhoodLayers() {
-  if (map.getSource('local-neighborhoods')) return;
-
-  map.addSource('local-neighborhoods', {
-    type: 'geojson',
-    data: '../data/chuo_nihonbashi_boundaries.geojson',
-    attribution: '日本橋周辺町丁目境界: Geoshape / e-Stat'
-  });
-
-  addNeighborhoodLayer({
-    id: 'local-neighborhoods-fill',
-    type: 'fill',
-    source: 'local-neighborhoods',
-    minzoom: 11,
-    slot: 'top',
-    layout: {
-      'visibility': neighborhoodVisible ? 'visible' : 'none'
-    },
-    paint: {
-      'fill-color': '#ff8a3d',
-      'fill-opacity': [
-        'interpolate', ['linear'], ['zoom'],
-        11, 0.02,
-        16, 0.07
-      ]
-    }
-  });
-
-  addNeighborhoodLayer({
-    id: 'local-neighborhoods-line',
-    type: 'line',
-    source: 'local-neighborhoods',
-    minzoom: 11,
-    slot: 'top',
-    layout: {
-      'visibility': neighborhoodVisible ? 'visible' : 'none',
-      'line-join': 'round',
-      'line-cap': 'round'
-    },
-    paint: {
-      'line-color': '#ff4b1f',
-      'line-width': [
-        'interpolate', ['linear'], ['zoom'],
-        11, 1.4,
-        16, 3.2,
-        19, 4.2
-      ],
-      'line-opacity': 0.95
-    }
-  });
 }
 
 function addEstatNeighborhoodLayers() {
@@ -2333,6 +2403,56 @@ function updateNeighborhoodButton() {
   if (!btn) return;
   btn.textContent = neighborhoodVisible ? '🗾 町丁目境界: ON' : '🗾 町丁目境界: OFF';
   btn.classList.toggle('on', neighborhoodVisible);
+}
+
+// 地理院標準地図の半透明オーバーレイ。ズーム16以上で街区の輪郭線と
+// 街区番号(○番)が見える。ラスター画像のため文字の重なりは許容する。
+const GSI_OVERLAY_SOURCE_ID = 'gsi-std';
+const GSI_OVERLAY_LAYER_ID = 'gsi-std-overlay';
+
+function addGsiOverlayLayer() {
+  if (!map || map.getSource(GSI_OVERLAY_SOURCE_ID)) return;
+  map.addSource(GSI_OVERLAY_SOURCE_ID, {
+    type: 'raster',
+    tiles: ['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'],
+    tileSize: 256,
+    minzoom: 5,
+    maxzoom: 18,
+    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>'
+  });
+  const layerDef = {
+    id: GSI_OVERLAY_LAYER_ID,
+    type: 'raster',
+    source: GSI_OVERLAY_SOURCE_ID,
+    minzoom: 16,
+    slot: 'middle',
+    layout: { 'visibility': gsiOverlayVisible ? 'visible' : 'none' },
+    paint: {
+      'raster-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.2, 17, 0.5]
+    }
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+  }
+}
+
+function toggleGsiOverlay() {
+  gsiOverlayVisible = !gsiOverlayVisible;
+  localStorage.setItem(GSI_OVERLAY_KEY, gsiOverlayVisible ? '1' : '0');
+  if (map && map.getLayer(GSI_OVERLAY_LAYER_ID)) {
+    map.setLayoutProperty(GSI_OVERLAY_LAYER_ID, 'visibility', gsiOverlayVisible ? 'visible' : 'none');
+  }
+  updateGsiOverlayButton();
+  showToast(gsiOverlayVisible ? '番地ライン(地理院)をON（地図を拡大すると表示）' : '番地ライン(地理院)をOFF');
+}
+
+function updateGsiOverlayButton() {
+  const btn = $('menu-toggle-gsi');
+  if (!btn) return;
+  btn.textContent = gsiOverlayVisible ? '🗺 番地ライン(地理院): ON' : '🗺 番地ライン(地理院): OFF';
+  btn.classList.toggle('on', gsiOverlayVisible);
 }
 
 async function fetchAddressData(onProgress) {
@@ -2503,42 +2623,128 @@ function addAddressLayer(data) {
   });
 }
 
-function setOptimizedRouteGeometry(geometry) {
-  if (!map || !geometry || geometry.type !== 'LineString') return;
-  const data = { type: 'Feature', geometry, properties: {} };
-
-  if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) {
-    map.getSource(OPTIMIZED_ROUTE_SOURCE_ID).setData(data);
-    return;
-  }
-
-  map.addSource(OPTIMIZED_ROUTE_SOURCE_ID, { type: 'geojson', data });
-  map.addLayer({
+function addOptimizedRouteLayer() {
+  if (map.getLayer(OPTIMIZED_ROUTE_LAYER_ID)) return;
+  const layerDef = {
     id: OPTIMIZED_ROUTE_LAYER_ID,
     type: 'line',
     source: OPTIMIZED_ROUTE_SOURCE_ID,
     slot: 'top',
-    layout: {
-      'line-join': 'round',
-      'line-cap': 'round'
-    },
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
     paint: {
       'line-color': '#2563eb',
-      'line-width': [
-        'interpolate', ['linear'], ['zoom'],
-        12, 3,
-        16, 5,
-        19, 7
-      ],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3, 16, 5, 19, 7],
       'line-opacity': 0.8
     }
-  });
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+  }
+}
+
+function setOptimizedRouteGeometry(geometry, orderedIds) {
+  if (orderedIds) optimizedRouteOrderedIds = orderedIds.slice();
+  if (!map || !geometry) return;
+
+  // Accept LineString; flatten MultiLineString to LineString
+  let lineGeometry = geometry;
+  if (geometry.type === 'MultiLineString' && Array.isArray(geometry.coordinates)) {
+    const coords = [].concat(...geometry.coordinates);
+    if (coords.length >= 2) lineGeometry = { type: 'LineString', coordinates: coords };
+  }
+  if (!lineGeometry || lineGeometry.type !== 'LineString' ||
+      !Array.isArray(lineGeometry.coordinates) || lineGeometry.coordinates.length < 2) return;
+
+  const data = { type: 'Feature', geometry: lineGeometry, properties: {} };
+
+  if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) {
+    map.getSource(OPTIMIZED_ROUTE_SOURCE_ID).setData(data);
+    addOptimizedRouteLayer();
+    return;
+  }
+
+  map.addSource(OPTIMIZED_ROUTE_SOURCE_ID, { type: 'geojson', data });
+  addOptimizedRouteLayer();
 }
 
 function clearOptimizedRouteGeometry() {
   if (!map) return;
+  optimizedRouteOrderedIds = [];
+  clearNextSegmentLayer();
   if (map.getLayer(OPTIMIZED_ROUTE_LAYER_ID)) map.removeLayer(OPTIMIZED_ROUTE_LAYER_ID);
   if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) map.removeSource(OPTIMIZED_ROUTE_SOURCE_ID);
+}
+
+function clearNextSegmentLayer() {
+  if (!map) return;
+  if (map.getLayer(NEXT_SEGMENT_LAYER_ID)) map.removeLayer(NEXT_SEGMENT_LAYER_ID);
+  if (map.getSource(NEXT_SEGMENT_SOURCE_ID)) map.removeSource(NEXT_SEGMENT_SOURCE_ID);
+}
+
+function addNextSegmentLayer() {
+  if (map.getLayer(NEXT_SEGMENT_LAYER_ID)) return;
+  const layerDef = {
+    id: NEXT_SEGMENT_LAYER_ID,
+    type: 'line',
+    source: NEXT_SEGMENT_SOURCE_ID,
+    slot: 'top',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-color': '#f97316',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 5, 16, 8, 19, 11],
+      'line-opacity': 0.95
+    }
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+  }
+}
+
+function setNextSegmentGeometry(geometry) {
+  if (!map || !geometry) return;
+  const data = { type: 'Feature', geometry, properties: {} };
+  if (map.getSource(NEXT_SEGMENT_SOURCE_ID)) {
+    map.getSource(NEXT_SEGMENT_SOURCE_ID).setData(data);
+    addNextSegmentLayer();
+    return;
+  }
+  map.addSource(NEXT_SEGMENT_SOURCE_ID, { type: 'geojson', data });
+  addNextSegmentLayer();
+}
+
+async function updateNextSegmentHighlight() {
+  if (!map || optimizedRouteOrderedIds.length === 0) { clearNextSegmentLayer(); return; }
+  const deliveryById = new Map(deliveries.map(d => [d.id, d]));
+  const nextDelivery = optimizedRouteOrderedIds
+    .map(id => deliveryById.get(id))
+    .find(d => d && !d.completed && d.lat != null && d.lng != null);
+
+  if (!nextDelivery) { clearNextSegmentLayer(); return; }
+
+  const start = getRouteStartPoint();
+
+  // Draw straight line immediately for instant feedback when a stop is completed
+  setNextSegmentGeometry({
+    type: 'LineString',
+    coordinates: [[start.lng, start.lat], [nextDelivery.lng, nextDelivery.lat]]
+  });
+
+  const token = mapboxConfig && mapboxConfig.mapboxAccessToken;
+  if (!token) return;
+
+  try {
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start.lng},${start.lat};${nextDelivery.lng},${nextDelivery.lat}?geometries=geojson&steps=false&access_token=${token}`;
+    const res = await fetch(url);
+    const data = res.ok ? await res.json() : null;
+    const geometry = data && data.routes && data.routes[0] && data.routes[0].geometry;
+    if (geometry) setNextSegmentGeometry(geometry);
+  } catch (e) {
+    // straight line already shown above
+  }
 }
 
 function removeAddressLayer() {
@@ -2754,9 +2960,15 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   wrapper.classList.toggle('approx', !!d.approx);
   wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
   wrapper.style.zIndex = String(markerZIndex(d, idx));
-  wrapper.innerHTML = '';
 
+  // 中身に影響する値が前回 render と同じなら DOM 再構築をスキップ（差分更新）
   const labelText = buildLabelText(d, num, modeKey);
+  const overlapCount = overlap && overlap.index === 0 ? overlap.count : 0;
+  const contentSig = `${num}|${d.approx ? 1 : 0}|${labelText}|${overlapCount}`;
+  if (wrapper.dataset.contentSig === contentSig) return;
+  wrapper.dataset.contentSig = contentSig;
+
+  wrapper.innerHTML = '';
   if (labelText) {
     const lbl = document.createElement('div');
     lbl.className = 'delivery-label';
@@ -2767,10 +2979,10 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   const pin = document.createElement('div');
   pin.className = 'delivery-pin';
   pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${escapeHtml(num)}${d.approx ? '?' : ''}</div>`;
-  if (overlap && overlap.index === 0) {
+  if (overlapCount > 0) {
     const overlapLabel = document.createElement('div');
     overlapLabel.className = 'overlap-count-label';
-    overlapLabel.textContent = `${overlap.count}件`;
+    overlapLabel.textContent = `${overlapCount}件`;
     pin.appendChild(overlapLabel);
   }
   wrapper.appendChild(pin);
@@ -2797,6 +3009,7 @@ function createDeliveryMarker(d) {
 function renderMarkers() {
   if (!map) return;
   const modeKey = LABEL_MODES[labelModeIndex].key;
+  const searchQuery = currentListSearchQuery();
   const visibleDeliveries = deliveries.filter(isVisibleInCurrentMode);
   lastVisibleDeliveries = visibleDeliveries;
   const overlapInfo = buildMarkerOverlapInfo(visibleDeliveries);
@@ -2823,7 +3036,9 @@ function renderMarkers() {
     } else {
       marker.setLngLat([d.lng, d.lat]);
     }
-    updateDeliveryMarkerElement(marker.getElement(), d, idx, modeKey, overlap);
+    const wrapper = marker.getElement();
+    wrapper.style.display = (searchQuery && !deliveryMatchesSearch(d, idx, searchQuery)) ? 'none' : '';
+    updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap);
   });
 }
 
@@ -3263,7 +3478,45 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
       console.warn('geocode failed for', q, e);
     }
   }
+
+  // Googleで見つからない場合は国土地理院API（無料）で概算位置を取得
+  for (const q of candidates) {
+    try {
+      const result = await geocodeAddressViaGsi(q);
+      if (result) {
+        // 概算位置(approx)は共有キャッシュに保存しない。
+        // 保存するとapprox結果が固定され、次回syncでGoogleを再試行できなくなる。
+        console.info('geocode fallback via GSI for', q);
+        return result;
+      }
+    } catch (e) {
+      console.warn('gsi geocode failed for', q, e);
+    }
+  }
   return null;
+}
+
+// 国土地理院 住所検索API（無料・キー不要）。
+// 精度保証がないため結果は常に approx=true で返し、ピンの位置確認を促す。
+const GSI_GEOCODE_API = 'https://msearch.gsi.go.jp/address-search/AddressSearch';
+
+async function geocodeAddressViaGsi(query) {
+  const res = await fetch(`${GSI_GEOCODE_API}?q=${encodeURIComponent(query)}`);
+  if (!res.ok) return null;
+  const features = await res.json();
+  if (!Array.isArray(features) || features.length === 0) return null;
+  const f = features[0];
+  const coords = f && f.geometry && Array.isArray(f.geometry.coordinates) ? f.geometry.coordinates : null;
+  const lng = coords ? Number(coords[0]) : NaN;
+  const lat = coords ? Number(coords[1]) : NaN;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return {
+    lat,
+    lng,
+    approx: true,
+    formatted: (f.properties && f.properties.title) || query,
+    source: 'gsi'
+  };
 }
 
 function prefetchGeocodeAddress(rawAddress) {
@@ -3348,7 +3601,8 @@ async function addDelivery({ address, note }) {
     formatted: result.formatted,
     completed: false,
     completedAt: null,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    updatedAt: Date.now()
   };
   deliveries.push(d);
   activeDeliveryId = d.id;
@@ -3373,6 +3627,45 @@ function pickupListDisplay(d) {
   };
 }
 
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+function currentListSearchQuery() {
+  return normalizeSearchText(listSearchQuery);
+}
+
+function deliveryMatchesSearch(d, idx, query) {
+  if (!query) return true;
+  const parts = [d.address, d.formatted, d.note, d.completedBy, displayNumber(d, idx)];
+  if (isPickupBackedDelivery(d)) {
+    const disp = pickupListDisplay(d);
+    if (disp) parts.push(disp.company, disp.detail);
+  }
+  return normalizeSearchText(parts.filter(Boolean).join(' ')).includes(query);
+}
+
+function setListSearchQuery(value) {
+  const next = String(value || '');
+  if (next === listSearchQuery) return;
+  listSearchQuery = next;
+  const box = $('list-search');
+  if (box) box.classList.toggle('has-query', !!currentListSearchQuery());
+  renderList();
+  renderMarkers();
+}
+
+function clearListSearch() {
+  const input = $('list-search-input');
+  if (input) input.value = '';
+  listSearchQuery = '';
+  const box = $('list-search');
+  if (box) box.classList.remove('has-query');
+}
+
 function renderList() {
   const body = $('list-body');
   const stat = $('list-stat');
@@ -3388,10 +3681,17 @@ function renderList() {
         .map((delivery, index) => ({ delivery, index }))
         .filter(entry => isVisibleInCurrentMode(entry.delivery));
 
-  if (listItems.length === 0) {
-    const emptyMessage = appMode === 'pickup'
-      ? (selectedPickupTab === PICKUP_LIST_TAB_SPOT ? 'スポット集荷はありません' : '定期集荷はありません')
-      : '配送先がありません<br>下のボタンから追加してください';
+  const query = currentListSearchQuery();
+  const searchedItems = query
+    ? listItems.filter(entry => deliveryMatchesSearch(entry.delivery, entry.index, query))
+    : listItems;
+
+  if (searchedItems.length === 0) {
+    const emptyMessage = query
+      ? `「${escapeHtml(listSearchQuery.trim())}」に一致する項目がありません`
+      : appMode === 'pickup'
+        ? (selectedPickupTab === PICKUP_LIST_TAB_SPOT ? 'スポット集荷はありません' : '定期集荷はありません')
+        : '配送先がありません<br>下のボタンから追加してください';
     body.innerHTML = `<div class="empty">${emptyMessage}</div>`;
     stat.textContent = '';
     return;
@@ -3400,9 +3700,11 @@ function renderList() {
   const syncText = appMode === 'pickup' && pickupLastSyncedAt
     ? ` / 同期 ${formatTime(pickupLastSyncedAt)}`
     : '';
-  stat.textContent = `${done}/${listItems.length}件 完了${syncText}`;
+  stat.textContent = query
+    ? `検索 ${searchedItems.length}件 / 全${listItems.length}件`
+    : `${done}/${listItems.length}件 完了${syncText}`;
 
-  body.innerHTML = listItems.map(({ delivery: d, index: idx }) => {
+  body.innerHTML = searchedItems.map(({ delivery: d, index: idx }) => {
     const num = displayNumber(d, idx);
     const cls = 'delivery-item'
       + (d.completed ? ' done' : '')
@@ -3475,11 +3777,13 @@ async function toggleDone(id) {
   d.completedAt = d.completed ? Date.now() : null;
   d.completedBy = d.completed ? operatorName : '';
   d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
+  d.updatedAt = Date.now();
   if (d.completed && activeDeliveryId === id) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
   renderList();
   syncPickupProgress(d, operatorName);
+  if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
 }
 
 function openNavigation(id) {
@@ -3596,6 +3900,7 @@ async function toggleEditedItemDone() {
   d.completedAt = d.completed ? Date.now() : null;
   d.completedBy = d.completed ? operatorName : '';
   d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
+  d.updatedAt = Date.now();
   if (d.completed && activeDeliveryId === editingItemId) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
@@ -3604,6 +3909,7 @@ async function toggleEditedItemDone() {
   editingItemId = null;
   showToast(d.completed ? '完了にしました' : '未完了に戻しました');
   syncPickupProgress(d, operatorName);
+  if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
 }
 
 async function reGeocodeEditedItem() {
@@ -3683,6 +3989,7 @@ async function saveEditedItem() {
     formatted: d.formatted
   };
   d.note = newNote;
+  d.updatedAt = Date.now();
 
   let locationChanged = false;
   if (addressChanged) {
@@ -4619,7 +4926,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
     const spotKey = spotPickupNaturalKey(item);
     const existing = deliveries.find(d => isSpotPickupDelivery(d) &&
       (String(d.spotPickupId || '') === spotId || (spotKey && spotPickupNaturalKey(d) === spotKey)));
-    if (!existing || existing.address !== item.address || existing.lat == null || existing.lng == null) {
+    if (!existing || existing.address !== item.address || existing.lat == null || existing.lng == null || existing.approx) {
       geocodeTargets.push({ item, index });
     }
   });
@@ -4678,7 +4985,7 @@ async function mergePickupSheetSpotItems(items, options = {}) {
         existing.lng = savedLocation.lng;
         existing.approx = savedLocation.approx;
         existing.formatted = savedLocation.formatted;
-      } else if (addressChanged || existing.lat == null || existing.lng == null) {
+      } else if (addressChanged || existing.lat == null || existing.lng == null || existing.approx) {
         const result = geocodedSpotLocations.get(item);
         if (!result) continue;
         existing.lat = result.lat;
@@ -4782,6 +5089,214 @@ function restartPickupAutoSync() {
   }
   syncPickupProgressFromSheets(true);
   pickupSyncTimer = setInterval(() => syncPickupProgressFromSheets(true), PICKUP_SYNC_INTERVAL_MS);
+}
+
+// ---- Cross-device delivery sync ----
+
+function initDeliverySync() {
+  deliverySyncDeviceId = localStorage.getItem(DELIVERY_SYNC_DEVICE_ID_KEY) || '';
+  if (!deliverySyncDeviceId) {
+    deliverySyncDeviceId = uid();
+    localStorage.setItem(DELIVERY_SYNC_DEVICE_ID_KEY, deliverySyncDeviceId);
+  }
+  const savedCode = localStorage.getItem(DELIVERY_SYNC_CODE_KEY) || '';
+  if (savedCode) {
+    deliverySyncCode = savedCode;
+    deliverySyncEnabled = true;
+  }
+}
+
+function updateDeliverySyncStatusUI() {
+  const statusEl = $('delivery-sync-status');
+  const lastAtEl = $('delivery-sync-last-at');
+  if (!statusEl) return;
+  if (deliverySyncEnabled) {
+    if (deliverySyncLastError) {
+      statusEl.textContent = `同期エラー: ${deliverySyncLastError}`;
+      statusEl.className = 'delivery-sync-status disconnected';
+      lastAtEl.textContent = '';
+      return;
+    }
+    statusEl.textContent = `接続中 (コード設定済み)`;
+    statusEl.className = 'delivery-sync-status connected';
+    if (deliverySyncLastServerAt) {
+      const d = new Date(deliverySyncLastServerAt.replace(' ', 'T') + 'Z');
+      lastAtEl.textContent = isNaN(d) ? '' : `最終同期: ${d.toLocaleTimeString('ja-JP')}`;
+    } else {
+      lastAtEl.textContent = '';
+    }
+  } else {
+    statusEl.textContent = '未接続';
+    statusEl.className = 'delivery-sync-status disconnected';
+    lastAtEl.textContent = '';
+  }
+}
+
+function mergeDeliveryLists(local, remote) {
+  const byId = new Map();
+  for (const item of local) {
+    if (item && item.id) byId.set(item.id, item);
+  }
+  for (const item of remote) {
+    if (!item || !item.id) continue;
+    const existing = byId.get(item.id);
+    if (!existing) {
+      byId.set(item.id, item);
+    } else {
+      const localTime = existing.updatedAt || existing.completedAt || existing.createdAt || 0;
+      const remoteTime = item.updatedAt || item.completedAt || item.createdAt || 0;
+      if (remoteTime > localTime) byId.set(item.id, item);
+    }
+  }
+  return [...byId.values()];
+}
+
+function scheduleSyncPush() {
+  if (!deliverySyncEnabled) return;
+  clearTimeout(deliverySyncPushTimer);
+  deliverySyncPushTimer = setTimeout(pushDeliverySync, DELIVERY_SYNC_PUSH_DEBOUNCE_MS);
+}
+
+async function pushDeliverySync() {
+  if (!deliverySyncEnabled || !deliverySyncCode || deliverySyncInFlight) return;
+  deliverySyncInFlight = true;
+  try {
+    const payload = JSON.stringify(deliveries);
+    const resp = await fetch(DELIVERY_SYNC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'push',
+        code: deliverySyncCode,
+        device_id: deliverySyncDeviceId,
+        payload
+      })
+    });
+    let data = null;
+    try { data = await resp.json(); } catch (e) {}
+    if (!resp.ok || !data || !data.ok) {
+      deliverySyncLastError = (data && (data.detail || data.error)) || `HTTP ${resp.status}`;
+      updateDeliverySyncStatusUI();
+      return;
+    }
+    deliverySyncLastError = '';
+    if (data.updated_at) {
+      deliverySyncLastPushedAt = data.updated_at;
+      deliverySyncLastServerAt = data.updated_at;
+    }
+    updateDeliverySyncStatusUI();
+  } catch (e) {
+    console.warn('delivery sync push failed', e);
+    deliverySyncLastError = '通信エラー';
+    updateDeliverySyncStatusUI();
+  } finally {
+    deliverySyncInFlight = false;
+  }
+}
+
+async function pullDeliverySync() {
+  if (!deliverySyncEnabled || !deliverySyncCode || deliverySyncInFlight) return;
+  deliverySyncInFlight = true;
+  try {
+    const resp = await fetch(DELIVERY_SYNC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'pull',
+        code: deliverySyncCode,
+        device_id: deliverySyncDeviceId
+      })
+    });
+    let data = null;
+    try { data = await resp.json(); } catch (e) {}
+    if (!resp.ok || !data || !data.ok) {
+      deliverySyncLastError = (data && (data.detail || data.error)) || `HTTP ${resp.status}`;
+      updateDeliverySyncStatusUI();
+      return;
+    }
+    if (deliverySyncLastError) {
+      deliverySyncLastError = '';
+      updateDeliverySyncStatusUI();
+    }
+    if (!data.found) return;
+
+    const serverAt = data.updated_at;
+    if (serverAt === deliverySyncLastServerAt) return;
+
+    // Our own push came back — just update the timestamp
+    if (data.device_id === deliverySyncDeviceId) {
+      deliverySyncLastServerAt = serverAt;
+      updateDeliverySyncStatusUI();
+      return;
+    }
+
+    // Another device pushed — merge
+    let remoteItems;
+    try { remoteItems = JSON.parse(data.payload || '[]'); } catch { return; }
+    if (!Array.isArray(remoteItems)) return;
+
+    const merged = mergeDeliveryLists(deliveries, remoteItems);
+    const changed = JSON.stringify(merged) !== JSON.stringify(deliveries);
+    if (changed) {
+      deliveries = merged;
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      showToast('他のデバイスからデータを同期しました');
+    }
+    deliverySyncLastServerAt = serverAt;
+    updateDeliverySyncStatusUI();
+  } catch (e) {
+    console.warn('delivery sync pull failed', e);
+  } finally {
+    deliverySyncInFlight = false;
+  }
+}
+
+function restartDeliverySyncTimer() {
+  clearInterval(deliverySyncTimer);
+  deliverySyncTimer = null;
+  if (!deliverySyncEnabled) return;
+  pullDeliverySync();
+  deliverySyncTimer = setInterval(pullDeliverySync, DELIVERY_SYNC_INTERVAL_MS);
+}
+
+function openDeliverySyncModal() {
+  closeModal('modal-menu');
+  $('delivery-sync-code-input').value = deliverySyncCode;
+  updateDeliverySyncStatusUI();
+  openModal('modal-delivery-sync');
+}
+
+function connectDeliverySync() {
+  const code = $('delivery-sync-code-input').value.trim();
+  if (!code) { showToast('共有コードを入力してください', true); return; }
+  deliverySyncCode = code;
+  deliverySyncEnabled = true;
+  deliverySyncLastServerAt = '';
+  deliverySyncLastPushedAt = '';
+  deliverySyncLastError = '';
+  localStorage.setItem(DELIVERY_SYNC_CODE_KEY, code);
+  updateDeliverySyncStatusUI();
+  restartDeliverySyncTimer();
+  scheduleSyncPush();
+  showToast('共有を開始しました');
+}
+
+function disconnectDeliverySync() {
+  clearInterval(deliverySyncTimer);
+  deliverySyncTimer = null;
+  clearTimeout(deliverySyncPushTimer);
+  deliverySyncPushTimer = null;
+  deliverySyncEnabled = false;
+  deliverySyncCode = '';
+  deliverySyncLastServerAt = '';
+  deliverySyncLastPushedAt = '';
+  deliverySyncLastError = '';
+  localStorage.removeItem(DELIVERY_SYNC_CODE_KEY);
+  $('delivery-sync-code-input').value = '';
+  updateDeliverySyncStatusUI();
+  showToast('共有を解除しました');
 }
 
 async function mapWithConcurrency(items, limit, worker) {
@@ -5138,11 +5653,60 @@ function shortRoutePreview(route) {
   }).join('\n');
 }
 
+function collectRouteCandidates() {
+  return {
+    routeItems: deliveries.filter(isRoutableDelivery),
+    noLocationItems: deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d)),
+    completedItems: deliveries.filter(d => d && d.completed)
+  };
+}
+
+function buildRouteTailNote(noLocationItems, completedItems) {
+  return [
+    noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
+    completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
+  ].filter(Boolean).join('\n');
+}
+
+// 並べ替え確定処理（おすすめ順・車用・Google車用で共通）
+function confirmAndApplyRouteOrder({ title, summary, suggested, noLocationItems, completedItems, geometry = null, clearGeometry = false, successMessage }) {
+  const tailNote = buildRouteTailNote(noLocationItems, completedItems);
+  showConfirm(
+    title,
+    summary + '\n\n' +
+    shortRoutePreview(suggested) +
+    (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
+    (tailNote ? `\n\n${tailNote}` : '') +
+    '\n\nこの順番に並べ替えますか？',
+    () => {
+      deliveries = suggested.concat(noLocationItems, completedItems);
+      activeDeliveryId = suggested[0] ? suggested[0].id : null;
+      const orderedIds = suggested.map(d => d.id);
+      try {
+        if (geometry) {
+          setOptimizedRouteGeometry(geometry, orderedIds);
+        } else {
+          clearOptimizedRouteGeometry();
+          if (clearGeometry) optimizedRouteOrderedIds = orderedIds;
+        }
+      } catch (e) {
+        optimizedRouteOrderedIds = orderedIds;
+      }
+      updateNextSegmentHighlight();
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      if (suggested[0] && map) {
+        map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
+      }
+      showToast(successMessage);
+    }
+  );
+}
+
 function optimizeRouteOrder() {
   closeModal('modal-menu');
-  const routeItems = deliveries.filter(isRoutableDelivery);
-  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
-  const completedItems = deliveries.filter(d => d && d.completed);
+  const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
 
   if (routeItems.length < 2) {
     showToast(`${modeLabel()}先が2件以上ある時に並べ替えできます`, true);
@@ -5154,188 +5718,129 @@ function optimizeRouteOrder() {
   const suggested = improveRouteWithTwoOpt(start, nearestNeighborRoute(start, routeItems));
   const suggestedDistance = routeDistanceMeters(start, suggested);
   const diff = Math.max(0, originalDistance - suggestedDistance);
-  const tailNote = [
-    noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
-    completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
-  ].filter(Boolean).join('\n');
 
-  showConfirm(
-    'おすすめ順に並べ替え',
-    `${start.label}から近い順に${modeLabel()}順を提案します。\n` +
-    `目安距離: ${formatKm(originalDistance)} → ${formatKm(suggestedDistance)}` +
-    (diff > 0 ? ` (${formatKm(diff)}短縮)` : '') + '\n\n' +
-    shortRoutePreview(suggested) +
-    (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
-    (tailNote ? `\n\n${tailNote}` : '') +
-    '\n\nこの順番に並べ替えますか？',
-    () => {
-      deliveries = suggested.concat(noLocationItems, completedItems);
-      activeDeliveryId = suggested[0] ? suggested[0].id : null;
-      clearOptimizedRouteGeometry();
-      saveDeliveries();
-      renderMarkers();
-      renderList();
-      if (suggested[0] && map) {
-        map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
-      }
-      showToast(`${modeLabel()}順を並べ替えました`);
-    }
-  );
+  confirmAndApplyRouteOrder({
+    title: 'おすすめ順に並べ替え',
+    summary: `${start.label}から近い順に${modeLabel()}順を提案します。\n` +
+      `目安距離: ${formatKm(originalDistance)} → ${formatKm(suggestedDistance)}` +
+      (diff > 0 ? ` (${formatKm(diff)}短縮)` : ''),
+    suggested,
+    noLocationItems,
+    completedItems,
+    clearGeometry: true,
+    successMessage: `${modeLabel()}順を並べ替えました`
+  });
 }
 
-async function optimizeCarRouteOrder() {
+const CAR_ROUTE_PROVIDERS = {
+  mapbox: {
+    endpoint: 'api/optimize_route.php',
+    usageKind: 'routeOptimize',
+    shortName: '車用',
+    title: '車向け 道路優先ルート',
+    summaryHead: 'Mapboxの道路ルート',
+    buildRequestBody: (start, routeItems) => ({
+      profile: 'mapbox/driving',
+      start: { lat: start.lat, lng: start.lng },
+      points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
+    }),
+    errorDetail: (data) => data && data.detail ? `\n${data.detail}` : ''
+  },
+  google: {
+    endpoint: 'api/google_route.php',
+    usageKind: 'googleRouteOptimize',
+    shortName: 'Google車用',
+    title: 'Google車向け 道路優先ルート',
+    summaryHead: 'Google Routes APIの道路ルート',
+    buildRequestBody: (start, routeItems) => ({
+      start: { lat: start.lat, lng: start.lng },
+      points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
+    }),
+    errorDetail: (data) => data && (data.hint || data.detail) ? `\n${data.hint || data.detail}` : ''
+  }
+};
+
+async function optimizeCarRouteOrderWith(providerKey) {
+  const provider = CAR_ROUTE_PROVIDERS[providerKey];
+  if (!provider) return;
   closeModal('modal-menu');
-  const routeItems = deliveries.filter(isRoutableDelivery);
-  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
-  const completedItems = deliveries.filter(d => d && d.completed);
+  const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
 
   if (routeItems.length < 2) {
-    showToast(`${modeLabel()}先が2件以上ある時に車用ルート検索できます`, true);
-    return;
-  }
-  if (routeItems.length > 24) {
-    showToast('車用ルート検索は一度に24件までです。完了分を削除するか分けて検索してください。', true);
+    showToast(`${modeLabel()}先が2件以上ある時に${provider.shortName}ルート検索できます`, true);
     return;
   }
 
   const start = getRouteStartPoint();
-  showLoading('車用ルートを検索中...');
+
+  // 25件以上は現在地から近い24件を道路APIで最適化し、残りはその後ろに近い順で続ける
+  let apiItems = routeItems;
+  let overflowItems = [];
+  if (routeItems.length > 24) {
+    const sortedByDistance = routeItems.slice().sort((a, b) =>
+      distanceMeters(start, routePoint(a)) - distanceMeters(start, routePoint(b)));
+    apiItems = sortedByDistance.slice(0, 24);
+    overflowItems = sortedByDistance.slice(24);
+  }
+
+  showLoading(`${provider.shortName}ルートを検索中...`);
   try {
-    bumpUsage('routeOptimize');
-    const res = await fetch('api/optimize_route.php', {
+    bumpUsage(provider.usageKind);
+    const res = await fetch(provider.endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        profile: 'mapbox/driving',
-        start: { lat: start.lat, lng: start.lng },
-        points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
-      })
+      body: JSON.stringify(provider.buildRequestBody(start, apiItems))
     });
     let data = null;
     try { data = await res.json(); } catch (e) {}
     hideLoading();
 
     if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
-      const detail = data && data.detail ? `\n${data.detail}` : '';
-      throw new Error(((data && data.error) || '車用ルート検索に失敗しました') + detail);
+      throw new Error(((data && data.error) || `${provider.shortName}ルート検索に失敗しました`) + provider.errorDetail(data));
     }
 
     const byId = new Map(deliveries.map(d => [d.id, d]));
-    const suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
-    if (suggested.length !== routeItems.length) {
-      throw new Error('車用ルート検索結果の件数が一致しませんでした');
+    let suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
+    if (suggested.length !== apiItems.length) {
+      throw new Error(`${provider.shortName}ルート検索結果の件数が一致しませんでした`);
+    }
+
+    if (overflowItems.length) {
+      const lastStop = routePoint(suggested[suggested.length - 1]);
+      suggested = suggested.concat(nearestNeighborRoute(lastStop, overflowItems));
     }
 
     const distanceText = data.distance ? formatKm(data.distance) : '不明';
     const durationText = data.duration ? formatDuration(data.duration) : '';
-    const tailNote = [
-      noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
-      completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
-    ].filter(Boolean).join('\n');
 
-    showConfirm(
-      '車向け 道路優先ルート',
-      `Mapboxの道路ルートで${modeLabel()}順を提案します。\n` +
-      `始点: ${start.label}\n` +
-      `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n\n` +
-      shortRoutePreview(suggested) +
-      (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
-      (tailNote ? `\n\n${tailNote}` : '') +
-      '\n\nこの順番に並べ替えますか？',
-      () => {
-        deliveries = suggested.concat(noLocationItems, completedItems);
-        activeDeliveryId = suggested[0] ? suggested[0].id : null;
-        saveDeliveries();
-        renderMarkers();
-        renderList();
-        if (data.geometry) setOptimizedRouteGeometry(data.geometry);
-        if (suggested[0] && map) {
-          map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
-        }
-        showToast(`${modeLabel()}順を車用ルートで並べ替えました`);
-      }
-    );
+    const overflowNote = overflowItems.length
+      ? `\n全${routeItems.length}件のうち現在地から近い24件を道路APIで最適化し、残り${overflowItems.length}件は後ろに近い順で続けます。`
+      : '';
+
+    confirmAndApplyRouteOrder({
+      title: provider.title,
+      summary: `${provider.summaryHead}で${modeLabel()}順を提案します。\n` +
+        `始点: ${start.label}\n` +
+        `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}` +
+        overflowNote,
+      suggested,
+      noLocationItems,
+      completedItems,
+      geometry: data.geometry || null,
+      successMessage: `${modeLabel()}順を${provider.shortName}ルートで並べ替えました`
+    });
   } catch (e) {
     hideLoading();
-    showToast(e.message || '車用ルート検索に失敗しました', true);
+    showToast(e.message || `${provider.shortName}ルート検索に失敗しました`, true);
   }
 }
 
-async function optimizeGoogleCarRouteOrder() {
-  closeModal('modal-menu');
-  const routeItems = deliveries.filter(isRoutableDelivery);
-  const noLocationItems = deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d));
-  const completedItems = deliveries.filter(d => d && d.completed);
+function optimizeCarRouteOrder() {
+  return optimizeCarRouteOrderWith('mapbox');
+}
 
-  if (routeItems.length < 2) {
-    showToast(`${modeLabel()}先が2件以上ある時にGoogle車用ルート検索できます`, true);
-    return;
-  }
-  if (routeItems.length > 24) {
-    showToast('Google車用ルート検索は一度に24件までです。完了分を削除するか分けて検索してください。', true);
-    return;
-  }
-
-  const start = getRouteStartPoint();
-  showLoading('Google車用ルートを検索中...');
-  try {
-    bumpUsage('googleRouteOptimize');
-    const res = await fetch('api/google_route.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        start: { lat: start.lat, lng: start.lng },
-        points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
-      })
-    });
-    let data = null;
-    try { data = await res.json(); } catch (e) {}
-    hideLoading();
-
-    if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
-      const detail = data && (data.hint || data.detail) ? `\n${data.hint || data.detail}` : '';
-      throw new Error(((data && data.error) || 'Google車用ルート検索に失敗しました') + detail);
-    }
-
-    const byId = new Map(deliveries.map(d => [d.id, d]));
-    const suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
-    if (suggested.length !== routeItems.length) {
-      throw new Error('Google車用ルート検索結果の件数が一致しませんでした');
-    }
-
-    const distanceText = data.distance ? formatKm(data.distance) : '不明';
-    const durationText = data.duration ? formatDuration(data.duration) : '';
-    const tailNote = [
-      noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
-      completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
-    ].filter(Boolean).join('\n');
-
-    showConfirm(
-      'Google車向け 道路優先ルート',
-      `Google Routes APIの道路ルートで${modeLabel()}順を提案します。\n` +
-      `始点: ${start.label}\n` +
-      `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n\n` +
-      shortRoutePreview(suggested) +
-      (suggested.length > 5 ? `\n...ほか ${suggested.length - 5}件` : '') +
-      (tailNote ? `\n\n${tailNote}` : '') +
-      '\n\nこの順番に並べ替えますか？',
-      () => {
-        deliveries = suggested.concat(noLocationItems, completedItems);
-        activeDeliveryId = suggested[0] ? suggested[0].id : null;
-        saveDeliveries();
-        renderMarkers();
-        renderList();
-        if (data.geometry) setOptimizedRouteGeometry(data.geometry);
-        if (suggested[0] && map) {
-          map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
-        }
-        showToast(`${modeLabel()}順をGoogle車用ルートで並べ替えました`);
-      }
-    );
-  } catch (e) {
-    hideLoading();
-    showToast(e.message || 'Google車用ルート検索に失敗しました', true);
-  }
+function optimizeGoogleCarRouteOrder() {
+  return optimizeCarRouteOrderWith('google');
 }
 
 function exportDeliveriesAsJSON() {
@@ -5520,6 +6025,7 @@ $('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
 $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
 $('menu-optimize-google').addEventListener('click', optimizeGoogleCarRouteOrder);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
+$('menu-delivery-sync').addEventListener('click', openDeliverySyncModal);
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);
 $('menu-clear-done').addEventListener('click', clearCompleted);
@@ -5531,6 +6037,10 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
   toggleNeighborhoods();
 });
 $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
+$('menu-toggle-gsi').addEventListener('click', () => {
+  closeModal('modal-menu');
+  toggleGsiOverlay();
+});
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
 $('menu-text-size').addEventListener('click', openTextSizeSettings);
 $('menu-notifications').addEventListener('click', openNotificationSettings);
@@ -5539,15 +6049,9 @@ $('menu-manual').addEventListener('click', () => {
   closeModal('modal-menu');
   window.open('manual.html', '_blank', 'noopener');
 });
-$('menu-game').addEventListener('click', () => {
-  closeModal('modal-menu');
-  window.open('game/', '_blank', 'noopener');
-});
-$('menu-osouji').addEventListener('click', () => {
-  closeModal('modal-menu');
-  window.open('osouji/', '_blank', 'noopener');
-});
 
+$('btn-delivery-sync-connect').addEventListener('click', connectDeliverySync);
+$('btn-delivery-sync-disconnect').addEventListener('click', disconnectDeliverySync);
 $('btn-reset-usage').addEventListener('click', resetUsage);
 $('btn-pickup-import').addEventListener('click', importPickupSheet);
 $('btn-operator-save').addEventListener('click', saveOperatorFromModal);
@@ -5588,6 +6092,19 @@ document.querySelectorAll('[data-close]').forEach(btn => {
 });
 
 $('list-body').addEventListener('click', handleListBodyClick);
+let listSearchDebounceTimer = null;
+$('list-search-input').addEventListener('input', (e) => {
+  clearTimeout(listSearchDebounceTimer);
+  listSearchDebounceTimer = setTimeout(() => setListSearchQuery(e.target.value), 150);
+});
+$('list-search-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') e.target.blur();
+});
+$('btn-list-search-clear').addEventListener('click', () => {
+  clearListSearch();
+  renderList();
+  renderMarkers();
+});
 document.querySelector('.placement-banner').addEventListener('click', cancelPlacement);
 window.addEventListener('online', () => retryPendingPickupProgress({ silent: false }));
 window.addEventListener('beforeinstallprompt', event => {
@@ -5617,6 +6134,7 @@ document.addEventListener('visibilitychange', () => {
     updateLabelModeButton();
     updateNeighborhoodButton();
     updateAddrButton();
+    updateGsiOverlayButton();
     showLoading('地図を読み込み中...');
     mapboxConfig = await loadMapboxConfig();
     const mapReady = initMap();
@@ -5634,6 +6152,8 @@ document.addEventListener('visibilitychange', () => {
     ensureGpsWatching();
     updateGpsButton();
     hideLoading();
+    initDeliverySync();
+    restartDeliverySyncTimer();
     resetStalePickupCompletions()
       .catch(e => console.warn('startup pickup reset failed', e))
       .finally(() => restartPickupAutoSync());
