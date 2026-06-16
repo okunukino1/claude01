@@ -69,7 +69,7 @@ if 'function isPickupCompletionNotificationTarget(' not in html:
     matches = re.findall(pattern, html)
     if len(matches) != 1:
         raise SystemExit(f'expected one notify function, found {len(matches)}')
-    html = re.sub(pattern, new_notify, html, count=1)
+    html = re.sub(pattern, lambda _: new_notify, html, count=1)
 else:
     start = html.index('function isPickupCompletionNotificationTarget(')
     end_marker = "\n\nfunction dedupeSpotPickupItems(items) {"
@@ -87,7 +87,7 @@ api = API_PATH.read_text(encoding='utf-8-sig')
 if "$pickupTime = spot_completed_trim($input['pickup_time'] ?? '', 80);" not in api:
     api = re.sub(
         r"  \$timeCode = spot_completed_trim\(\$input\['time_code'\] \?\? '', 20\);\n  \$completedBy = spot_completed_trim\(\$input\['completed_by'\] \?\? '', 60\);",
-        "  $timeCode = spot_completed_trim($input['time_code'] ?? '', 20);\n  $pickupTime = spot_completed_trim($input['pickup_time'] ?? '', 80);\n  if ($pickupTime === '') $pickupTime = $timeCode;\n  $completedBy = spot_completed_trim($input['completed_by'] ?? '', 60);",
+        lambda _: "  $timeCode = spot_completed_trim($input['time_code'] ?? '', 20);\n  $pickupTime = spot_completed_trim($input['pickup_time'] ?? '', 80);\n  if ($pickupTime === '') $pickupTime = $timeCode;\n  $completedBy = spot_completed_trim($input['completed_by'] ?? '', 60);",
         api,
         count=1,
     )
@@ -97,7 +97,7 @@ api = api.replace(
 )
 api = re.sub(
     r"'title'\s*=>\s*\$company\s*\.\s*' 集荷済み',",
-    "'title' => $course . '/' . $company . '/ 集荷済み',",
+    lambda _: "'title' => $course . '/' . $company . '/ 集荷済み',",
     api,
     count=1,
 )
