@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QR Creator</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+          </div>
+          <div>
+            <h1>QR Creator</h1>
+            <p>テキスト、URL、Wi-Fi用のQRコードを作成</p>
+          </div>
+        </div>
+        <div class="status" id="statusText">
+          <span class="status-dot"></span>
+          準備完了
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="QRコード作成ツール">
+        <form class="settings" id="qrForm">
+          <section class="panel-section">
+            <h2>内容</h2>
+            <div class="segmented" role="tablist" aria-label="QRコードの種類">
+              <button type="button" class="segment active" data-tab="text" role="tab" aria-selected="true">
+                テキスト / URL
+              </button>
+              <button type="button" class="segment" data-tab="wifi" role="tab" aria-selected="false">
+                Wi-Fi
+              </button>
+            </div>
+
+            <div class="tab-panel active" data-panel="text">
+              <label class="field-label" for="qrText">テキストまたはURL</label>
+              <textarea id="qrText" rows="6" maxlength="900">https://www.example.com</textarea>
+              <div class="field-meta">
+                <span id="textCount">0</span>
+                <span>UTF-8バイト</span>
+              </div>
+            </div>
+
+            <div class="tab-panel" data-panel="wifi">
+              <label class="field-label" for="wifiSsid">ネットワーク名</label>
+              <input id="wifiSsid" type="text" autocomplete="off" placeholder="SSID" />
+
+              <label class="field-label" for="wifiPassword">パスワード</label>
+              <input id="wifiPassword" type="text" autocomplete="off" placeholder="password" />
+
+              <div class="inline-grid">
+                <label>
+                  暗号化
+                  <select id="wifiSecurity">
+                    <option value="WPA">WPA/WPA2</option>
+                    <option value="WEP">WEP</option>
+                    <option value="nopass">なし</option>
+                  </select>
+                </label>
+                <label class="check-row">
+                  <input id="wifiHidden" type="checkbox" />
+                  非公開SSID
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-section">
+            <h2>スタイル</h2>
+            <div class="control-row">
+              <label for="qrSize">サイズ</label>
+              <output id="sizeOutput">512px</output>
+            </div>
+            <input id="qrSize" type="range" min="160" max="1600" step="8" value="512" />
+
+            <div class="control-row">
+              <label for="qrMargin">余白</label>
+              <output id="marginOutput">4マス</output>
+            </div>
+            <input id="qrMargin" type="range" min="0" max="12" step="1" value="4" />
+
+            <div class="color-grid">
+              <label>
+                前景色
+                <span class="color-field">
+                  <input id="fgColor" type="color" value="#000000" />
+                  <input id="fgText" type="text" value="#000000" inputmode="text" />
+                </span>
+              </label>
+              <label>
+                背景色
+                <span class="color-field">
+                  <input id="bgColor" type="color" value="#ffffff" />
+                  <input id="bgText" type="text" value="#ffffff" inputmode="text" />
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <section class="panel-section">
+            <h2>誤り訂正</h2>
+            <div class="ecl-grid" aria-label="誤り訂正レベル">
+              <label><input type="radio" name="ecl" value="L" /> L <span>7%</span></label>
+              <label><input type="radio" name="ecl" value="M" checked /> M <span>15%</span></label>
+              <label><input type="radio" name="ecl" value="Q" /> Q <span>25%</span></label>
+              <label><input type="radio" name="ecl" value="H" /> H <span>30%</span></label>
+            </div>
+          </section>
+
+          <section class="panel-section">
+            <h2>オプション</h2>
+            <label class="check-row">
+              <input id="livePreview" type="checkbox" checked />
+              ライブプレビュー
+            </label>
+            <button class="primary wide" id="generateButton" type="submit">QRコードを作成</button>
+          </section>
+        </form>
+
+        <section class="preview-panel" aria-label="QRコードプレビュー">
+          <div class="preview-head">
+            <div>
+              <h2>プレビュー</h2>
+              <p id="qrMeta">512 x 512 px</p>
+            </div>
+            <button type="button" class="ghost" id="resetButton">リセット</button>
+          </div>
+
+          <div class="qr-stage">
+            <canvas id="qrCanvas" width="512" height="512" aria-label="作成されたQRコード"></canvas>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="primary" id="downloadPng">PNGで保存</button>
+            <button type="button" id="downloadSvg">SVGで保存</button>
+            <button type="button" id="copyImage">画像をコピー</button>
+          </div>
+
+          <div class="message" id="messageBox" role="status" aria-live="polite"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
