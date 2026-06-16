@@ -1,4 +1,5 @@
 name: Update pickup completion notice once
+# retry: 2026-06-16-2
 
 on:
   push:
