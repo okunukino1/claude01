@@ -1338,7 +1338,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.12-test.12';
+const APP_VERSION = 'v2026.06.16-test.13';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1369,6 +1369,7 @@ const DELIVERY_SYNC_PUSH_DEBOUNCE_MS = 3000;
 const DELIVERY_SYNC_API = '../api/delivery_sync.php';
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
+const SPOT_COMPLETION_PUSH_API = '../api/push_spot_completed.php';
 const SPOT_PICKUP_PREFETCH_API = '../api/spot_pickups.php';
 const SHARED_GEOCODE_CACHE_RETRY_MS = 10 * 60 * 1000;
 const PICKUP_GEOCODE_CONCURRENCY = 3;
@@ -3783,6 +3784,7 @@ async function toggleDone(id) {
   renderMarkers();
   renderList();
   syncPickupProgress(d, operatorName);
+  if (nextCompleted && isSpotPickupDelivery(d)) notifySpotPickupCompleted(d, operatorName);
   if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
 }
 
@@ -3909,6 +3911,7 @@ async function toggleEditedItemDone() {
   editingItemId = null;
   showToast(d.completed ? '完了にしました' : '未完了に戻しました');
   syncPickupProgress(d, operatorName);
+  if (nextCompleted && isSpotPickupDelivery(d)) notifySpotPickupCompleted(d, operatorName);
   if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
 }
 
@@ -4466,6 +4469,46 @@ function spotPickupNaturalKey(item) {
   const phone = String(item && (item.phone || item.spotPickupPhone) || '').replace(/\D/g, '');
   if (!company || !address) return '';
   return [date, company, address, time, phone].join('|');
+}
+
+
+function spotPickupCourseForDelivery(d) {
+  const sheet = String(d && d.pickupSheet || '');
+  if (PICKUP_SHEETS.includes(sheet)) return sheet;
+  for (const [course, spotSheet] of Object.entries(PICKUP_SPOT_SHEETS_BY_COURSE)) {
+    if (spotSheet === sheet) return course;
+  }
+  const selected = getSelectedPickupSheet();
+  return PICKUP_SHEETS.includes(selected) ? selected : '';
+}
+
+function notifySpotPickupCompleted(d, operatorName) {
+  if (!isSpotPickupDelivery(d) || !d.completed) return;
+  const course = spotPickupCourseForDelivery(d);
+  if (!course) return;
+  const company = String(d.spotPickupCompany || d.pickupCompany || '').trim() || 'スポット集荷';
+  const payload = {
+    course,
+    company,
+    time_code: spotPickupTimeCode(d.spotPickupTime || ''),
+    completed_by: operatorName || d.completedBy || '',
+    spot_pickup_id: d.spotPickupId || d.pickupId || d.id || '',
+    spot_pickup_date: d.spotPickupDate || '',
+    natural_key: spotPickupNaturalKey(d),
+    address: d.address || '',
+    completed_at: localIsoString(d.completedAt || Date.now())
+  };
+  fetch(SPOT_COMPLETION_PUSH_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(async res => {
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok || (data && data.ok === false)) {
+      console.warn('spot completion push failed', data.error || res.status);
+    }
+  }).catch(e => console.warn('spot completion push failed', e));
 }
 
 function dedupeSpotPickupItems(items) {
