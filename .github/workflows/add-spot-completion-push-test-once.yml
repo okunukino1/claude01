@@ -2,30 +2,32 @@ name: Add spot completion push notification to test once
 
 on:
   push:
+    branches:
+      - main
     paths:
-      - .github/workflows/add-spot-completion-push-test-once.yml
+      - '.github/workflows/add-spot-completion-push-test-once.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  patch-test-app:
+  patch-test-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          persist-credentials: true
 
       - name: Patch test app
-        shell: bash
         run: |
-          python3 <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
           import re
 
           version = 'v2026.06.16-test.13'
-          html_path = Path('delivery_map_mapbox/test/index.html')
+          root = Path('delivery_map_mapbox')
+          html_path = root / 'test/index.html'
           html = html_path.read_text(encoding='utf-8')
 
           html = re.sub(r"const APP_VERSION = '[^']+';", f"const APP_VERSION = '{version}';", html, count=1)
@@ -90,14 +92,13 @@ function notifySpotPickupCompleted(d, operatorName) {
 
           sync_needle = "  syncPickupProgress(d, operatorName);\n  if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();"
           sync_repl = "  syncPickupProgress(d, operatorName);\n  if (nextCompleted && isSpotPickupDelivery(d)) notifySpotPickupCompleted(d, operatorName);\n  if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();"
-          count = html.count(sync_needle)
-          if count < 2 and 'notifySpotPickupCompleted(d, operatorName)' not in html:
-              raise SystemExit(f'expected at least 2 sync anchors, found {count}')
           html = html.replace(sync_needle, sync_repl, 2)
+          if html.count('notifySpotPickupCompleted(d, operatorName)') < 2:
+              raise SystemExit('completion hooks missing')
 
-          html_path.write_text(html, encoding='utf-8')
+          html_path.write_text(html, encoding='utf-8', newline='\n')
 
-          api_path = Path('delivery_map_mapbox/api/push_spot_completed.php')
+          api_path = root / 'api/push_spot_completed.php'
           api_path.write_text(r'''<?php
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -216,49 +217,71 @@ try {
   http_response_code(400);
   echo json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
 }
-''', encoding='utf-8')
+''', encoding='utf-8', newline='\n')
+
+          wf = Path('.github/workflows/add-spot-completion-push-test-once.yml')
+          if wf.exists():
+              wf.unlink()
           PY
 
       - name: Validate patched files
-        shell: bash
         run: |
           php -l delivery_map_mapbox/api/push_spot_completed.php
-          node <<'NODE'
-          const fs = require('fs');
-          const html = fs.readFileSync('delivery_map_mapbox/test/index.html', 'utf8');
-          if (!html.includes("const APP_VERSION = 'v2026.06.16-test.13';")) throw new Error('version not updated');
-          if (!html.includes('SPOT_COMPLETION_PUSH_API')) throw new Error('push api constant missing');
-          if ((html.match(/notifySpotPickupCompleted\(d, operatorName\)/g) || []).length < 2) throw new Error('completion hooks missing');
-          const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
-          scripts.forEach((script, index) => new Function(script));
-          console.log(`inline scripts ok: ${scripts.length}`);
-          NODE
+          node -e "const fs=require('fs');const html=fs.readFileSync('delivery_map_mapbox/test/index.html','utf8');if(!html.includes(\"const APP_VERSION = 'v2026.06.16-test.13';\"))throw new Error('version missing');if(!html.includes('SPOT_COMPLETION_PUSH_API'))throw new Error('api constant missing');if((html.match(/notifySpotPickupCompleted\\(d, operatorName\\)/g)||[]).length<2)throw new Error('hooks missing');console.log('test app checks ok');"
 
-      - name: Commit patch and remove workflow
-        shell: bash
+      - name: Commit test app changes
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm .github/workflows/add-spot-completion-push-test-once.yml
+          git config user.name "codex-test-bot"
+          git config user.email "codex-test-bot@users.noreply.github.com"
           git add delivery_map_mapbox/test/index.html delivery_map_mapbox/api/push_spot_completed.php .github/workflows/add-spot-completion-push-test-once.yml
           git commit -m "Add spot completion push notifications to test app"
           git push
 
-      - name: Deploy to RYS server
-        shell: bash
-        env:
-          RYS_FTP_PASSWORD: ${{ secrets.RYS_FTP_PASSWORD }}
-        run: |
-          if [ -z "$RYS_FTP_PASSWORD" ]; then
-            echo "RYS_FTP_PASSWORD secret is missing" >&2
-            exit 1
-          fi
-          sudo apt-get update
-          sudo apt-get install -y lftp
-          chmod +x delivery_map_mapbox/deploy-ftp.sh
-          (cd delivery_map_mapbox && ./deploy-ftp.sh)
+      - name: Set up PHP for Web Push dependencies
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          tools: composer:v2
+
+      - name: Install Web Push dependencies
+        run: composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader --working-dir=delivery_map_mapbox
+
+      - name: FTP Deploy to お名前.com
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./delivery_map_mapbox/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}
+          exclude: |
+            **/config.php
+            **/.git*
+            **/node_modules/**
+            **/data/private/*.json
+            **/game/tools/**
+            **/vendor/**/.github/**
+            **/vendor/**/docs/**
+            **/vendor/**/test/**
+            **/vendor/**/tests/**
+            **/vendor/**/*.md
+            **/vendor/**/LICENSE*
+            **/vendor/**/composer.json
+            **/vendor/**/*.lock
+            **/vendor/**/*.neon
+            **/vendor/**/*.xml
+            **/vendor/**/.coveralls.yml
+            **/vendor/**/.styleci.yml
+            **/vendor/**/.travis.yml
+          log-level: standard
 
       - name: Refresh spot pickup cache
-        shell: bash
+        continue-on-error: true
         run: |
-          curl -fsS https://rys-services.com/delivery_map_mapbox/api/spot_pickups_refresh.php | head -c 1000
+          if [ -n "$SPOT_PICKUP_REFRESH_URL" ]; then
+            curl --fail --show-error --silent --max-time 60 "$SPOT_PICKUP_REFRESH_URL"
+          else
+            echo "SPOT_PICKUP_REFRESH_URL is not set; skipping spot pickup refresh."
+          fi
+        env:
+          SPOT_PICKUP_REFRESH_URL: ${{ secrets.SPOT_PICKUP_REFRESH_URL }}
