@@ -1338,7 +1338,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.16-test.15';
+const APP_VERSION = 'v2026.06.16-test.16';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1502,6 +1502,31 @@ function showLoading(msg) {
   $('loading').classList.add('show');
 }
 function hideLoading() { $('loading').classList.remove('show'); }
+
+function runWhenIdle(fn, timeout = 1200) {
+  if (window.requestIdleCallback) {
+    window.requestIdleCallback(fn, { timeout });
+  } else {
+    setTimeout(fn, Math.min(timeout, 1200));
+  }
+}
+
+function warmupAppCaches() {
+  runWhenIdle(() => {
+    try {
+      if (!addrData && localStorage.getItem(ADDR_DATA_KEY)) {
+        ensureAddressData({ showProgress: false }).catch(e => console.warn('address data warmup failed', e));
+      }
+      const selectedCourse = getSelectedPickupSheet();
+      const spotSheet = selectedCourse ? spotSheetForPickupCourse(selectedCourse) : '';
+      if (spotSheet) {
+        fetchPrefetchedSpotPickupItems(spotSheet).catch(e => console.warn('spot pickup warmup failed', e));
+      }
+    } catch (e) {
+      console.warn('cache warmup failed', e);
+    }
+  });
+}
 
 function openModal(id) { $(id).classList.add('show'); }
 function closeModal(id) { $(id).classList.remove('show'); }
@@ -2558,10 +2583,11 @@ function parseAddrSection(text, machiazaName, features) {
   }
 }
 
-async function ensureAddressData() {
+async function ensureAddressData(options = {}) {
   if (addrData) return addrData;
   if (addrLoading) return null;
 
+  const showProgress = options.showProgress !== false;
   addrLoading = true;
   try {
     try {
@@ -2575,9 +2601,9 @@ async function ensureAddressData() {
       }
     } catch (e) {}
 
-    showLoading('番地データを取得中...');
+    if (showProgress) showLoading('番地データを取得中...');
     const data = await fetchAddressData((c, t) => {
-      $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;
+      if (showProgress) $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;
     });
     addrData = data;
     try {
@@ -2591,7 +2617,7 @@ async function ensureAddressData() {
     return null;
   } finally {
     addrLoading = false;
-    hideLoading();
+    if (showProgress) hideLoading();
   }
 }
 
@@ -2603,13 +2629,14 @@ function addAddressLayer(data) {
     type: 'symbol',
     source: 'addr-points',
     minzoom: 17,
+    maxzoom: 19,
     layout: {
       'text-field': ['get', 'label'],
       'text-size': [
         'interpolate', ['linear'], ['zoom'],
         17, 9,
         18, 11,
-        20, 13
+        19, 12
       ],
       'text-allow-overlap': false,
       'text-padding': 2,
@@ -2750,6 +2777,8 @@ async function updateNextSegmentHighlight() {
 
 function removeAddressLayer() {
   if (!map) return;
+  if (map.getLayer('addr-points-label-dense')) map.removeLayer('addr-points-label-dense');
+  if (map.getLayer('addr-points-dot')) map.removeLayer('addr-points-dot');
   if (map.getLayer('addr-points-label')) map.removeLayer('addr-points-label');
   if (map.getSource('addr-points')) map.removeSource('addr-points');
 }
@@ -4159,6 +4188,63 @@ function closePhotoPreview() {
   resetPhotoPreviewState();
 }
 
+function normalizeOcrField(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u30fc\uff70]/g, '-')
+    .replace(/[\t\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeOcrAddressNumbering(value) {
+  return normalizeOcrField(value)
+    .replace(/(\d+)\s*\u4e01\u76ee/g, '$1-')
+    .replace(/(\d+)\s*\u756a\u5730?/g, '$1-')
+    .replace(/(\d+)\s*\u53f7/g, '$1')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/-\s*$/g, '')
+    .trim();
+}
+
+function splitOcrAddressFields(data) {
+  const source = data || {};
+  let address = normalizeOcrField(source.address || '');
+  const noteParts = [];
+  const sourceNote = normalizeOcrField(source.note || source.building || '');
+  if (sourceNote) noteParts.push(sourceNote);
+
+  address = address.replace(/\u3012?\s*(\d{3})\s*-?\s*(\d{4})/, () => '').trim();
+  address = normalizeOcrAddressNumbering(address);
+
+  const prefecture = '(?:\\u6771\\u4eac\\u90fd|\\u5317\\u6d77\\u9053|\\u5927\\u962a\\u5e9c|\\u4eac\\u90fd\\u5e9c|[\\u4e00-\\u9fff]{2,3}\\u770c)';
+  const corePattern = new RegExp('^\\s*((?:' + prefecture + ')?[\\s\\S]*?\\d+(?:-\\d+){0,3})([\\s\\S]*)$');
+  const match = address.match(corePattern);
+  if (match && match[1] && match[1].length >= 6) {
+    address = match[1].trim();
+    const rest = normalizeOcrField(match[2] || '');
+    if (rest) noteParts.unshift(rest);
+  }
+
+  const seen = new Set();
+  const note = noteParts
+    .map(normalizeOcrField)
+    .filter(Boolean)
+    .filter(part => {
+      const key = part.replace(/\s+/g, '').toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join('\n');
+
+  return {
+    address: address.trim(),
+    note
+  };
+}
+
 async function readPendingPhoto() {
   if (!pendingPhotoFile) return;
   const file = pendingPhotoFile;
@@ -4182,10 +4268,11 @@ async function readPendingPhoto() {
       showToast(data.error || '住所が読み取れませんでした', true);
       return;
     }
-    $('add-address').value = data.address || '';
-    $('add-note').value = data.note || data.building || '';
+    const ocrFields = splitOcrAddressFields(data);
+    $('add-address').value = ocrFields.address || data.address || '';
+    $('add-note').value = ocrFields.note || data.note || data.building || '';
     openModal('modal-add');
-    prefetchGeocodeAddress(data.address || '');
+    prefetchGeocodeAddress(ocrFields.address || data.address || '');
   } catch (e) {
     hideLoading();
     showToast('画像処理に失敗しました: ' + e.message, true);
@@ -6211,6 +6298,7 @@ document.addEventListener('visibilitychange', () => {
     ensureGpsWatching();
     updateGpsButton();
     hideLoading();
+    warmupAppCaches();
     initDeliverySync();
     restartDeliverySyncTimer();
     resetStalePickupCompletions()
@@ -6226,7 +6314,7 @@ document.addEventListener('visibilitychange', () => {
     }
 
     if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {
-      ensureAddressData().then(data => {
+      ensureAddressData({ showProgress: false }).then(data => {
         if (!data) return;
         addrVisible = true;
         addAddressLayer(data);
