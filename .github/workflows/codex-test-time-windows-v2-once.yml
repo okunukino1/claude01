@@ -1,0 +1,500 @@
+name: Codex test time windows v2 once
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/codex-test-time-windows-v2-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch test app
+        shell: bash
+        run: |
+          cat > /tmp/apply_time_windows.py <<'PY'
+          from pathlib import Path
+
+          path = Path('delivery_map_mapbox/test/index.html')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global text
+              if old not in text:
+                  raise SystemExit(f'missing target: {label}')
+              text = text.replace(old, new, 1)
+
+          replace_once("const APP_VERSION = 'v2026.06.16-test.17';", "const APP_VERSION = 'v2026.06.17-test.18';", 'version')
+
+          css_anchor = """  .item-info .note {
+            font-size: 11px;
+            color: var(--ink-soft);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-top: 2px;
+          }
+"""
+          css_block = css_anchor + """
+          .time-window-badge {
+            display: inline-block;
+            margin-top: 3px;
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: var(--time-window-color, #a855f7);
+            color: white;
+            font-size: 10px;
+            font-weight: 800;
+            line-height: 1.35;
+          }
+          .delivery-item.time-window:not(.done) .num-badge {
+            background: var(--time-window-color, #a855f7);
+            color: white;
+          }
+          .delivery-marker.time-window:not(.done) .delivery-pin .pin-shape {
+            background: var(--time-window-color, #a855f7);
+          }
+          .time-window-settings-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin: 8px 0 12px;
+            max-height: 45dvh;
+            overflow: auto;
+            padding-right: 2px;
+          }
+          .time-window-row {
+            border: 1.5px solid #d5cfbb;
+            border-radius: 8px;
+            padding: 10px;
+            background: #fffdf6;
+          }
+          .time-window-row-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+          }
+          .time-window-row-title {
+            font-size: 12px;
+            font-weight: 800;
+            color: var(--ink-soft);
+          }
+          .time-window-row-delete {
+            border: 1.5px solid var(--danger);
+            border-radius: 6px;
+            background: #fff;
+            color: var(--danger);
+            font-size: 12px;
+            font-weight: 800;
+            padding: 5px 8px;
+          }
+          .time-window-grid {
+            display: grid;
+            grid-template-columns: 1fr 72px;
+            gap: 8px;
+          }
+          .time-window-row input[type=color] {
+            width: 100%;
+            min-height: 42px;
+            padding: 2px;
+            border: 1.5px solid #c0bca8;
+            border-radius: 6px;
+            background: #fff;
+            margin-bottom: 12px;
+          }
+          .time-window-row textarea {
+            min-height: 46px;
+          }
+"""
+          replace_once(css_anchor, css_block, 'time window css')
+
+          replace_once('      <button id="menu-text-size" type="button">Aa 文字サイズ</button>', '      <button id="menu-time-windows" type="button">⏰ 時間指定設定</button>\n      <button id="menu-text-size" type="button">Aa 文字サイズ</button>', 'menu button')
+
+          modal_anchor = """<div class="modal-bg" id="modal-operator">
+"""
+          time_modal = """<div class="modal-bg" id="modal-time-windows">
+            <div class="modal">
+              <h3>時間指定設定</h3>
+              <div class="modal-help">
+                午前指定・14時〜16時など、荷物の備考や住所に含まれる文字から自動判定します。ここで時間帯名・判定キーワード・ピン色を変更できます。
+              </div>
+              <div id="time-window-settings-list" class="time-window-settings-list"></div>
+              <button class="inline-action" id="btn-time-window-add" type="button">+ 時間帯を追加</button>
+              <div class="modal-actions">
+                <button class="cancel" id="btn-time-window-reset" type="button">初期設定に戻す</button>
+                <button class="primary" id="btn-time-window-save" type="button">保存</button>
+              </div>
+              <div class="modal-actions">
+                <button class="cancel" type="button" data-close="modal-time-windows">閉じる</button>
+              </div>
+            </div>
+          </div>
+
+"""
+          replace_once(modal_anchor, time_modal + modal_anchor, 'time window modal')
+
+          replace_once('    <label>備考</label>\n    <textarea id="edit-note"></textarea>', '    <label>備考</label>\n    <textarea id="edit-note"></textarea>\n    <label>時間指定</label>\n    <select id="edit-time-window"></select>', 'edit time window select')
+
+          const_anchor = """const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+"""
+          const_block = const_anchor + """const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
+          const TIME_WINDOW_DEFAULTS = [
+            { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
+            { id: '14-16', label: '14時〜16時', keywords: '14時〜16時,14時～16時,14:00-16:00,14-16,14時から16時', color: '#a855f7' },
+            { id: '16-18', label: '16時〜18時', keywords: '16時〜18時,16時～18時,16:00-18:00,16-18,16時から18時', color: '#2563eb' },
+            { id: '18-20', label: '18時〜20時', keywords: '18時〜20時,18時～20時,18:00-20:00,18-20,18時から20時', color: '#16a34a' },
+            { id: '19-21', label: '19時〜21時', keywords: '19時〜21時,19時～21時,19:00-21:00,19-21,19時から21時', color: '#dc2626' }
+          ];
+"""
+          replace_once(const_anchor, const_block, 'time window constants')
+
+          util_anchor = """function escapeHtml(s) {
+            return String(s).replace(/[&<>\"']/g, c => ({
+              '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;'
+            }[c]));
+          }
+"""
+          util_block = util_anchor + """
+
+          function defaultTimeWindowSettings() {
+            return TIME_WINDOW_DEFAULTS.map(item => ({ ...item }));
+          }
+
+          function sanitizeTimeWindowColor(color) {
+            const value = String(color || '').trim();
+            return /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#a855f7';
+          }
+
+          function loadTimeWindowSettings() {
+            try {
+              const raw = localStorage.getItem(TIME_WINDOW_SETTINGS_KEY);
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                  const cleaned = parsed
+                    .map((item, idx) => ({
+                      id: String(item.id || `custom-${idx}`).trim(),
+                      label: String(item.label || '').trim(),
+                      keywords: String(item.keywords || '').trim(),
+                      color: sanitizeTimeWindowColor(item.color)
+                    }))
+                    .filter(item => item.id && item.label);
+                  if (cleaned.length > 0) return cleaned;
+                }
+              }
+            } catch (e) {
+              console.warn('time window settings load failed', e);
+            }
+            return defaultTimeWindowSettings();
+          }
+
+          function saveTimeWindowSettings(settings) {
+            localStorage.setItem(TIME_WINDOW_SETTINGS_KEY, JSON.stringify(settings));
+          }
+
+          function normalizeTimeWindowOverride(value) {
+            const id = String(value || '').trim();
+            if (!id) return '';
+            if (id === 'none') return 'none';
+            return loadTimeWindowSettings().some(item => item.id === id) ? id : '';
+          }
+
+          function timeWindowKeywords(setting) {
+            return String(setting.keywords || setting.label || '')
+              .split(/[、,\n]/)
+              .map(s => s.trim())
+              .filter(Boolean);
+          }
+
+          function normalizeTimeWindowText(text) {
+            return String(text || '')
+              .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+              .replace(/[〜～−ー－―]/g, '-')
+              .replace(/\s+/g, '')
+              .toLowerCase();
+          }
+
+          function timeWindowSearchText(d) {
+            const parts = [d && d.address, d && d.note, d && d.formatted, d && d.company, d && d.name, d && d.pickupTime, d && d.timeText];
+            if (isPickupBackedDelivery(d)) {
+              const display = pickupListDisplay(d);
+              if (display) parts.push(display.company, display.detail);
+            }
+            return parts.filter(Boolean).join(' ');
+          }
+
+          function timeWindowMatches(setting, text) {
+            const haystack = normalizeTimeWindowText(text);
+            return timeWindowKeywords(setting).some(keyword => {
+              const needle = normalizeTimeWindowText(keyword);
+              return needle && haystack.includes(needle);
+            });
+          }
+
+          function timeWindowForDelivery(d) {
+            if (!d) return null;
+            const settings = loadTimeWindowSettings();
+            const override = normalizeTimeWindowOverride(d.timeWindowId);
+            if (override === 'none') return null;
+            if (override) return settings.find(item => item.id === override) || null;
+            const searchText = timeWindowSearchText(d);
+            return settings.find(item => timeWindowMatches(item, searchText)) || null;
+          }
+
+          function timeWindowSelectOptions(selectedId) {
+            const selected = normalizeTimeWindowOverride(selectedId);
+            const settings = loadTimeWindowSettings();
+            const options = [
+              `<option value=""${selected === '' ? ' selected' : ''}>自動判定</option>`,
+              `<option value="none"${selected === 'none' ? ' selected' : ''}>指定なし</option>`
+            ];
+            settings.forEach(item => {
+              options.push(`<option value="${escapeHtml(item.id)}"${selected === item.id ? ' selected' : ''}>${escapeHtml(item.label)}</option>`);
+            });
+            return options.join('');
+          }
+
+          function populateTimeWindowSelect(select, selectedId) {
+            if (!select) return;
+            select.innerHTML = timeWindowSelectOptions(selectedId);
+          }
+
+          function renderTimeWindowSettings() {
+            const list = $('time-window-settings-list');
+            if (!list) return;
+            const settings = loadTimeWindowSettings();
+            list.innerHTML = settings.map((item, idx) => `
+              <div class="time-window-row" data-id="${escapeHtml(item.id)}">
+                <div class="time-window-row-head">
+                  <div class="time-window-row-title">時間帯 ${idx + 1}</div>
+                  <button class="time-window-row-delete" type="button" data-action="delete-time-window">削除</button>
+                </div>
+                <div class="time-window-grid">
+                  <div>
+                    <label>表示名</label>
+                    <input type="text" data-field="label" value="${escapeHtml(item.label)}" placeholder="例: 14時〜16時">
+                  </div>
+                  <div>
+                    <label>ピン色</label>
+                    <input type="color" data-field="color" value="${escapeHtml(sanitizeTimeWindowColor(item.color))}">
+                  </div>
+                </div>
+                <label>判定キーワード（カンマ区切り）</label>
+                <textarea data-field="keywords" placeholder="例: 14時〜16時,14-16,14:00-16:00">${escapeHtml(item.keywords || '')}</textarea>
+              </div>
+            `).join('');
+          }
+
+          function collectTimeWindowSettingsFromForm() {
+            const rows = Array.from(document.querySelectorAll('#time-window-settings-list .time-window-row'));
+            return rows.map((row, idx) => {
+              const label = row.querySelector('[data-field="label"]')?.value.trim() || '';
+              const keywords = row.querySelector('[data-field="keywords"]')?.value.trim() || label;
+              const color = sanitizeTimeWindowColor(row.querySelector('[data-field="color"]')?.value);
+              const id = row.dataset.id || `custom-${Date.now().toString(36)}-${idx}`;
+              return { id, label, keywords, color };
+            }).filter(item => item.label);
+          }
+
+          function openTimeWindowSettings() {
+            closeModal('modal-menu');
+            renderTimeWindowSettings();
+            openModal('modal-time-windows');
+          }
+
+          function addTimeWindowSettingRow() {
+            const settings = collectTimeWindowSettingsFromForm();
+            settings.push({ id: `custom-${Date.now().toString(36)}`, label: '新しい時間指定', keywords: '', color: '#a855f7' });
+            saveTimeWindowSettings(settings);
+            renderTimeWindowSettings();
+          }
+
+          function saveTimeWindowSettingsFromModal() {
+            const settings = collectTimeWindowSettingsFromForm();
+            if (settings.length === 0) {
+              showToast('時間指定を1つ以上設定してください', true);
+              return;
+            }
+            saveTimeWindowSettings(settings);
+            renderMarkers();
+            renderList();
+            closeModal('modal-time-windows');
+            showToast('時間指定設定を保存しました');
+          }
+
+          function resetTimeWindowSettings() {
+            showConfirm('時間指定設定を初期化', '時間指定の設定を初期状態に戻しますか？', () => {
+              saveTimeWindowSettings(defaultTimeWindowSettings());
+              renderTimeWindowSettings();
+              renderMarkers();
+              renderList();
+              showToast('時間指定設定を初期化しました');
+            });
+          }
+"""
+          replace_once(util_anchor, util_block, 'time window functions')
+
+          marker_old = """  wrapper.classList.toggle('approx', !!d.approx);
+            wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
+            wrapper.style.zIndex = String(markerZIndex(d, idx));
+
+            // 中身に影響する値が前回 render と同じなら DOM 再構築をスキップ（差分更新）
+            const labelText = buildLabelText(d, num, modeKey);
+            const overlapCount = overlap && overlap.index === 0 ? overlap.count : 0;
+            const contentSig = `${num}|${d.approx ? 1 : 0}|${labelText}|${overlapCount}`;
+"""
+          marker_new = """  wrapper.classList.toggle('approx', !!d.approx);
+            wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
+            const timeWindow = timeWindowForDelivery(d);
+            wrapper.classList.toggle('time-window', !!timeWindow);
+            if (timeWindow) wrapper.style.setProperty('--time-window-color', timeWindow.color);
+            else wrapper.style.removeProperty('--time-window-color');
+            wrapper.style.zIndex = String(markerZIndex(d, idx));
+
+            // 中身に影響する値が前回 render と同じなら DOM 再構築をスキップ（差分更新）
+            const labelText = buildLabelText(d, num, modeKey);
+            const overlapCount = overlap && overlap.index === 0 ? overlap.count : 0;
+            const timeWindowSig = timeWindow ? `${timeWindow.id}:${timeWindow.color}` : '';
+            const contentSig = `${num}|${d.approx ? 1 : 0}|${labelText}|${overlapCount}|${timeWindowSig}`;
+"""
+          replace_once(marker_old, marker_new, 'marker time window')
+
+          list_old = """    const pickupDisplay = isPickupBackedDelivery(d) ? pickupListDisplay(d) : null;
+            return `
+              <div class="${cls}" data-id="${d.id}">
+                <div class="num-badge">${escapeHtml(num)}${d.approx ? '?' : ''}</div>
+"""
+          list_new = """    const pickupDisplay = isPickupBackedDelivery(d) ? pickupListDisplay(d) : null;
+            const timeWindow = timeWindowForDelivery(d);
+            const timeWindowClass = timeWindow ? ' time-window' : '';
+            const timeWindowStyle = timeWindow ? ` style="--time-window-color:${escapeHtml(timeWindow.color)}"` : '';
+            const timeWindowBadge = timeWindow ? `<div><span class="time-window-badge">${escapeHtml(timeWindow.label)}</span></div>` : '';
+            return `
+              <div class="${cls}${timeWindowClass}" data-id="${d.id}"${timeWindowStyle}>
+                <div class="num-badge">${escapeHtml(num)}${d.approx ? '?' : ''}</div>
+"""
+          replace_once(list_old, list_new, 'list time window vars')
+
+          replace_once("""          ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
+""", """          ${timeWindowBadge}
+                  ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
+""", 'list time window badge')
+
+          replace_once("""  $('edit-address').value = d.address;
+            $('edit-note').value = d.note || '';
+""", """  $('edit-address').value = d.address;
+            $('edit-note').value = d.note || '';
+            populateTimeWindowSelect($('edit-time-window'), d.timeWindowId || '');
+""", 'open edit select')
+
+          replace_once("""  const newAddr = $('edit-address').value.trim();
+            const newNote = $('edit-note').value.trim();
+""", """  const newAddr = $('edit-address').value.trim();
+            const newNote = $('edit-note').value.trim();
+            const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
+""", 'regeocode read time window')
+
+          replace_once("""    formatted: d.formatted
+            };
+""", """    formatted: d.formatted,
+              timeWindowId: d.timeWindowId
+            };
+""", 'regeocode before time window')
+
+          replace_once("""  d.address = newAddr;
+            d.note = newNote;
+            d.lat = result.lat;
+""", """  d.address = newAddr;
+            d.note = newNote;
+            d.timeWindowId = newTimeWindowId;
+            d.lat = result.lat;
+""", 'regeocode save time window')
+
+          replace_once("""    d.formatted = before.formatted;
+""", """    d.formatted = before.formatted;
+                d.timeWindowId = before.timeWindowId;
+""", 'regeocode rollback time window')
+
+          replace_once("""  const newAddr = $('edit-address').value.trim();
+            const newNote = $('edit-note').value.trim();
+""", """  const newAddr = $('edit-address').value.trim();
+            const newNote = $('edit-note').value.trim();
+            const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
+""", 'save read time window')
+
+          replace_once("""    formatted: d.formatted
+            };
+            d.note = newNote;
+""", """    formatted: d.formatted,
+              timeWindowId: d.timeWindowId
+            };
+            d.note = newNote;
+            d.timeWindowId = newTimeWindowId;
+""", 'save before/apply time window')
+
+          replace_once("""    d.formatted = before.formatted;
+            saveDeliveries();
+""", """    d.formatted = before.formatted;
+                d.timeWindowId = before.timeWindowId;
+                saveDeliveries();
+""", 'save rollback time window')
+
+          event_anchor = """$('btn-notification-install').addEventListener('click', installPushApp);
+"""
+          event_block = event_anchor + """$('menu-time-windows').addEventListener('click', openTimeWindowSettings);
+          $('btn-time-window-add').addEventListener('click', addTimeWindowSettingRow);
+          $('btn-time-window-save').addEventListener('click', saveTimeWindowSettingsFromModal);
+          $('btn-time-window-reset').addEventListener('click', resetTimeWindowSettings);
+          $('time-window-settings-list').addEventListener('click', event => {
+            const button = event.target.closest('[data-action="delete-time-window"]');
+            if (!button) return;
+            button.closest('.time-window-row')?.remove();
+          });
+"""
+          replace_once(event_anchor, event_block, 'time window events')
+
+          checks = [
+              'v2026.06.17-test.18',
+              'menu-time-windows',
+              'modal-time-windows',
+              'timeWindowForDelivery',
+              'edit-time-window',
+              'time-window-badge',
+              'rys-mapbox-test-time-window-settings-v1'
+          ]
+          missing = [item for item in checks if item not in text]
+          if missing:
+              raise SystemExit('missing expected tokens: ' + ', '.join(missing))
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          python /tmp/apply_time_windows.py
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('delivery_map_mapbox/test/index.html').read_text(encoding='utf-8')
+          m = re.search(r"<script>\s*'use strict';([\s\S]*)</script>\s*</body>", html)
+          if not m:
+              raise SystemExit('script block not found')
+          Path('/tmp/test-index.js').write_text("'use strict';\n" + m.group(1), encoding='utf-8')
+          PY
+          node --check /tmp/test-index.js
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "codex-bot"
+          git config user.email "codex-bot@users.noreply.github.com"
+          git add delivery_map_mapbox/test/index.html
+          git commit -m "Add time window settings to test app"
+          git rm .github/workflows/codex-test-time-windows-v2-once.yml
+          git commit -m "Remove time window one-off workflow"
+          git push
