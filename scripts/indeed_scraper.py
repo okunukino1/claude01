@@ -106,13 +106,25 @@ async def scrape_indeed(target_date) -> tuple[list, list]:
     captured_api = []
 
     async with async_playwright() as p:
-        # 保存済みブラウザプロファイルを使用（ログイン状態を引き継ぐ）
-        ctx = await p.chromium.launch_persistent_context(
-            user_data_dir=PROFILE_DIR,
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
-            viewport={"width": 1280, "height": 900},
-        )
+        # ログイン時と同じブラウザを使用
+        ctx = None
+        for channel in ["chrome", "msedge", None]:
+            try:
+                kwargs = dict(
+                    user_data_dir=PROFILE_DIR,
+                    headless=True,
+                    args=["--no-sandbox", "--disable-dev-shm-usage"],
+                    viewport={"width": 1280, "height": 900},
+                )
+                if channel:
+                    kwargs["channel"] = channel
+                ctx = await p.chromium.launch_persistent_context(**kwargs)
+                print(f"Browser: {channel or 'chromium'}")
+                break
+            except Exception:
+                continue
+        if ctx is None:
+            raise RuntimeError("ブラウザが起動できませんでした")
         page = await ctx.new_page()
 
         # API レスポンスをキャプチャ
