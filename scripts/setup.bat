@@ -1,22 +1,22 @@
 @echo off
-chcp 65001 > nul
 echo =========================================
-echo  Indeed スクレイパー セットアップ
+echo  Indeed Scraper Setup
 echo =========================================
 echo.
-echo Pythonライブラリをインストールしています...
+echo Installing Python libraries...
 pip install playwright gspread google-auth python-dotenv
 echo.
-echo Chromiumブラウザをインストールしています...
+echo Installing Chromium browser...
 playwright install chromium
 echo.
 echo =========================================
-echo  セットアップ完了！
+echo  Setup complete!
 echo =========================================
 echo.
-echo 次にやること：
-echo 1. このフォルダに service_account.json を置く
-echo 2. config.env をメモ帳で開いてメール・パスワードを入力する
-echo 3. run.bat をダブルクリックしてテスト実行する
+echo Next steps:
+echo 1. Put service_account.json in this folder
+echo 2. Edit config.env with your email and password
+echo 3. Run login_setup.bat to save your session
+echo 4. Run run.bat to test
 echo.
 pause
