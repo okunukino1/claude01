@@ -98,20 +98,19 @@ def detect_column_order(headers: list[str]) -> dict[str, int]:
     return order
 
 
+PROFILE_DIR = str(Path(__file__).parent / "browser_profile")
+
+
 async def scrape_indeed(target_date) -> tuple[list, list]:
-    """Indeedにログインしてアナリティクスデータを取得する。"""
+    """保存済みセッションを使ってIndeedアナリティクスデータを取得する。"""
     captured_api = []
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
+        # 保存済みブラウザプロファイルを使用（ログイン状態を引き継ぐ）
+        ctx = await p.chromium.launch_persistent_context(
+            user_data_dir=PROFILE_DIR,
             headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"],
-        )
-        ctx = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            ),
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
             viewport={"width": 1280, "height": 900},
         )
         page = await ctx.new_page()
@@ -129,56 +128,19 @@ async def scrape_indeed(target_date) -> tuple[list, list]:
 
         page.on("response", on_response)
 
-        # ── ログイン ────────────────────────────────────────────────────────────
+        # ── アクセス（セッション再利用のためログイン不要） ─────────────────────
         print("Indeedにアクセス中...")
         await page.goto("https://employers.indeed.com/", wait_until="networkidle", timeout=30000)
-        await page.screenshot(path="debug_01_top.png")
-        print(f"トップページURL: {page.url}")
+        print(f"現在のURL: {page.url}")
 
-        # ログインページへ移動
-        await page.goto("https://employers.indeed.com/p/login", wait_until="networkidle", timeout=30000)
-        await page.wait_for_timeout(2000)
-        await page.screenshot(path="debug_02_login.png")
-        print(f"ログインページURL: {page.url}")
-
-        # ページのHTML（input要素）をデバッグ出力
-        inputs = await page.evaluate("() => Array.from(document.querySelectorAll('input')).map(i => ({type: i.type, name: i.name, id: i.id, placeholder: i.placeholder}))")
-        print(f"Input要素一覧: {inputs}")
-
-        # メールアドレス入力（広いセレクターで対応）
-        try:
-            await page.wait_for_selector("input", timeout=15000)
-            email_input = page.locator(
-                'input[type="email"], input[name="email"], input[name="__email"], '
-                'input[autocomplete="email"], input[autocomplete="username"]'
-            ).first
-            await email_input.fill(INDEED_EMAIL, timeout=15000)
-            print("メールアドレス入力完了")
-        except Exception as e:
-            html = await page.content()
-            with open("debug_login_page.html", "w", encoding="utf-8") as f:
-                f.write(html)
-            raise RuntimeError(f"メール入力フィールドが見つかりません: {e}")
-
-        await page.wait_for_timeout(500)
-
-        # パスワードが同一ページにある場合（シングルステップ）
-        pw_visible = await page.locator('input[type="password"]').count()
-        if pw_visible == 0:
-            # マルチステップ：メール送信 → パスワードページ
-            await page.keyboard.press("Enter")
-            await page.wait_for_timeout(2000)
-            await page.screenshot(path="debug_03_after_email.png")
-
-        await page.locator('input[type="password"]').first.fill(INDEED_PASSWORD, timeout=15000)
-        await page.wait_for_timeout(500)
-        await page.locator('button[type="submit"]').last.click()
-        await page.wait_for_load_state("networkidle", timeout=30000)
-        await page.screenshot(path="debug_04_after_login.png")
-
-        if "login" in page.url.lower() or "signin" in page.url.lower():
-            await page.screenshot(path="debug_login_failed.png")
-            raise RuntimeError(f"ログイン失敗。URL: {page.url}")
+        # ログインページにリダイレクトされた場合はセッション切れ
+        if "login" in page.url.lower() or "signin" in page.url.lower() or "cloudflare" in (await page.title()).lower():
+            await page.screenshot(path="debug_session_expired.png")
+            await ctx.close()
+            raise RuntimeError(
+                "セッションが切れています。\n"
+                "login_setup.bat を実行して再ログインしてください。"
+            )
 
         print(f"ログイン成功: {page.url}")
 
