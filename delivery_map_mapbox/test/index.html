@@ -1431,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.18-test.19';
+const APP_VERSION = 'v2026.06.19-test.20';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1571,6 +1571,8 @@ let pendingPhotoRotation = 0;
 let gpsWatchId = null;
 let gpsActive = false;
 let gpsAutoFollow = false;
+let gpsInitialCenterPending = true;
+let gpsInitialCenterStartedAt = 0;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
 let gsiOverlayVisible = localStorage.getItem(GSI_OVERLAY_KEY) !== '0';
 let listSearchQuery = '';
@@ -2526,6 +2528,9 @@ function initMap() {
       customAttribution: '番地データ: <a href="https://github.com/geolonia/japanese-addresses-v2" target="_blank">Geolonia</a> / アドレス・ベース・レジストリ'
     }
   });
+  map.on('dragstart', () => { gpsInitialCenterPending = false; });
+  map.on('rotatestart', () => { gpsInitialCenterPending = false; });
+  map.on('pitchstart', () => { gpsInitialCenterPending = false; });
   map.on('rotate', () => {
     const bearing = map.getBearing();
     const pitch = map.getPitch();
@@ -6446,7 +6451,11 @@ function updateUserLocation(pos, moveMap = false) {
 
   updateGpsStatus(pos);
 
-  if (moveMap) {
+  const startupCenterAllowed = gpsInitialCenterStartedAt &&
+    Date.now() - gpsInitialCenterStartedAt <= 60000;
+  const shouldMoveMap = moveMap || (gpsInitialCenterPending && startupCenterAllowed);
+  if (shouldMoveMap) {
+    gpsInitialCenterPending = false;
     map.easeTo({ center: lngLat, zoom: Math.max(map.getZoom(), 17), duration: 600 });
   }
 }
@@ -6456,6 +6465,7 @@ function ensureGpsWatching() {
   if (gpsActive && gpsWatchId !== null) return true;
 
   gpsActive = true;
+  if (!gpsInitialCenterStartedAt) gpsInitialCenterStartedAt = Date.now();
   gpsWatchId = navigator.geolocation.watchPosition(
     (pos) => { updateUserLocation(pos, gpsAutoFollow); },
     (err) => {
@@ -6481,6 +6491,7 @@ function toggleGpsTracking() {
   if (!gpsActive) {
     if (!ensureGpsWatching()) return;
     gpsAutoFollow = true;
+    gpsInitialCenterPending = false;
     updateGpsButton();
     showToast('GPSをONにしました(地図が現在地に追従します)');
     return;
