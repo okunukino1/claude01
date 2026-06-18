@@ -1431,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.19-test.20';
+const APP_VERSION = 'v2026.06.19-test.21';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2916,24 +2916,25 @@ function addAddressLayer(data) {
     type: 'symbol',
     source: 'addr-points',
     minzoom: 17,
-    maxzoom: 19,
+    maxzoom: 22,
     layout: {
       'text-field': ['get', 'label'],
       'text-size': [
         'interpolate', ['linear'], ['zoom'],
-        17, 9,
-        18, 11,
-        19, 12
+        17, 11,
+        18, 14,
+        19, 17,
+        20.5, 19
       ],
       'text-allow-overlap': false,
-      'text-padding': 2,
+      'text-padding': 1,
       'text-anchor': 'center',
       'symbol-sort-key': ['length', ['get', 'label']]
     },
     paint: {
-      'text-color': '#1f3a5f',
-      'text-halo-color': 'rgba(255,255,255,0.95)',
-      'text-halo-width': 1.5
+      'text-color': '#0f172a',
+      'text-halo-color': 'rgba(255,255,255,0.98)',
+      'text-halo-width': 2.2
     }
   });
 }
