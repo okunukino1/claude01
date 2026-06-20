@@ -1431,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.19-test.22';
+const APP_VERSION = 'v2026.06.20-test.23';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -3975,7 +3975,22 @@ async function addDelivery({ address, note }) {
   showToast(result.sharedCache ? '保存済み位置から追加しました' : (result.approx ? '⚠ 概算位置で追加しました' : '配送先を追加しました'));
 }
 
+function regularPickupDisplayAddress(address) {
+  return String(address || '')
+    .replace(/^\s*\u3012?\s*\d{3}[-\u2010-\u2015]?\d{4}\s*/, '')
+    .replace(/^\s*(?:\u6771\u4eac\u90fd\s*)?\u4e2d\u592e\u533a\s*/, '')
+    .trim();
+}
+
+function pickupDisplayAddress(d) {
+  const raw = String(d && d.address || '').trim();
+  if (!raw) return '';
+  if (isRegularPickupBackedDelivery(d)) return regularPickupDisplayAddress(raw) || raw;
+  return raw;
+}
+
 function pickupListDisplay(d) {
+  const displayAddress = pickupDisplayAddress(d);
   const noteLines = String(d.note || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   const storedCompany = String(d.pickupCompany || d.spotPickupCompany || '').trim();
   const possibleCompany = noteLines[0] && !/^(時間|希望時間帯|連絡|登録電話番号|スポット集荷)[:：]?/.test(noteLines[0])
@@ -3984,8 +3999,8 @@ function pickupListDisplay(d) {
   const company = storedCompany || possibleCompany;
   const details = noteLines.slice(company && noteLines[0] === company ? 1 : 0);
   return {
-    company: company || d.address,
-    detail: (company ? [d.address, ...details] : details).filter(Boolean).join(' / ')
+    company: company || displayAddress || d.address,
+    detail: (company ? [displayAddress || d.address, ...details] : details).filter(Boolean).join(' / ')
   };
 }
 
