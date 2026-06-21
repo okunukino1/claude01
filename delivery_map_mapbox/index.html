@@ -1431,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-1';
+const APP_VERSION = 'v2026.06.22-2';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -1470,6 +1470,7 @@ const PICKUP_GEOCODE_CONCURRENCY = 3;
 const PHOTO_OCR_MAX_SIZE = 1120;
 const PHOTO_OCR_QUALITY = 0.8;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+const MARKER_TAP_SELECT_DELAY_MS = 420;
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-time-window-settings-v1';
 const TIME_WINDOW_DEFAULTS = [
   { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
@@ -1539,6 +1540,8 @@ let deliveries = [];
 let lastVisibleDeliveries = [];
 let markers = new Map();
 let activeDeliveryId = null;
+let pendingMarkerTapSelect = null;
+let suppressMarkerTapSelectUntil = 0;
 let userMarker = null;
 let userMarkerEl = null;
 let placingItemId = null;
@@ -2528,9 +2531,11 @@ function initMap() {
       customAttribution: '番地データ: <a href="https://github.com/geolonia/japanese-addresses-v2" target="_blank">Geolonia</a> / アドレス・ベース・レジストリ'
     }
   });
-  map.on('dragstart', () => { gpsInitialCenterPending = false; });
-  map.on('rotatestart', () => { gpsInitialCenterPending = false; });
-  map.on('pitchstart', () => { gpsInitialCenterPending = false; });
+  map.on('dragstart', () => { gpsInitialCenterPending = false; clearPendingMarkerTapSelect(); });
+  map.on('zoomstart', () => clearPendingMarkerTapSelect(700));
+  map.on('dblclick', () => clearPendingMarkerTapSelect(700));
+  map.on('rotatestart', () => { gpsInitialCenterPending = false; clearPendingMarkerTapSelect(); });
+  map.on('pitchstart', () => { gpsInitialCenterPending = false; clearPendingMarkerTapSelect(); });
   map.on('rotate', () => {
     const bearing = map.getBearing();
     const pitch = map.getPitch();
@@ -3318,47 +3323,50 @@ function openDeliveryMarkerDetails(id) {
   openEdit(id);
 }
 
+function clearPendingMarkerTapSelect(suppressMs = 0) {
+  if (pendingMarkerTapSelect && pendingMarkerTapSelect.timer) {
+    clearTimeout(pendingMarkerTapSelect.timer);
+  }
+  pendingMarkerTapSelect = null;
+  if (suppressMs > 0) suppressMarkerTapSelectUntil = Date.now() + suppressMs;
+}
+
+function scheduleMarkerTapSelect(id) {
+  clearPendingMarkerTapSelect();
+  const pending = { id, startedAt: Date.now(), timer: null };
+  pending.timer = setTimeout(() => {
+    if (pendingMarkerTapSelect !== pending) return;
+    pendingMarkerTapSelect = null;
+    if (Date.now() < suppressMarkerTapSelectUntil) return;
+    openDeliveryMarkerDetails(id);
+  }, MARKER_TAP_SELECT_DELAY_MS);
+  pendingMarkerTapSelect = pending;
+}
+
 function createDeliveryMarker(d) {
   const wrapper = document.createElement('div');
-  let longPressTimer = null;
-  let longPressStart = null;
-  let suppressClickUntil = 0;
-  const clearLongPressTimer = () => {
-    if (longPressTimer) clearTimeout(longPressTimer);
-    longPressTimer = null;
-    longPressStart = null;
-  };
 
   wrapper.addEventListener('pointerdown', (e) => {
     if (e.button != null && e.button !== 0) return;
-    clearLongPressTimer();
-    longPressStart = { x: e.clientX, y: e.clientY };
-    longPressTimer = setTimeout(() => {
-      longPressTimer = null;
-      longPressStart = null;
-      suppressClickUntil = Date.now() + 800;
-      e.preventDefault();
-      e.stopPropagation();
-      openDeliveryMarkerDetails(d.id);
-    }, 550);
-  });
-
-  wrapper.addEventListener('pointermove', (e) => {
-    if (!longPressStart) return;
-    const dx = e.clientX - longPressStart.x;
-    const dy = e.clientY - longPressStart.y;
-    if ((dx * dx) + (dy * dy) > 100) clearLongPressTimer();
-  });
-  wrapper.addEventListener('pointerup', clearLongPressTimer);
-  wrapper.addEventListener('pointercancel', clearLongPressTimer);
-  wrapper.addEventListener('pointerleave', clearLongPressTimer);
-  wrapper.addEventListener('contextmenu', (e) => e.preventDefault());
-  wrapper.addEventListener('click', (e) => {
-    if (Date.now() < suppressClickUntil) {
-      e.preventDefault();
-      e.stopPropagation();
+    const now = Date.now();
+    if (pendingMarkerTapSelect && now - pendingMarkerTapSelect.startedAt <= MARKER_TAP_SELECT_DELAY_MS + 280) {
+      clearPendingMarkerTapSelect(700);
     }
   });
+
+  wrapper.addEventListener('click', (e) => {
+    if (e.button != null && e.button !== 0) return;
+    if (Date.now() < suppressMarkerTapSelectUntil) return;
+    if (e.detail && e.detail >= 2) {
+      clearPendingMarkerTapSelect(700);
+      return;
+    }
+    scheduleMarkerTapSelect(d.id);
+  });
+
+  wrapper.addEventListener('dblclick', () => clearPendingMarkerTapSelect(700));
+  wrapper.addEventListener('pointercancel', () => clearPendingMarkerTapSelect(300));
+  wrapper.addEventListener('contextmenu', (e) => e.preventDefault());
 
   return new mapboxgl.Marker({
     element: wrapper,
