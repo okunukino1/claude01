@@ -7,9 +7,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#ff5722">
 <title>RYS配送マップ</title>
-<link rel="manifest" href="manifest.webmanifest?v=20260616-2">
-<link rel="icon" href="app-icon-192.png?v=20260616-2" type="image/png">
-<link rel="apple-touch-icon" href="app-icon-512.png?v=20260616-2">
+<link rel="manifest" href="manifest.webmanifest?v=20260622-1">
+<link rel="icon" href="app-icon-192.png?v=20260622-1" type="image/png">
+<link rel="apple-touch-icon" href="app-icon-512.png?v=20260622-1">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
 <style>
   :root {
@@ -496,6 +496,78 @@
     white-space: nowrap;
     margin-top: 2px;
   }
+
+.time-window-badge {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--time-window-color, #a855f7);
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.delivery-item.time-window:not(.done) .num-badge {
+  background: var(--time-window-color, #a855f7);
+  color: white;
+}
+.delivery-marker.time-window:not(.done) .delivery-pin .pin-shape {
+  background: var(--time-window-color, #a855f7);
+}
+.time-window-settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 12px;
+  max-height: 45dvh;
+  overflow: auto;
+  padding-right: 2px;
+}
+.time-window-row {
+  border: 1.5px solid #d5cfbb;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fffdf6;
+}
+.time-window-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.time-window-row-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+.time-window-row-delete {
+  border: 1.5px solid var(--danger);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 8px;
+}
+.time-window-grid {
+  display: grid;
+  grid-template-columns: 1fr 72px;
+  gap: 8px;
+}
+.time-window-row input[type=color] {
+  width: 100%;
+  min-height: 42px;
+  padding: 2px;
+  border: 1.5px solid #c0bca8;
+  border-radius: 6px;
+  background: #fff;
+  margin-bottom: 12px;
+}
+.time-window-row textarea {
+  min-height: 46px;
+}
   .item-actions {
     display: flex;
     gap: 2px;
@@ -1019,7 +1091,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="app-version" id="app-version-label">v2026.06.16-2</span></h1>
+  <h1>RYS配送マップ<span class="app-version" id="app-version-label">v2026.06.10-test.4</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1066,7 +1138,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.16-2</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.12-test.3</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1087,6 +1159,7 @@
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
       <button id="menu-toggle-gsi" type="button">🗺 番地ライン(地理院) ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
+      <button id="menu-time-windows" type="button">⏰ 時間指定設定</button>
       <button id="menu-text-size" type="button">Aa 文字サイズ</button>
       <button id="menu-notifications" type="button">🔔 通知設定</button>
       <button id="menu-reload-app" type="button">🔄 アプリを更新</button>
@@ -1197,6 +1270,24 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-time-windows">
+  <div class="modal">
+    <h3>時間指定設定</h3>
+    <div class="modal-help">
+      午前指定・14時〜16時など、荷物の備考や住所に含まれる文字から自動判定します。ここで時間帯名・判定キーワード・ピン色を変更できます。
+    </div>
+    <div id="time-window-settings-list" class="time-window-settings-list"></div>
+    <button class="inline-action" id="btn-time-window-add" type="button">+ 時間帯を追加</button>
+    <div class="modal-actions">
+      <button class="cancel" id="btn-time-window-reset" type="button">初期設定に戻す</button>
+      <button class="primary" id="btn-time-window-save" type="button">保存</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-time-windows">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-operator">
   <div class="modal">
     <h3>担当者名を設定</h3>
@@ -1295,6 +1386,8 @@
     <button class="inline-action" id="btn-edit-geocode" type="button">住所再検索</button>
     <label>備考</label>
     <textarea id="edit-note"></textarea>
+    <label>時間指定</label>
+    <select id="edit-time-window"></select>
     <div class="modal-actions">
       <button class="done" id="btn-edit-done" type="button">完了</button>
       <button class="go" id="btn-edit-navi" type="button">ナビ</button>
@@ -1338,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.16-3';
+const APP_VERSION = 'v2026.06.22-1';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
@@ -1364,6 +1457,7 @@ const GEOCODE_CACHE_KEY = 'rys-mapbox-geocode-cache-v1';
 const GEOCODE_CACHE_ADMIN_PIN_KEY = 'rys-mapbox-geocode-cache-admin-pin-v1';
 const DELIVERY_SYNC_CODE_KEY = 'rys-mapbox-delivery-sync-code-v1';
 const DELIVERY_SYNC_DEVICE_ID_KEY = 'rys-mapbox-delivery-sync-device-id-v1';
+const DELIVERY_SYNC_DIRTY_KEY = 'rys-mapbox-delivery-sync-dirty-v1';
 const DELIVERY_SYNC_INTERVAL_MS = 10000;
 const DELIVERY_SYNC_PUSH_DEBOUNCE_MS = 3000;
 const DELIVERY_SYNC_API = 'api/delivery_sync.php';
@@ -1376,6 +1470,14 @@ const PICKUP_GEOCODE_CONCURRENCY = 3;
 const PHOTO_OCR_MAX_SIZE = 1120;
 const PHOTO_OCR_QUALITY = 0.8;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-time-window-settings-v1';
+const TIME_WINDOW_DEFAULTS = [
+  { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
+  { id: '14-16', label: '14時〜16時', keywords: '14時〜16時,14時～16時,14:00-16:00,14-16,14時から16時', color: '#a855f7' },
+  { id: '16-18', label: '16時〜18時', keywords: '16時〜18時,16時～18時,16:00-18:00,16-18,16時から18時', color: '#2563eb' },
+  { id: '18-20', label: '18時〜20時', keywords: '18時〜20時,18時～20時,18:00-20:00,18-20,18時から20時', color: '#16a34a' },
+  { id: '19-21', label: '19時〜21時', keywords: '19時〜21時,19時～21時,19:00-21:00,19-21,19時から21時', color: '#dc2626' }
+];
 const TEXT_SIZE_OPTIONS = {
   small: 0.9,
   normal: 1,
@@ -1453,6 +1555,9 @@ let deliverySyncDeviceId = '';
 let deliverySyncTimer = null;
 let deliverySyncPushTimer = null;
 let deliverySyncInFlight = false;
+let deliverySyncPushPending = false;
+let deliverySyncApplyingRemote = false;
+let deliverySyncLocalDirty = false;
 let deliverySyncLastServerAt = '';
 let deliverySyncLastError = '';
 let deliverySyncLastPushedAt = '';
@@ -1466,6 +1571,8 @@ let pendingPhotoRotation = 0;
 let gpsWatchId = null;
 let gpsActive = false;
 let gpsAutoFollow = false;
+let gpsInitialCenterPending = true;
+let gpsInitialCenterStartedAt = 0;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
 let gsiOverlayVisible = localStorage.getItem(GSI_OVERLAY_KEY) !== '0';
 let listSearchQuery = '';
@@ -1502,6 +1609,31 @@ function showLoading(msg) {
   $('loading').classList.add('show');
 }
 function hideLoading() { $('loading').classList.remove('show'); }
+
+function runWhenIdle(fn, timeout = 1200) {
+  if (window.requestIdleCallback) {
+    window.requestIdleCallback(fn, { timeout });
+  } else {
+    setTimeout(fn, Math.min(timeout, 1200));
+  }
+}
+
+function warmupAppCaches() {
+  runWhenIdle(() => {
+    try {
+      if (!addrData && localStorage.getItem(ADDR_DATA_KEY)) {
+        ensureAddressData({ showProgress: false }).catch(e => console.warn('address data warmup failed', e));
+      }
+      const selectedCourse = getSelectedPickupSheet();
+      const spotSheet = selectedCourse ? spotSheetForPickupCourse(selectedCourse) : '';
+      if (spotSheet) {
+        fetchPrefetchedSpotPickupItems(spotSheet).catch(e => console.warn('spot pickup warmup failed', e));
+      }
+    } catch (e) {
+      console.warn('cache warmup failed', e);
+    }
+  });
+}
 
 function openModal(id) { $(id).classList.add('show'); }
 function closeModal(id) { $(id).classList.remove('show'); }
@@ -1881,7 +2013,7 @@ function saveDeliveries() {
     const sheetName = getSelectedPickupSheet();
     if (sheetName) saveRegularPickupCache(sheetName, deliveries);
   }
-  scheduleSyncPush();
+  markDeliverySyncDirty();
 }
 function loadDeliveries() {
   migrateMisfiledPickupDeliveries();
@@ -2187,6 +2319,183 @@ function escapeHtml(s) {
   }[c]));
 }
 
+
+function defaultTimeWindowSettings() {
+  return TIME_WINDOW_DEFAULTS.map(item => ({ ...item }));
+}
+
+function sanitizeTimeWindowColor(color) {
+  const value = String(color || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#a855f7';
+}
+
+function loadTimeWindowSettings() {
+  try {
+    const raw = localStorage.getItem(TIME_WINDOW_SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed
+          .map((item, idx) => ({
+            id: String(item.id || `custom-${idx}`).trim(),
+            label: String(item.label || '').trim(),
+            keywords: String(item.keywords || '').trim(),
+            color: sanitizeTimeWindowColor(item.color)
+          }))
+          .filter(item => item.id && item.label);
+        if (cleaned.length > 0) return cleaned;
+      }
+    }
+  } catch (e) {
+    console.warn('time window settings load failed', e);
+  }
+  return defaultTimeWindowSettings();
+}
+
+function saveTimeWindowSettings(settings) {
+  localStorage.setItem(TIME_WINDOW_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function normalizeTimeWindowOverride(value) {
+  const id = String(value || '').trim();
+  if (!id) return '';
+  if (id === 'none') return 'none';
+  return loadTimeWindowSettings().some(item => item.id === id) ? id : '';
+}
+
+function timeWindowKeywords(setting) {
+  return String(setting.keywords || setting.label || '')
+    .split(/[、,\n]/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function normalizeTimeWindowText(text) {
+  return String(text || '')
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[〜～−ー－―]/g, '-')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+function timeWindowSearchText(d) {
+  const parts = [d && d.address, d && d.note, d && d.formatted, d && d.company, d && d.name, d && d.pickupTime, d && d.timeText];
+  if (isPickupBackedDelivery(d)) {
+    const display = pickupListDisplay(d);
+    if (display) parts.push(display.company, display.detail);
+  }
+  return parts.filter(Boolean).join(' ');
+}
+
+function timeWindowMatches(setting, text) {
+  const haystack = normalizeTimeWindowText(text);
+  return timeWindowKeywords(setting).some(keyword => {
+    const needle = normalizeTimeWindowText(keyword);
+    return needle && haystack.includes(needle);
+  });
+}
+
+function timeWindowForDelivery(d) {
+  if (!d) return null;
+  const settings = loadTimeWindowSettings();
+  const override = normalizeTimeWindowOverride(d.timeWindowId);
+  if (override === 'none') return null;
+  if (override) return settings.find(item => item.id === override) || null;
+  const searchText = timeWindowSearchText(d);
+  return settings.find(item => timeWindowMatches(item, searchText)) || null;
+}
+
+function timeWindowSelectOptions(selectedId) {
+  const selected = normalizeTimeWindowOverride(selectedId);
+  const settings = loadTimeWindowSettings();
+  const options = [
+    `<option value=""${selected === '' ? ' selected' : ''}>自動判定</option>`,
+    `<option value="none"${selected === 'none' ? ' selected' : ''}>指定なし</option>`
+  ];
+  settings.forEach(item => {
+    options.push(`<option value="${escapeHtml(item.id)}"${selected === item.id ? ' selected' : ''}>${escapeHtml(item.label)}</option>`);
+  });
+  return options.join('');
+}
+
+function populateTimeWindowSelect(select, selectedId) {
+  if (!select) return;
+  select.innerHTML = timeWindowSelectOptions(selectedId);
+}
+
+function renderTimeWindowSettings() {
+  const list = $('time-window-settings-list');
+  if (!list) return;
+  const settings = loadTimeWindowSettings();
+  list.innerHTML = settings.map((item, idx) => `
+    <div class="time-window-row" data-id="${escapeHtml(item.id)}">
+      <div class="time-window-row-head">
+        <div class="time-window-row-title">時間帯 ${idx + 1}</div>
+        <button class="time-window-row-delete" type="button" data-action="delete-time-window">削除</button>
+      </div>
+      <div class="time-window-grid">
+        <div>
+          <label>表示名</label>
+          <input type="text" data-field="label" value="${escapeHtml(item.label)}" placeholder="例: 14時〜16時">
+        </div>
+        <div>
+          <label>ピン色</label>
+          <input type="color" data-field="color" value="${escapeHtml(sanitizeTimeWindowColor(item.color))}">
+        </div>
+      </div>
+      <label>判定キーワード（カンマ区切り）</label>
+      <textarea data-field="keywords" placeholder="例: 14時〜16時,14-16,14:00-16:00">${escapeHtml(item.keywords || '')}</textarea>
+    </div>
+  `).join('');
+}
+
+function collectTimeWindowSettingsFromForm() {
+  const rows = Array.from(document.querySelectorAll('#time-window-settings-list .time-window-row'));
+  return rows.map((row, idx) => {
+    const label = row.querySelector('[data-field="label"]')?.value.trim() || '';
+    const keywords = row.querySelector('[data-field="keywords"]')?.value.trim() || label;
+    const color = sanitizeTimeWindowColor(row.querySelector('[data-field="color"]')?.value);
+    const id = row.dataset.id || `custom-${Date.now().toString(36)}-${idx}`;
+    return { id, label, keywords, color };
+  }).filter(item => item.label);
+}
+
+function openTimeWindowSettings() {
+  closeModal('modal-menu');
+  renderTimeWindowSettings();
+  openModal('modal-time-windows');
+}
+
+function addTimeWindowSettingRow() {
+  const settings = collectTimeWindowSettingsFromForm();
+  settings.push({ id: `custom-${Date.now().toString(36)}`, label: '新しい時間指定', keywords: '', color: '#a855f7' });
+  saveTimeWindowSettings(settings);
+  renderTimeWindowSettings();
+}
+
+function saveTimeWindowSettingsFromModal() {
+  const settings = collectTimeWindowSettingsFromForm();
+  if (settings.length === 0) {
+    showToast('時間指定を1つ以上設定してください', true);
+    return;
+  }
+  saveTimeWindowSettings(settings);
+  renderMarkers();
+  renderList();
+  closeModal('modal-time-windows');
+  showToast('時間指定設定を保存しました');
+}
+
+function resetTimeWindowSettings() {
+  showConfirm('時間指定設定を初期化', '時間指定の設定を初期状態に戻しますか？', () => {
+    saveTimeWindowSettings(defaultTimeWindowSettings());
+    renderTimeWindowSettings();
+    renderMarkers();
+    renderList();
+    showToast('時間指定設定を初期化しました');
+  });
+}
+
 async function loadMapboxConfig() {
   const res = await fetch('api/maps_config.php');
   if (!res.ok) throw new Error('地図設定の取得に失敗しました');
@@ -2219,6 +2528,9 @@ function initMap() {
       customAttribution: '番地データ: <a href="https://github.com/geolonia/japanese-addresses-v2" target="_blank">Geolonia</a> / アドレス・ベース・レジストリ'
     }
   });
+  map.on('dragstart', () => { gpsInitialCenterPending = false; });
+  map.on('rotatestart', () => { gpsInitialCenterPending = false; });
+  map.on('pitchstart', () => { gpsInitialCenterPending = false; });
   map.on('rotate', () => {
     const bearing = map.getBearing();
     const pitch = map.getPitch();
@@ -2558,10 +2870,11 @@ function parseAddrSection(text, machiazaName, features) {
   }
 }
 
-async function ensureAddressData() {
+async function ensureAddressData(options = {}) {
   if (addrData) return addrData;
   if (addrLoading) return null;
 
+  const showProgress = options.showProgress !== false;
   addrLoading = true;
   try {
     try {
@@ -2575,9 +2888,9 @@ async function ensureAddressData() {
       }
     } catch (e) {}
 
-    showLoading('番地データを取得中...');
+    if (showProgress) showLoading('番地データを取得中...');
     const data = await fetchAddressData((c, t) => {
-      $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;
+      if (showProgress) $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;
     });
     addrData = data;
     try {
@@ -2591,7 +2904,7 @@ async function ensureAddressData() {
     return null;
   } finally {
     addrLoading = false;
-    hideLoading();
+    if (showProgress) hideLoading();
   }
 }
 
@@ -2603,23 +2916,25 @@ function addAddressLayer(data) {
     type: 'symbol',
     source: 'addr-points',
     minzoom: 17,
+    maxzoom: 22,
     layout: {
       'text-field': ['get', 'label'],
       'text-size': [
         'interpolate', ['linear'], ['zoom'],
-        17, 9,
-        18, 11,
-        20, 13
+        17, 11,
+        18, 14,
+        19, 17,
+        20.5, 19
       ],
       'text-allow-overlap': false,
-      'text-padding': 2,
+      'text-padding': 1,
       'text-anchor': 'center',
       'symbol-sort-key': ['length', ['get', 'label']]
     },
     paint: {
-      'text-color': '#1f3a5f',
-      'text-halo-color': 'rgba(255,255,255,0.95)',
-      'text-halo-width': 1.5
+      'text-color': '#0f172a',
+      'text-halo-color': 'rgba(255,255,255,0.98)',
+      'text-halo-width': 2.2
     }
   });
 }
@@ -2750,6 +3065,8 @@ async function updateNextSegmentHighlight() {
 
 function removeAddressLayer() {
   if (!map) return;
+  if (map.getLayer('addr-points-label-dense')) map.removeLayer('addr-points-label-dense');
+  if (map.getLayer('addr-points-dot')) map.removeLayer('addr-points-dot');
   if (map.getLayer('addr-points-label')) map.removeLayer('addr-points-label');
   if (map.getSource('addr-points')) map.removeSource('addr-points');
 }
@@ -2960,12 +3277,17 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   wrapper.classList.toggle('done', !!d.completed);
   wrapper.classList.toggle('approx', !!d.approx);
   wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
+  const timeWindow = timeWindowForDelivery(d);
+  wrapper.classList.toggle('time-window', !!timeWindow);
+  if (timeWindow) wrapper.style.setProperty('--time-window-color', timeWindow.color);
+  else wrapper.style.removeProperty('--time-window-color');
   wrapper.style.zIndex = String(markerZIndex(d, idx));
 
   // 中身に影響する値が前回 render と同じなら DOM 再構築をスキップ（差分更新）
   const labelText = buildLabelText(d, num, modeKey);
   const overlapCount = overlap && overlap.index === 0 ? overlap.count : 0;
-  const contentSig = `${num}|${d.approx ? 1 : 0}|${labelText}|${overlapCount}`;
+  const timeWindowSig = timeWindow ? `${timeWindow.id}:${timeWindow.color}` : '';
+  const contentSig = `${num}|${d.approx ? 1 : 0}|${labelText}|${overlapCount}|${timeWindowSig}`;
   if (wrapper.dataset.contentSig === contentSig) return;
   wrapper.dataset.contentSig = contentSig;
 
@@ -2989,14 +3311,53 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   wrapper.appendChild(pin);
 }
 
+function openDeliveryMarkerDetails(id) {
+  activeDeliveryId = id;
+  updateMarkerZIndexes();
+  renderList();
+  openEdit(id);
+}
+
 function createDeliveryMarker(d) {
   const wrapper = document.createElement('div');
+  let longPressTimer = null;
+  let longPressStart = null;
+  let suppressClickUntil = 0;
+  const clearLongPressTimer = () => {
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = null;
+    longPressStart = null;
+  };
+
+  wrapper.addEventListener('pointerdown', (e) => {
+    if (e.button != null && e.button !== 0) return;
+    clearLongPressTimer();
+    longPressStart = { x: e.clientX, y: e.clientY };
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      longPressStart = null;
+      suppressClickUntil = Date.now() + 800;
+      e.preventDefault();
+      e.stopPropagation();
+      openDeliveryMarkerDetails(d.id);
+    }, 550);
+  });
+
+  wrapper.addEventListener('pointermove', (e) => {
+    if (!longPressStart) return;
+    const dx = e.clientX - longPressStart.x;
+    const dy = e.clientY - longPressStart.y;
+    if ((dx * dx) + (dy * dy) > 100) clearLongPressTimer();
+  });
+  wrapper.addEventListener('pointerup', clearLongPressTimer);
+  wrapper.addEventListener('pointercancel', clearLongPressTimer);
+  wrapper.addEventListener('pointerleave', clearLongPressTimer);
+  wrapper.addEventListener('contextmenu', (e) => e.preventDefault());
   wrapper.addEventListener('click', (e) => {
-    e.stopPropagation();
-    activeDeliveryId = d.id;
-    updateMarkerZIndexes();
-    renderList();
-    openEdit(d.id);
+    if (Date.now() < suppressClickUntil) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   });
 
   return new mapboxgl.Marker({
@@ -3614,7 +3975,22 @@ async function addDelivery({ address, note }) {
   showToast(result.sharedCache ? '保存済み位置から追加しました' : (result.approx ? '⚠ 概算位置で追加しました' : '配送先を追加しました'));
 }
 
+function regularPickupDisplayAddress(address) {
+  return String(address || '')
+    .replace(/^\s*\u3012?\s*\d{3}[-\u2010-\u2015]?\d{4}\s*/, '')
+    .replace(/^\s*(?:\u6771\u4eac\u90fd\s*)?\u4e2d\u592e\u533a\s*/, '')
+    .trim();
+}
+
+function pickupDisplayAddress(d) {
+  const raw = String(d && d.address || '').trim();
+  if (!raw) return '';
+  if (isRegularPickupBackedDelivery(d)) return regularPickupDisplayAddress(raw) || raw;
+  return raw;
+}
+
 function pickupListDisplay(d) {
+  const displayAddress = pickupDisplayAddress(d);
   const noteLines = String(d.note || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   const storedCompany = String(d.pickupCompany || d.spotPickupCompany || '').trim();
   const possibleCompany = noteLines[0] && !/^(時間|希望時間帯|連絡|登録電話番号|スポット集荷)[:：]?/.test(noteLines[0])
@@ -3623,8 +3999,8 @@ function pickupListDisplay(d) {
   const company = storedCompany || possibleCompany;
   const details = noteLines.slice(company && noteLines[0] === company ? 1 : 0);
   return {
-    company: company || d.address,
-    detail: (company ? [d.address, ...details] : details).filter(Boolean).join(' / ')
+    company: company || displayAddress || d.address,
+    detail: (company ? [displayAddress || d.address, ...details] : details).filter(Boolean).join(' / ')
   };
 }
 
@@ -3714,8 +4090,12 @@ function renderList() {
       + (d.progressSyncFailed ? ' sync-pending' : '')
       + (d.id === activeDeliveryId ? ' selected' : '');
     const pickupDisplay = isPickupBackedDelivery(d) ? pickupListDisplay(d) : null;
+    const timeWindow = timeWindowForDelivery(d);
+    const timeWindowClass = timeWindow ? ' time-window' : '';
+    const timeWindowStyle = timeWindow ? ` style="--time-window-color:${escapeHtml(timeWindow.color)}"` : '';
+    const timeWindowBadge = timeWindow ? `<div><span class="time-window-badge">${escapeHtml(timeWindow.label)}</span></div>` : '';
     return `
-      <div class="${cls}" data-id="${d.id}">
+      <div class="${cls}${timeWindowClass}" data-id="${d.id}"${timeWindowStyle}>
         <div class="num-badge">${escapeHtml(num)}${d.approx ? '?' : ''}</div>
         <div class="item-info">
           ${pickupDisplay
@@ -3723,7 +4103,8 @@ function renderList() {
                <div class="pickup-detail">${escapeHtml(pickupDisplay.detail)}</div>`
             : `<div class="addr">${escapeHtml(d.address)}</div>
                ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}`}
-          ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
+          ${timeWindowBadge}
+        ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
           ${d.progressSyncFailed ? `<div class="note">未同期: 通信回復後に自動再送します</div>` : ''}
         </div>
         <div class="item-actions">
@@ -3877,6 +4258,7 @@ function openEdit(id) {
   if (!d) return;
   $('edit-address').value = d.address;
   $('edit-note').value = d.note || '';
+  populateTimeWindowSelect($('edit-time-window'), d.timeWindowId || '');
   const doneBtn = $('btn-edit-done');
   doneBtn.textContent = d.completed ? '完了解除' : '完了';
   doneBtn.disabled = false;
@@ -3921,6 +4303,7 @@ async function reGeocodeEditedItem() {
   if (!d) return;
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
+  const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
   if (!newAddr) { showToast('住所を入力してください', true); return; }
   if (isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
 
@@ -3930,7 +4313,8 @@ async function reGeocodeEditedItem() {
     lat: d.lat,
     lng: d.lng,
     approx: d.approx,
-    formatted: d.formatted
+    formatted: d.formatted,
+    timeWindowId: d.timeWindowId
   };
 
   showLoading('住所を再検索中...');
@@ -3944,6 +4328,7 @@ async function reGeocodeEditedItem() {
 
   d.address = newAddr;
   d.note = newNote;
+  d.timeWindowId = newTimeWindowId;
   d.lat = result.lat;
   d.lng = result.lng;
   d.approx = result.approx;
@@ -3960,6 +4345,7 @@ async function reGeocodeEditedItem() {
     d.lng = before.lng;
     d.approx = before.approx;
     d.formatted = before.formatted;
+    d.timeWindowId = before.timeWindowId;
     saveDeliveries();
     renderMarkers();
     renderList();
@@ -3979,6 +4365,7 @@ async function saveEditedItem() {
   if (!d) return;
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
+  const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
   if (!newAddr) { showToast('住所を入力してください', true); return; }
 
   const addressChanged = (newAddr !== d.address);
@@ -3989,9 +4376,11 @@ async function saveEditedItem() {
     lat: d.lat,
     lng: d.lng,
     approx: d.approx,
-    formatted: d.formatted
+    formatted: d.formatted,
+    timeWindowId: d.timeWindowId
   };
   d.note = newNote;
+  d.timeWindowId = newTimeWindowId;
   d.updatedAt = Date.now();
 
   let locationChanged = false;
@@ -4159,6 +4548,63 @@ function closePhotoPreview() {
   resetPhotoPreviewState();
 }
 
+function normalizeOcrField(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u30fc\uff70]/g, '-')
+    .replace(/[\t\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeOcrAddressNumbering(value) {
+  return normalizeOcrField(value)
+    .replace(/(\d+)\s*\u4e01\u76ee/g, '$1-')
+    .replace(/(\d+)\s*\u756a\u5730?/g, '$1-')
+    .replace(/(\d+)\s*\u53f7/g, '$1')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/-\s*$/g, '')
+    .trim();
+}
+
+function splitOcrAddressFields(data) {
+  const source = data || {};
+  let address = normalizeOcrField(source.address || '');
+  const noteParts = [];
+  const sourceNote = normalizeOcrField(source.note || source.building || '');
+  if (sourceNote) noteParts.push(sourceNote);
+
+  address = address.replace(/\u3012?\s*(\d{3})\s*-?\s*(\d{4})/, () => '').trim();
+  address = normalizeOcrAddressNumbering(address);
+
+  const prefecture = '(?:\\u6771\\u4eac\\u90fd|\\u5317\\u6d77\\u9053|\\u5927\\u962a\\u5e9c|\\u4eac\\u90fd\\u5e9c|[\\u4e00-\\u9fff]{2,3}\\u770c)';
+  const corePattern = new RegExp('^\\s*((?:' + prefecture + ')?[\\s\\S]*?\\d+(?:-\\d+){0,3})([\\s\\S]*)$');
+  const match = address.match(corePattern);
+  if (match && match[1] && match[1].length >= 6) {
+    address = match[1].trim();
+    const rest = normalizeOcrField(match[2] || '');
+    if (rest) noteParts.unshift(rest);
+  }
+
+  const seen = new Set();
+  const note = noteParts
+    .map(normalizeOcrField)
+    .filter(Boolean)
+    .filter(part => {
+      const key = part.replace(/\s+/g, '').toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join('\n');
+
+  return {
+    address: address.trim(),
+    note
+  };
+}
+
 async function readPendingPhoto() {
   if (!pendingPhotoFile) return;
   const file = pendingPhotoFile;
@@ -4182,10 +4628,11 @@ async function readPendingPhoto() {
       showToast(data.error || '住所が読み取れませんでした', true);
       return;
     }
-    $('add-address').value = data.address || '';
-    $('add-note').value = data.note || data.building || '';
+    const ocrFields = splitOcrAddressFields(data);
+    $('add-address').value = ocrFields.address || data.address || '';
+    $('add-note').value = ocrFields.note || data.note || data.building || '';
     openModal('modal-add');
-    prefetchGeocodeAddress(data.address || '');
+    prefetchGeocodeAddress(ocrFields.address || data.address || '');
   } catch (e) {
     hideLoading();
     showToast('画像処理に失敗しました: ' + e.message, true);
@@ -5158,6 +5605,7 @@ function initDeliverySync() {
     deliverySyncDeviceId = uid();
     localStorage.setItem(DELIVERY_SYNC_DEVICE_ID_KEY, deliverySyncDeviceId);
   }
+  deliverySyncLocalDirty = localStorage.getItem(DELIVERY_SYNC_DIRTY_KEY) === '1';
   const savedCode = localStorage.getItem(DELIVERY_SYNC_CODE_KEY) || '';
   if (savedCode) {
     deliverySyncCode = savedCode;
@@ -5191,36 +5639,125 @@ function updateDeliverySyncStatusUI() {
   }
 }
 
-function mergeDeliveryLists(local, remote) {
-  const byId = new Map();
-  for (const item of local) {
-    if (item && item.id) byId.set(item.id, item);
-  }
-  for (const item of remote) {
-    if (!item || !item.id) continue;
-    const existing = byId.get(item.id);
-    if (!existing) {
-      byId.set(item.id, item);
-    } else {
-      const localTime = existing.updatedAt || existing.completedAt || existing.createdAt || 0;
-      const remoteTime = item.updatedAt || item.completedAt || item.createdAt || 0;
-      if (remoteTime > localTime) byId.set(item.id, item);
-    }
-  }
-  return [...byId.values()];
+function deliverySyncScope() {
+  return {
+    mode: appMode,
+    pickupSheet: appMode === 'pickup' ? getSelectedPickupSheet() : ''
+  };
 }
 
-function scheduleSyncPush() {
+function deliverySyncScopeMatches(scope) {
+  if (!scope || !scope.mode) return true;
+  const current = deliverySyncScope();
+  if (scope.mode !== current.mode) return false;
+  if (scope.mode === 'pickup' && String(scope.pickupSheet || '') !== String(current.pickupSheet || '')) return false;
+  return true;
+}
+
+function deliverySyncItemTime(item) {
+  return Number(item && (item.updatedAt || item.completedAt || item.createdAt || 0)) || 0;
+}
+
+function buildDeliverySyncSnapshot() {
+  return {
+    schema: 'rys-delivery-sync-v2',
+    scope: deliverySyncScope(),
+    deviceId: deliverySyncDeviceId,
+    clientUpdatedAt: Date.now(),
+    items: deliveries,
+    route: {
+      orderedIds: optimizedRouteOrderedIds.slice()
+    }
+  };
+}
+
+function parseDeliverySyncPayload(payload) {
+  let parsed;
+  try { parsed = JSON.parse(payload || '[]'); } catch (e) { return null; }
+  if (Array.isArray(parsed)) {
+    return { schema: 'legacy-array', scope: null, items: parsed, route: null };
+  }
+  if (!parsed || !Array.isArray(parsed.items)) return null;
+  return parsed;
+}
+
+function markDeliverySyncDirty() {
+  if (deliverySyncApplyingRemote) return;
+  if (!deliverySyncEnabled) return;
+  deliverySyncLocalDirty = true;
+  localStorage.setItem(DELIVERY_SYNC_DIRTY_KEY, '1');
+  scheduleSyncPush();
+}
+
+function clearDeliverySyncDirty() {
+  deliverySyncLocalDirty = false;
+  localStorage.removeItem(DELIVERY_SYNC_DIRTY_KEY);
+}
+
+function mergeDeliveryLists(local, remote, options = {}) {
+  const authoritative = !!options.authoritative;
+  const localById = new Map();
+  for (const item of local) {
+    if (item && item.id) localById.set(item.id, item);
+  }
+
+  const used = new Set();
+  const result = [];
+  for (const item of remote) {
+    if (!item || !item.id) continue;
+    const existing = localById.get(item.id);
+    used.add(item.id);
+    if (!existing) {
+      result.push(item);
+      continue;
+    }
+    const localTime = deliverySyncItemTime(existing);
+    const remoteTime = deliverySyncItemTime(item);
+    result.push(remoteTime >= localTime ? item : existing);
+  }
+
+  if (!authoritative) {
+    for (const item of local) {
+      if (item && item.id && !used.has(item.id)) result.push(item);
+    }
+  }
+  return result;
+}
+
+function applyDeliverySyncRoute(route, items) {
+  const orderedIds = route && Array.isArray(route.orderedIds) ? route.orderedIds.filter(Boolean) : [];
+  if (!orderedIds.length) {
+    if (optimizedRouteOrderedIds.length) {
+      optimizedRouteOrderedIds = [];
+      clearNextSegmentLayer();
+      return true;
+    }
+    return false;
+  }
+  const itemIds = new Set(items.map(item => item && item.id).filter(Boolean));
+  const filtered = orderedIds.filter(id => itemIds.has(id));
+  const changed = JSON.stringify(filtered) !== JSON.stringify(optimizedRouteOrderedIds);
+  optimizedRouteOrderedIds = filtered;
+  updateNextSegmentHighlight();
+  return changed;
+}
+
+function scheduleSyncPush(delay = DELIVERY_SYNC_PUSH_DEBOUNCE_MS) {
   if (!deliverySyncEnabled) return;
   clearTimeout(deliverySyncPushTimer);
-  deliverySyncPushTimer = setTimeout(pushDeliverySync, DELIVERY_SYNC_PUSH_DEBOUNCE_MS);
+  deliverySyncPushTimer = setTimeout(pushDeliverySync, delay);
 }
 
 async function pushDeliverySync() {
-  if (!deliverySyncEnabled || !deliverySyncCode || deliverySyncInFlight) return;
+  if (!deliverySyncEnabled || !deliverySyncCode) return;
+  if (deliverySyncInFlight) {
+    deliverySyncPushPending = true;
+    return;
+  }
   deliverySyncInFlight = true;
   try {
-    const payload = JSON.stringify(deliveries);
+    deliverySyncPushPending = false;
+    const payload = JSON.stringify(buildDeliverySyncSnapshot());
     const resp = await fetch(DELIVERY_SYNC_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5239,6 +5776,7 @@ async function pushDeliverySync() {
       return;
     }
     deliverySyncLastError = '';
+    clearDeliverySyncDirty();
     if (data.updated_at) {
       deliverySyncLastPushedAt = data.updated_at;
       deliverySyncLastServerAt = data.updated_at;
@@ -5250,6 +5788,7 @@ async function pushDeliverySync() {
     updateDeliverySyncStatusUI();
   } finally {
     deliverySyncInFlight = false;
+    if (deliverySyncPushPending) scheduleSyncPush(0);
   }
 }
 
@@ -5289,19 +5828,27 @@ async function pullDeliverySync() {
       return;
     }
 
-    // Another device pushed — merge
-    let remoteItems;
-    try { remoteItems = JSON.parse(data.payload || '[]'); } catch { return; }
-    if (!Array.isArray(remoteItems)) return;
+    // Another device pushed - apply the latest snapshot for this mode/course.
+    const snapshot = parseDeliverySyncPayload(data.payload || '');
+    if (!snapshot || !deliverySyncScopeMatches(snapshot.scope)) {
+      deliverySyncLastServerAt = serverAt;
+      updateDeliverySyncStatusUI();
+      return;
+    }
 
-    const merged = mergeDeliveryLists(deliveries, remoteItems);
-    const changed = JSON.stringify(merged) !== JSON.stringify(deliveries);
-    if (changed) {
+    const authoritative = snapshot.schema === 'rys-delivery-sync-v2' && !deliverySyncLocalDirty;
+    const merged = mergeDeliveryLists(deliveries, snapshot.items || [], { authoritative });
+    const routeChanged = applyDeliverySyncRoute(snapshot.route, merged);
+    const listChanged = JSON.stringify(merged) !== JSON.stringify(deliveries);
+    if (listChanged || routeChanged) {
       deliveries = merged;
-      saveDeliveries();
+      deliverySyncApplyingRemote = true;
+      try { saveDeliveries(); }
+      finally { deliverySyncApplyingRemote = false; }
       renderMarkers();
       renderList();
-      showToast('他のデバイスからデータを同期しました');
+      if (!deliverySyncLocalDirty) clearDeliverySyncDirty();
+      showToast('\u4ed6\u306e\u30c7\u30d0\u30a4\u30b9\u304b\u3089\u30c7\u30fc\u30bf\u3092\u540c\u671f\u3057\u307e\u3057\u305f');
     }
     deliverySyncLastServerAt = serverAt;
     updateDeliverySyncStatusUI();
@@ -5309,6 +5856,7 @@ async function pullDeliverySync() {
     console.warn('delivery sync pull failed', e);
   } finally {
     deliverySyncInFlight = false;
+    if (deliverySyncPushPending || deliverySyncLocalDirty) scheduleSyncPush(0);
   }
 }
 
@@ -5335,6 +5883,9 @@ function connectDeliverySync() {
   deliverySyncLastServerAt = '';
   deliverySyncLastPushedAt = '';
   deliverySyncLastError = '';
+  deliverySyncPushPending = false;
+  deliverySyncApplyingRemote = false;
+  clearDeliverySyncDirty();
   localStorage.setItem(DELIVERY_SYNC_CODE_KEY, code);
   updateDeliverySyncStatusUI();
   restartDeliverySyncTimer();
@@ -5352,6 +5903,9 @@ function disconnectDeliverySync() {
   deliverySyncLastServerAt = '';
   deliverySyncLastPushedAt = '';
   deliverySyncLastError = '';
+  deliverySyncPushPending = false;
+  deliverySyncApplyingRemote = false;
+  clearDeliverySyncDirty();
   localStorage.removeItem(DELIVERY_SYNC_CODE_KEY);
   $('delivery-sync-code-input').value = '';
   updateDeliverySyncStatusUI();
@@ -5952,7 +6506,11 @@ function updateUserLocation(pos, moveMap = false) {
 
   updateGpsStatus(pos);
 
-  if (moveMap) {
+  const startupCenterAllowed = gpsInitialCenterStartedAt &&
+    Date.now() - gpsInitialCenterStartedAt <= 60000;
+  const shouldMoveMap = moveMap || (gpsInitialCenterPending && startupCenterAllowed);
+  if (shouldMoveMap) {
+    gpsInitialCenterPending = false;
     map.easeTo({ center: lngLat, zoom: Math.max(map.getZoom(), 17), duration: 600 });
   }
 }
@@ -5962,6 +6520,7 @@ function ensureGpsWatching() {
   if (gpsActive && gpsWatchId !== null) return true;
 
   gpsActive = true;
+  if (!gpsInitialCenterStartedAt) gpsInitialCenterStartedAt = Date.now();
   gpsWatchId = navigator.geolocation.watchPosition(
     (pos) => { updateUserLocation(pos, gpsAutoFollow); },
     (err) => {
@@ -5987,6 +6546,7 @@ function toggleGpsTracking() {
   if (!gpsActive) {
     if (!ensureGpsWatching()) return;
     gpsAutoFollow = true;
+    gpsInitialCenterPending = false;
     updateGpsButton();
     showToast('GPSをONにしました(地図が現在地に追従します)');
     return;
@@ -6118,6 +6678,15 @@ $('btn-operator-cancel').addEventListener('click', cancelOperatorModal);
 $('btn-notification-save').addEventListener('click', savePushSettings);
 $('btn-notification-disable').addEventListener('click', disablePushNotifications);
 $('btn-notification-install').addEventListener('click', installPushApp);
+$('menu-time-windows').addEventListener('click', openTimeWindowSettings);
+$('btn-time-window-add').addEventListener('click', addTimeWindowSettingRow);
+$('btn-time-window-save').addEventListener('click', saveTimeWindowSettingsFromModal);
+$('btn-time-window-reset').addEventListener('click', resetTimeWindowSettings);
+$('time-window-settings-list').addEventListener('click', event => {
+  const button = event.target.closest('[data-action="delete-time-window"]');
+  if (!button) return;
+  button.closest('.time-window-row')?.remove();
+});
 $('btn-cache-admin-search').addEventListener('click', () => loadCacheAdminData().catch(e => showToast(e.message || 'DBキャッシュを読み込めません', true)));
 $('btn-cache-admin-clear-search').addEventListener('click', () => {
   $('cache-admin-search').value = '';
@@ -6211,6 +6780,7 @@ document.addEventListener('visibilitychange', () => {
     ensureGpsWatching();
     updateGpsButton();
     hideLoading();
+    warmupAppCaches();
     initDeliverySync();
     restartDeliverySyncTimer();
     resetStalePickupCompletions()
@@ -6226,7 +6796,7 @@ document.addEventListener('visibilitychange', () => {
     }
 
     if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {
-      ensureAddressData().then(data => {
+      ensureAddressData({ showProgress: false }).then(data => {
         if (!data) return;
         addrVisible = true;
         addAddressLayer(data);
