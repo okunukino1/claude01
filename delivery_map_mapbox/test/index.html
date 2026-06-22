@@ -1431,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.32';
+const APP_VERSION = 'v2026.06.22-test.33';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1475,6 +1475,7 @@ const MAPBOX_BUILDING_NUMBER_TEXT_SIZE = ['interpolate', ['linear'], ['zoom'], 1
 const MAPBOX_POI_LABEL_TEXT_OPACITY = ['interpolate', ['linear'], ['zoom'], 17, 1, 18.5, 0.82, 19.2, 0.58, 20.5, 0.48, 22, 0.42];
 const RYS_BUILDING_NUMBER_SOURCE_ID = 'rys-building-number-source';
 const RYS_BUILDING_NUMBER_LAYER_ID = 'rys-building-number-label';
+const MAPBOX_POI_LABEL_HIDE_ZOOM = 19;
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
 const TIME_WINDOW_DEFAULTS = [
   { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
@@ -1587,6 +1588,7 @@ let optimizedRouteOrderedIds = [];
 let recognition = null;
 let mapStyleLoaded = false;
 let rysBuildingNumberUpdateTimer = null;
+let mapboxPoiLabelsVisible = null;
 
 let addrVisible = false;
 let addrData = null;
@@ -2551,9 +2553,10 @@ function initMap() {
     const pitch = map.getPitch();
     $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
   });
-  map.on('moveend', () => scheduleRysBuildingNumberUpdate());
-  map.on('zoomend', () => scheduleRysBuildingNumberUpdate());
-  map.on('idle', () => scheduleRysBuildingNumberUpdate(0));
+  map.on('zoom', updateMapboxPoiLabelVisibility);
+  map.on('moveend', () => { scheduleRysBuildingNumberUpdate(); updateMapboxPoiLabelVisibility(); });
+  map.on('zoomend', () => { scheduleRysBuildingNumberUpdate(); updateMapboxPoiLabelVisibility(); });
+  map.on('idle', () => { scheduleRysBuildingNumberUpdate(0); updateMapboxPoiLabelVisibility(); });
   map.on('click', (e) => {
     if (!placingItemId) return;
     pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
@@ -2569,6 +2572,7 @@ function initMap() {
     map.on('load', () => {
       mapStyleLoaded = true;
       try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
+      updateMapboxPoiLabelVisibility(true);
       enlargeMapboxAddressLabels();
       setTimeout(enlargeMapboxAddressLabels, 800);
       addGeoshapeNeighborhoodLayers();
@@ -2921,6 +2925,15 @@ async function ensureAddressData(options = {}) {
     addrLoading = false;
     if (showProgress) hideLoading();
   }
+}
+
+function updateMapboxPoiLabelVisibility(force = false) {
+  if (!map) return;
+  const shouldShow = map.getZoom() < MAPBOX_POI_LABEL_HIDE_ZOOM;
+  if (!force && mapboxPoiLabelsVisible === shouldShow) return;
+  mapboxPoiLabelsVisible = shouldShow;
+  try { map.setConfigProperty('basemap', 'showPointOfInterestLabels', shouldShow); } catch (e) {}
+  try { if (map.getLayer('poi-label')) map.setLayoutProperty('poi-label', 'visibility', shouldShow ? 'visible' : 'none'); } catch (e) {}
 }
 
 function emptyFeatureCollection() {
