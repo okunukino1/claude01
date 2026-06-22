@@ -1432,7 +1432,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.34';
+const APP_VERSION = 'v2026.06.22-test.35';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1474,6 +1474,7 @@ const PHOTO_OCR_QUALITY = 0.8;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
 const MAPBOX_BUILDING_NUMBER_TEXT_SIZE = ['interpolate', ['linear'], ['zoom'], 17, 15, 18, 19, 19, 23, 20, 27, 22, 29];
+const MAPBOX_BUILDING_COMBINED_TEXT_SIZE = ['interpolate', ['linear'], ['zoom'], 17, 14, 18, 17, 19, 20, 20, 23, 22, 26];
 const RYS_BUILDING_NUMBER_SOURCE_ID = 'rys-building-number-source';
 const RYS_BUILDING_NUMBER_LAYER_ID = 'rys-building-number-label';
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
@@ -2964,12 +2965,109 @@ function emptyFeatureCollection() {
   return { type: 'FeatureCollection', features: [] };
 }
 
+
 function sourceFeatureCoordinate(feature) {
   const geom = feature && feature.geometry;
   if (!geom) return null;
   if (geom.type === 'Point' && Array.isArray(geom.coordinates)) return geom.coordinates;
   if (geom.type === 'MultiPoint' && Array.isArray(geom.coordinates) && geom.coordinates[0]) return geom.coordinates[0];
   return null;
+}
+
+function featureTextValue(feature, keys) {
+  const props = feature && feature.properties ? feature.properties : {};
+  for (const key of keys) {
+    const value = props[key];
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function normalizeMapLabel(text) {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, '')
+    .trim();
+}
+
+function extractHouseNumberLabel(feature) {
+  const label = normalizeMapLabel(featureTextValue(feature, ['house_num', 'housenum', 'addr:housenumber', 'name']));
+  return /^\d+(?:[-\uFF0D\u30FC]\d+)*$/.test(label) ? label.replace(/[\uFF0D\u30FC]/g, '-') : '';
+}
+
+function extractBuildingNameLabel(feature) {
+  const label = normalizeMapLabel(featureTextValue(feature, ['name_ja', 'name', 'name_script', 'name_en', 'label', 'text']));
+  if (!label) return '';
+  if (/^\d+(?:[-\uFF0D\u30FC]\d+)*$/.test(label)) return '';
+  if (/^[A-Z]$/.test(label)) return '';
+  return label;
+}
+
+function featurePointEntry(feature, label) {
+  const coord = sourceFeatureCoordinate(feature);
+  if (!label || !coord || !Number.isFinite(coord[0]) || !Number.isFinite(coord[1])) return null;
+  const point = map && map.project ? map.project(coord) : null;
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  return { label, coord, point };
+}
+
+function dedupePointEntries(entries) {
+  const seen = new Set();
+  return entries.filter(entry => {
+    const key = `${entry.label}:${Math.round(entry.point.x / 3)},${Math.round(entry.point.y / 3)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function queryCompositeSourceFeatures(sourceLayer) {
+  if (!map || !map.getSource('composite')) return [];
+  try { return map.querySourceFeatures('composite', { sourceLayer }) || []; } catch (e) { return []; }
+}
+
+function queryRenderedPoiLabelFeatures() {
+  if (!map || !map.queryRenderedFeatures) return [];
+  const layerIds = mapboxPoiLabelLayerIds().filter(id => {
+    try { return !!map.getLayer(id); } catch (e) { return false; }
+  });
+  if (!layerIds.length) return [];
+  try { return map.queryRenderedFeatures({ layers: layerIds }) || []; } catch (e) {}
+  try { return map.queryRenderedFeatures(undefined, { layers: layerIds }) || []; } catch (e) {}
+  return [];
+}
+
+function collectHouseNumberEntries() {
+  return dedupePointEntries(
+    queryCompositeSourceFeatures('housenum_label')
+      .map(feature => featurePointEntry(feature, extractHouseNumberLabel(feature)))
+      .filter(Boolean)
+  );
+}
+
+function collectBuildingNameEntries() {
+  let features = queryRenderedPoiLabelFeatures();
+  if (!features.length) features = queryCompositeSourceFeatures('poi_label');
+  return dedupePointEntries(
+    features
+      .map(feature => featurePointEntry(feature, extractBuildingNameLabel(feature)))
+      .filter(Boolean)
+  ).slice(0, 220);
+}
+
+function buildingLabelLinkDistancePx() {
+  const zoom = map && map.getZoom ? map.getZoom() : 18;
+  return Math.max(52, Math.min(150, 42 + ((zoom - 17) * 34)));
+}
+
+function addBuildingLabelFeature(collection, coord, props) {
+  collection.features.push({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: coord },
+    properties: props
+  });
 }
 
 function updateRysBuildingNumberSource() {
@@ -2981,28 +3079,44 @@ function updateRysBuildingNumberSource() {
     return;
   }
 
-  let sourceFeatures = [];
-  try {
-    sourceFeatures = map.querySourceFeatures('composite', { sourceLayer: 'housenum_label' }) || [];
-  } catch (e) {
-    source.setData(collection);
-    return;
-  }
+  const numbers = collectHouseNumberEntries();
+  const names = collectBuildingNameEntries();
+  const maxDistance = buildingLabelLinkDistancePx();
+  const usedNumberIndexes = new Set();
 
-  const seen = new Set();
-  sourceFeatures.forEach(feature => {
-    const label = String(feature && feature.properties && feature.properties.house_num || '').trim();
-    const coord = sourceFeatureCoordinate(feature);
-    if (!label || !coord || !Number.isFinite(coord[0]) || !Number.isFinite(coord[1])) return;
-    const key = `${label}:${coord[0].toFixed(6)},${coord[1].toFixed(6)}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    collection.features.push({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: coord },
-      properties: { label }
+  names.forEach(name => {
+    let bestIndex = -1;
+    let bestDistance = Infinity;
+    numbers.forEach((number, index) => {
+      if (usedNumberIndexes.has(index)) return;
+      const dx = name.point.x - number.point.x;
+      const dy = name.point.y - number.point.y;
+      const distance = Math.sqrt((dx * dx) + (dy * dy));
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex < 0 || bestDistance > maxDistance) return;
+    const number = numbers[bestIndex];
+    usedNumberIndexes.add(bestIndex);
+    addBuildingLabelFeature(collection, name.coord, {
+      name: name.label,
+      number: number.label,
+      label: `${name.label}\n${number.label}`,
+      kind: 'combined'
     });
   });
+
+  numbers.forEach((number, index) => {
+    if (usedNumberIndexes.has(index)) return;
+    addBuildingLabelFeature(collection, number.coord, {
+      number: number.label,
+      label: number.label,
+      kind: 'number'
+    });
+  });
+
   source.setData(collection);
 }
 
@@ -3027,21 +3141,27 @@ function addRysBuildingNumberLayer() {
       slot: 'top',
       minzoom: 17,
       layout: {
-        'text-field': ['get', 'label'],
+        'text-field': [
+          'case',
+          ['all', ['has', 'name'], ['has', 'number']],
+          ['format', ['get', 'name'], { 'font-scale': 0.68 }, '\n', {}, ['get', 'number'], { 'font-scale': 1.12 }],
+          ['get', 'label']
+        ],
         'text-font': ['Arial Unicode MS Bold'],
-        'text-size': MAPBOX_BUILDING_NUMBER_TEXT_SIZE,
+        'text-size': MAPBOX_BUILDING_COMBINED_TEXT_SIZE,
+        'text-line-height': 0.98,
         'text-allow-overlap': true,
         'text-ignore-placement': true,
         'text-optional': false,
         'text-padding': 0,
         'text-anchor': 'center',
-        'text-offset': [0, 1.15],
+        'text-offset': [0, 0.25],
         'symbol-z-order': 'viewport-y'
       },
       paint: {
         'text-color': '#0f172a',
         'text-halo-color': 'rgba(255,255,255,0.99)',
-        'text-halo-width': 4.2,
+        'text-halo-width': 3.8,
         'text-opacity': 1
       }
     };
