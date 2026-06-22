@@ -1431,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.31';
+const APP_VERSION = 'v2026.06.22-test.32';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1473,6 +1473,7 @@ const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
 const MAPBOX_BUILDING_NUMBER_TEXT_SIZE = ['interpolate', ['linear'], ['zoom'], 17, 15, 18, 19, 19, 23, 20, 27, 22, 29];
 const MAPBOX_POI_LABEL_TEXT_OPACITY = ['interpolate', ['linear'], ['zoom'], 17, 1, 18.5, 0.82, 19.2, 0.58, 20.5, 0.48, 22, 0.42];
+const RYS_BUILDING_NUMBER_SOURCE_ID = 'rys-building-number-source';
 const RYS_BUILDING_NUMBER_LAYER_ID = 'rys-building-number-label';
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
 const TIME_WINDOW_DEFAULTS = [
@@ -1585,6 +1586,7 @@ let listSearchQuery = '';
 let optimizedRouteOrderedIds = [];
 let recognition = null;
 let mapStyleLoaded = false;
+let rysBuildingNumberUpdateTimer = null;
 
 let addrVisible = false;
 let addrData = null;
@@ -2549,6 +2551,9 @@ function initMap() {
     const pitch = map.getPitch();
     $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
   });
+  map.on('moveend', () => scheduleRysBuildingNumberUpdate());
+  map.on('zoomend', () => scheduleRysBuildingNumberUpdate());
+  map.on('idle', () => scheduleRysBuildingNumberUpdate(0));
   map.on('click', (e) => {
     if (!placingItemId) return;
     pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
@@ -2918,46 +2923,103 @@ async function ensureAddressData(options = {}) {
   }
 }
 
-function addRysBuildingNumberLayer() {
-  if (!map || map.getLayer(RYS_BUILDING_NUMBER_LAYER_ID) || !map.getSource('composite')) return;
-  const layerDef = {
-    id: RYS_BUILDING_NUMBER_LAYER_ID,
-    type: 'symbol',
-    source: 'composite',
-    'source-layer': 'housenum_label',
-    slot: 'top',
-    minzoom: 17,
-    layout: {
-      'text-field': ['get', 'house_num'],
-      'text-font': ['Arial Unicode MS Bold'],
-      'text-size': MAPBOX_BUILDING_NUMBER_TEXT_SIZE,
-      'text-allow-overlap': true,
-      'text-ignore-placement': true,
-      'text-optional': false,
-      'text-padding': 0,
-      'text-anchor': 'center',
-      'text-offset': [0, 1.15],
-      'symbol-z-order': 'viewport-y'
-    },
-    paint: {
-      'text-color': '#0f172a',
-      'text-halo-color': 'rgba(255,255,255,0.99)',
-      'text-halo-width': 4.2,
-      'text-opacity': 1
-    }
-  };
-  try {
-    map.addLayer(layerDef);
-  } catch (e) {
-    try { const { slot, ...fallback } = layerDef; map.addLayer(fallback); } catch (e2) {}
+function emptyFeatureCollection() {
+  return { type: 'FeatureCollection', features: [] };
+}
+
+function sourceFeatureCoordinate(feature) {
+  const geom = feature && feature.geometry;
+  if (!geom) return null;
+  if (geom.type === 'Point' && Array.isArray(geom.coordinates)) return geom.coordinates;
+  if (geom.type === 'MultiPoint' && Array.isArray(geom.coordinates) && geom.coordinates[0]) return geom.coordinates[0];
+  return null;
+}
+
+function updateRysBuildingNumberSource() {
+  if (!map || !map.getSource(RYS_BUILDING_NUMBER_SOURCE_ID)) return;
+  const source = map.getSource(RYS_BUILDING_NUMBER_SOURCE_ID);
+  const collection = emptyFeatureCollection();
+  if (map.getZoom() < 17 || !map.getSource('composite')) {
+    source.setData(collection);
+    return;
   }
+
+  let sourceFeatures = [];
+  try {
+    sourceFeatures = map.querySourceFeatures('composite', { sourceLayer: 'housenum_label' }) || [];
+  } catch (e) {
+    source.setData(collection);
+    return;
+  }
+
+  const seen = new Set();
+  sourceFeatures.forEach(feature => {
+    const label = String(feature && feature.properties && feature.properties.house_num || '').trim();
+    const coord = sourceFeatureCoordinate(feature);
+    if (!label || !coord || !Number.isFinite(coord[0]) || !Number.isFinite(coord[1])) return;
+    const key = `${label}:${coord[0].toFixed(6)},${coord[1].toFixed(6)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    collection.features.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: coord },
+      properties: { label }
+    });
+  });
+  source.setData(collection);
+}
+
+function scheduleRysBuildingNumberUpdate(delay = 80) {
+  if (rysBuildingNumberUpdateTimer) clearTimeout(rysBuildingNumberUpdateTimer);
+  rysBuildingNumberUpdateTimer = setTimeout(() => {
+    rysBuildingNumberUpdateTimer = null;
+    updateRysBuildingNumberSource();
+  }, delay);
+}
+
+function addRysBuildingNumberLayer() {
+  if (!map) return;
+  if (!map.getSource(RYS_BUILDING_NUMBER_SOURCE_ID)) {
+    map.addSource(RYS_BUILDING_NUMBER_SOURCE_ID, { type: 'geojson', data: emptyFeatureCollection() });
+  }
+  if (!map.getLayer(RYS_BUILDING_NUMBER_LAYER_ID)) {
+    const layerDef = {
+      id: RYS_BUILDING_NUMBER_LAYER_ID,
+      type: 'symbol',
+      source: RYS_BUILDING_NUMBER_SOURCE_ID,
+      slot: 'top',
+      minzoom: 17,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-font': ['Arial Unicode MS Bold'],
+        'text-size': MAPBOX_BUILDING_NUMBER_TEXT_SIZE,
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-optional': false,
+        'text-padding': 0,
+        'text-anchor': 'center',
+        'text-offset': [0, 1.15],
+        'symbol-z-order': 'viewport-y'
+      },
+      paint: {
+        'text-color': '#0f172a',
+        'text-halo-color': 'rgba(255,255,255,0.99)',
+        'text-halo-width': 4.2,
+        'text-opacity': 1
+      }
+    };
+    try { map.addLayer(layerDef); } catch (e) {
+      try { const { slot, ...fallback } = layerDef; map.addLayer(fallback); } catch (e2) {}
+    }
+  }
+  scheduleRysBuildingNumberUpdate(0);
 }
 
 function enlargeMapboxAddressLabels() {
   if (!map) return;
   addRysBuildingNumberLayer();
   try { if (map.getLayer(RYS_BUILDING_NUMBER_LAYER_ID)) map.moveLayer(RYS_BUILDING_NUMBER_LAYER_ID); } catch (e) {}
-  try { if (map.getLayer('building-number-label')) map.setPaintProperty('building-number-label', 'text-opacity', 0.25); } catch (e) {}
+  try { if (map.getLayer('building-number-label')) map.setPaintProperty('building-number-label', 'text-opacity', 0.15); } catch (e) {}
   try { if (map.getLayer('poi-label')) map.setPaintProperty('poi-label', 'text-opacity', MAPBOX_POI_LABEL_TEXT_OPACITY); } catch (e) {}
 }
 
