@@ -1432,7 +1432,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.37';
+const APP_VERSION = 'v2026.06.22-test.38';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2555,8 +2555,8 @@ function initMap() {
     $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
   });
   map.on('moveend', () => scheduleRysBuildingNumberUpdate());
-  map.on('zoomend', () => scheduleRysBuildingNumberUpdate());
-  map.on('idle', () => { scheduleRysBuildingNumberUpdate(0); applyBuildingNameVisibility(); });
+  map.on('zoomend', () => { scheduleRysBuildingNumberUpdate(); enlargeMapboxAddressLabels(); });
+  map.on('idle', () => { scheduleRysBuildingNumberUpdate(0); applyBuildingNameVisibility(); enlargeMapboxAddressLabels(); });
   map.on('click', (e) => {
     if (!placingItemId) return;
     pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
@@ -3226,11 +3226,40 @@ function addRysBuildingNumberLayer() {
   scheduleRysBuildingNumberUpdate(0);
 }
 
+function mapboxBuildingNumberLayerIds() {
+  if (!map || !map.getStyle) return [];
+  const style = map.getStyle();
+  const layers = style && Array.isArray(style.layers) ? style.layers : [];
+  return layers
+    .filter(layer => layer && layer.type === 'symbol')
+    .filter(layer => {
+      const id = String(layer.id || '');
+      const sourceLayer = String(layer['source-layer'] || '');
+      return id.includes('building-number') || sourceLayer === 'housenum_label';
+    })
+    .map(layer => layer.id);
+}
+
+function strengthenMapboxBuildingNumberLayer(id) {
+  if (!map || !id || !map.getLayer(id)) return;
+  try { map.setLayoutProperty(id, 'visibility', 'visible'); } catch (e) {}
+  try { map.setLayoutProperty(id, 'text-size', MAPBOX_BUILDING_NUMBER_TEXT_SIZE); } catch (e) {}
+  try { map.setLayoutProperty(id, 'text-allow-overlap', true); } catch (e) {}
+  try { map.setLayoutProperty(id, 'text-ignore-placement', true); } catch (e) {}
+  try { map.setLayoutProperty(id, 'text-optional', false); } catch (e) {}
+  try { map.setLayoutProperty(id, 'text-offset', [0, 0.85]); } catch (e) {}
+  try { map.setPaintProperty(id, 'text-color', '#111827'); } catch (e) {}
+  try { map.setPaintProperty(id, 'text-halo-color', 'rgba(255,255,255,0.99)'); } catch (e) {}
+  try { map.setPaintProperty(id, 'text-halo-width', 3.4); } catch (e) {}
+  try { map.setPaintProperty(id, 'text-opacity', 1); } catch (e) {}
+  try { map.moveLayer(id); } catch (e) {}
+}
+
 function enlargeMapboxAddressLabels() {
   if (!map) return;
   addRysBuildingNumberLayer();
+  mapboxBuildingNumberLayerIds().forEach(strengthenMapboxBuildingNumberLayer);
   try { if (map.getLayer(RYS_BUILDING_NUMBER_LAYER_ID)) map.moveLayer(RYS_BUILDING_NUMBER_LAYER_ID); } catch (e) {}
-  try { if (map.getLayer('building-number-label')) map.setPaintProperty('building-number-label', 'text-opacity', 0.15); } catch (e) {}
 }
 
 function addAddressLayer(data) {
