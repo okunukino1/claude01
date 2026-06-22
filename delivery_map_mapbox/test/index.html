@@ -1157,6 +1157,7 @@
       <button id="menu-cache-admin" type="button">🗄 DBキャッシュ管理</button>
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
+      <button id="menu-toggle-building-names" type="button">🏢 建物名 ON/OFF</button>
       <button id="menu-toggle-gsi" type="button">🗺 番地ライン(地理院) ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
       <button id="menu-time-windows" type="button">⏰ 時間指定設定</button>
@@ -1431,7 +1432,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.33';
+const APP_VERSION = 'v2026.06.22-test.34';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1439,6 +1440,7 @@ const APP_MODE_KEY = 'rys-mapbox-test-app-mode';
 const USAGE_KEY = 'rys-mapbox-test-usage-v1';
 const NEIGHBORHOOD_KEY = 'rys-mapbox-test-neighborhoods-visible';
 const GSI_OVERLAY_KEY = 'rys-mapbox-test-gsi-overlay-visible';
+const BUILDING_NAME_VISIBLE_KEY = 'rys-mapbox-test-building-name-visible-v1';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-test-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-test-addr-visible';
@@ -1472,10 +1474,8 @@ const PHOTO_OCR_QUALITY = 0.8;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
 const MAPBOX_BUILDING_NUMBER_TEXT_SIZE = ['interpolate', ['linear'], ['zoom'], 17, 15, 18, 19, 19, 23, 20, 27, 22, 29];
-const MAPBOX_POI_LABEL_TEXT_OPACITY = ['interpolate', ['linear'], ['zoom'], 17, 1, 18.5, 0.82, 19.2, 0.58, 20.5, 0.48, 22, 0.42];
 const RYS_BUILDING_NUMBER_SOURCE_ID = 'rys-building-number-source';
 const RYS_BUILDING_NUMBER_LAYER_ID = 'rys-building-number-label';
-const MAPBOX_POI_LABEL_HIDE_ZOOM = 19;
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
 const TIME_WINDOW_DEFAULTS = [
   { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
@@ -1583,12 +1583,12 @@ let gpsInitialCenterPending = true;
 let gpsInitialCenterStartedAt = 0;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
 let gsiOverlayVisible = localStorage.getItem(GSI_OVERLAY_KEY) !== '0';
+let buildingNameVisible = localStorage.getItem(BUILDING_NAME_VISIBLE_KEY) !== '0';
 let listSearchQuery = '';
 let optimizedRouteOrderedIds = [];
 let recognition = null;
 let mapStyleLoaded = false;
 let rysBuildingNumberUpdateTimer = null;
-let mapboxPoiLabelsVisible = null;
 
 let addrVisible = false;
 let addrData = null;
@@ -2553,10 +2553,9 @@ function initMap() {
     const pitch = map.getPitch();
     $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
   });
-  map.on('zoom', updateMapboxPoiLabelVisibility);
-  map.on('moveend', () => { scheduleRysBuildingNumberUpdate(); updateMapboxPoiLabelVisibility(); });
-  map.on('zoomend', () => { scheduleRysBuildingNumberUpdate(); updateMapboxPoiLabelVisibility(); });
-  map.on('idle', () => { scheduleRysBuildingNumberUpdate(0); updateMapboxPoiLabelVisibility(); });
+  map.on('moveend', () => scheduleRysBuildingNumberUpdate());
+  map.on('zoomend', () => scheduleRysBuildingNumberUpdate());
+  map.on('idle', () => { scheduleRysBuildingNumberUpdate(0); applyBuildingNameVisibility(); });
   map.on('click', (e) => {
     if (!placingItemId) return;
     pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
@@ -2572,7 +2571,7 @@ function initMap() {
     map.on('load', () => {
       mapStyleLoaded = true;
       try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
-      updateMapboxPoiLabelVisibility(true);
+      applyBuildingNameVisibility();
       enlargeMapboxAddressLabels();
       setTimeout(enlargeMapboxAddressLabels, 800);
       addGeoshapeNeighborhoodLayers();
@@ -2927,13 +2926,38 @@ async function ensureAddressData(options = {}) {
   }
 }
 
-function updateMapboxPoiLabelVisibility(force = false) {
-  if (!map) return;
-  const shouldShow = map.getZoom() < MAPBOX_POI_LABEL_HIDE_ZOOM;
-  if (!force && mapboxPoiLabelsVisible === shouldShow) return;
-  mapboxPoiLabelsVisible = shouldShow;
-  try { map.setConfigProperty('basemap', 'showPointOfInterestLabels', shouldShow); } catch (e) {}
-  try { if (map.getLayer('poi-label')) map.setLayoutProperty('poi-label', 'visibility', shouldShow ? 'visible' : 'none'); } catch (e) {}
+function mapboxPoiLabelLayerIds() {
+  if (!map || !map.getStyle) return [];
+  const style = map.getStyle();
+  const layers = style && Array.isArray(style.layers) ? style.layers : [];
+  return layers
+    .filter(layer => layer && layer.type === 'symbol')
+    .filter(layer => String(layer.id || '').includes('poi-label') || String(layer['source-layer'] || '') === 'poi_label')
+    .map(layer => layer.id);
+}
+
+function updateBuildingNameButton() {
+  const btn = $('menu-toggle-building-names');
+  if (!btn) return;
+  btn.textContent = buildingNameVisible ? '🏢 建物名: ON' : '🏢 建物名: OFF';
+  btn.classList.toggle('on', buildingNameVisible);
+}
+
+function applyBuildingNameVisibility() {
+  if (!map) { updateBuildingNameButton(); return; }
+  const visibility = buildingNameVisible ? 'visible' : 'none';
+  mapboxPoiLabelLayerIds().forEach(id => {
+    try { map.setLayoutProperty(id, 'visibility', visibility); } catch (e) {}
+  });
+  updateBuildingNameButton();
+}
+
+function toggleBuildingNames() {
+  closeModal('modal-menu');
+  buildingNameVisible = !buildingNameVisible;
+  localStorage.setItem(BUILDING_NAME_VISIBLE_KEY, buildingNameVisible ? '1' : '0');
+  applyBuildingNameVisibility();
+  showToast(buildingNameVisible ? '建物名表示ON' : '建物名表示OFF');
 }
 
 function emptyFeatureCollection() {
@@ -3033,7 +3057,6 @@ function enlargeMapboxAddressLabels() {
   addRysBuildingNumberLayer();
   try { if (map.getLayer(RYS_BUILDING_NUMBER_LAYER_ID)) map.moveLayer(RYS_BUILDING_NUMBER_LAYER_ID); } catch (e) {}
   try { if (map.getLayer('building-number-label')) map.setPaintProperty('building-number-label', 'text-opacity', 0.15); } catch (e) {}
-  try { if (map.getLayer('poi-label')) map.setPaintProperty('poi-label', 'text-opacity', MAPBOX_POI_LABEL_TEXT_OPACITY); } catch (e) {}
 }
 
 function addAddressLayer(data) {
@@ -6787,6 +6810,7 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
   toggleNeighborhoods();
 });
 $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
+$('menu-toggle-building-names').addEventListener('click', toggleBuildingNames);
 $('menu-toggle-gsi').addEventListener('click', () => {
   closeModal('modal-menu');
   toggleGsiOverlay();
