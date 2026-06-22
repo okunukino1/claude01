@@ -1432,7 +1432,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.39';
+const APP_VERSION = 'v2026.06.22-test.40';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1444,7 +1444,7 @@ const BUILDING_NAME_VISIBLE_KEY = 'rys-mapbox-test-building-name-visible-v1';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-test-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-test-addr-visible';
-const ADDR_DATA_KEY = 'rys-mapbox-test-addr-data-v1';
+const ADDR_DATA_KEY = 'rys-mapbox-test-addr-data-v2';
 const OPERATOR_NAME_KEY = 'rys-mapbox-test-operator-name';
 const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-test-pickup-last-reset-date';
 const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-test-pickup-selected-sheet';
@@ -1633,7 +1633,9 @@ function warmupAppCaches() {
   runWhenIdle(() => {
     try {
       if (!addrData && localStorage.getItem(ADDR_DATA_KEY)) {
-        ensureAddressData({ showProgress: false }).catch(e => console.warn('address data warmup failed', e));
+        ensureAddressData({ showProgress: false })
+          .then(d => { if (d && map && map.getZoom() >= 17) scheduleRysBuildingNumberUpdate(0); })
+          .catch(e => console.warn('address data warmup failed', e));
       }
       const selectedCourse = getSelectedPickupSheet();
       const spotSheet = selectedCourse ? spotSheetForPickupCourse(selectedCourse) : '';
@@ -2798,19 +2800,24 @@ async function fetchAddressData(onProgress) {
   }
   const cityJson = await cityRes.json();
 
-  const ranges = (cityJson.data || [])
-    .filter(m => m.rsdt && m.csv_ranges && m.csv_ranges['住居表示'])
-    .map(m => ({
-      machiazaName: (m.oaza_cho || '') + (m.chome || ''),
-      start: m.csv_ranges['住居表示'].start,
-      length: m.csv_ranges['住居表示'].length
-    }));
+  // Collect ranges for both 住居表示 (rsdt=true) and 地番 (rsdt=false) areas.
+  // Many old downtown areas (e.g. Nihonbashi, Chuo-ku) use 地番 numbering,
+  // which is what Mapbox shows natively as building numbers.
+  const ranges = [];
+  (cityJson.data || []).forEach(m => {
+    if (!m.csv_ranges) return;
+    const name = (m.oaza_cho || '') + (m.chome || '');
+    if (m.rsdt && m.csv_ranges['住居表示']) {
+      ranges.push({ machiazaName: name, start: m.csv_ranges['住居表示'].start, length: m.csv_ranges['住居表示'].length, file: '住居表示' });
+    } else if (!m.rsdt && m.csv_ranges['地番']) {
+      ranges.push({ machiazaName: name, start: m.csv_ranges['地番'].start, length: m.csv_ranges['地番'].length, file: '地番' });
+    }
+  });
 
   if (ranges.length === 0) {
     return { type: 'FeatureCollection', features: [] };
   }
 
-  const txtUrl = `${baseUrl}-住居表示.txt`;
   const features = [];
   let completed = 0;
   const total = ranges.length;
@@ -2821,6 +2828,7 @@ async function fetchAddressData(onProgress) {
     while (nextIdx < ranges.length) {
       const r = ranges[nextIdx++];
       try {
+        const txtUrl = `${baseUrl}-${r.file}.txt`;
         const res = await fetch(txtUrl, {
           headers: { 'Range': `bytes=${r.start}-${r.start + r.length - 1}` }
         });
