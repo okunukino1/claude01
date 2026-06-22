@@ -1157,7 +1157,6 @@
       <button id="menu-cache-admin" type="button">🗄 DBキャッシュ管理</button>
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
-      <button id="menu-toggle-building-names" type="button">🏢 建物名 ON/OFF</button>
       <button id="menu-toggle-gsi" type="button">🗺 番地ライン(地理院) ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
       <button id="menu-time-windows" type="button">⏰ 時間指定設定</button>
@@ -1432,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.41';
+const APP_VERSION = 'v2026.06.22-test.25';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1440,11 +1439,10 @@ const APP_MODE_KEY = 'rys-mapbox-test-app-mode';
 const USAGE_KEY = 'rys-mapbox-test-usage-v1';
 const NEIGHBORHOOD_KEY = 'rys-mapbox-test-neighborhoods-visible';
 const GSI_OVERLAY_KEY = 'rys-mapbox-test-gsi-overlay-visible';
-const BUILDING_NAME_VISIBLE_KEY = 'rys-mapbox-test-building-name-visible-v1';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-test-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-test-addr-visible';
-const ADDR_DATA_KEY = 'rys-mapbox-test-addr-data-v2';
+const ADDR_DATA_KEY = 'rys-mapbox-test-addr-data-v1';
 const OPERATOR_NAME_KEY = 'rys-mapbox-test-operator-name';
 const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-test-pickup-last-reset-date';
 const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-test-pickup-selected-sheet';
@@ -1473,10 +1471,6 @@ const PHOTO_OCR_MAX_SIZE = 1120;
 const PHOTO_OCR_QUALITY = 0.8;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
-const MAPBOX_BUILDING_NUMBER_TEXT_SIZE = ['interpolate', ['linear'], ['zoom'], 17, 15, 18, 19, 19, 23, 20, 27, 22, 29];
-const MAPBOX_BUILDING_COMBINED_TEXT_SIZE = ['interpolate', ['linear'], ['zoom'], 17, 14, 18, 17, 19, 20, 20, 23, 22, 26];
-const RYS_BUILDING_NUMBER_SOURCE_ID = 'rys-building-number-source';
-const RYS_BUILDING_NUMBER_LAYER_ID = 'rys-building-number-label';
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
 const TIME_WINDOW_DEFAULTS = [
   { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
@@ -1528,21 +1522,6 @@ let deferredInstallPrompt = null;
 const DEFAULT_CENTER_LNG = 139.7745;
 const DEFAULT_CENTER_LAT = 35.6845;
 const DEFAULT_ZOOM = 16;
-
-// --- Dynamic per-municipality address-number data ---
-// The map can be anywhere in Japan, so building-number data is fetched per
-// municipality on demand, based on the current map center.
-const ADDR_CITY_CACHE_PREFIX = 'rys-mapbox-test-addr-city-v1:';
-const GSI_MUNI_TABLE_KEY = 'rys-mapbox-test-gsi-muni-v1';
-const GSI_REVERSE_GEOCODER = 'https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress';
-const GSI_MUNI_TABLE_URL = 'https://maps.gsi.go.jp/js/muni.js';
-const addrCityCache = new Map();   // "都道府県/市区町村" -> FeatureCollection
-const addrCityState = new Map();   // key -> 'loading' | 'loaded' | 'empty' | 'failed'
-let gsiMuniTable = null;           // muniCd -> { pref, city }
-let muniDetectInFlight = false;
-let lastDetectedCityKey = '';
-let lastDetectCenter = null;
-let lastDetectAt = 0;
 
 function detectInitialAppMode() {
   const saved = localStorage.getItem(APP_MODE_KEY);
@@ -1599,14 +1578,12 @@ let gpsInitialCenterPending = true;
 let gpsInitialCenterStartedAt = 0;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
 let gsiOverlayVisible = localStorage.getItem(GSI_OVERLAY_KEY) !== '0';
-let buildingNameVisible = localStorage.getItem(BUILDING_NAME_VISIBLE_KEY) !== '0';
 let listSearchQuery = '';
 let optimizedRouteOrderedIds = [];
 let recognition = null;
 let mapStyleLoaded = false;
-let rysBuildingNumberUpdateTimer = null;
 
-let addrVisible = localStorage.getItem(ADDR_VISIBLE_KEY) !== '0'; // default ON
+let addrVisible = false;
 let addrData = null;
 let addrLoading = false;
 let pendingAddrData = null;
@@ -1647,10 +1624,8 @@ function runWhenIdle(fn, timeout = 1200) {
 function warmupAppCaches() {
   runWhenIdle(() => {
     try {
-      // Warm the GSI municipality table so the first detection is fast.
-      loadGsiMuniTable().catch(e => console.warn('muni table warmup failed', e));
-      if (addrVisible && map && map.getZoom() >= 17) {
-        ensureCityDataForCenter().catch(e => console.warn('address data warmup failed', e));
+      if (!addrData && localStorage.getItem(ADDR_DATA_KEY)) {
+        ensureAddressData({ showProgress: false }).catch(e => console.warn('address data warmup failed', e));
       }
       const selectedCourse = getSelectedPickupSheet();
       const spotSheet = selectedCourse ? spotSheetForPickupCourse(selectedCourse) : '';
@@ -2571,9 +2546,6 @@ function initMap() {
     const pitch = map.getPitch();
     $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
   });
-  map.on('moveend', () => scheduleRysBuildingNumberUpdate());
-  map.on('zoomend', () => { scheduleRysBuildingNumberUpdate(); enlargeMapboxAddressLabels(); });
-  map.on('idle', () => { scheduleRysBuildingNumberUpdate(0); applyBuildingNameVisibility(); enlargeMapboxAddressLabels(); });
   map.on('click', (e) => {
     if (!placingItemId) return;
     pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
@@ -2589,11 +2561,12 @@ function initMap() {
     map.on('load', () => {
       mapStyleLoaded = true;
       try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
-      applyBuildingNameVisibility();
-      enlargeMapboxAddressLabels();
-      setTimeout(enlargeMapboxAddressLabels, 800);
       addGeoshapeNeighborhoodLayers();
       addGsiOverlayLayer();
+      if (pendingAddrData) {
+        addAddressLayer(pendingAddrData);
+        pendingAddrData = null;
+      }
       resolve();
     });
   });
@@ -2800,9 +2773,9 @@ function updateGsiOverlayButton() {
   btn.classList.toggle('on', gsiOverlayVisible);
 }
 
-async function fetchAddressData(pref, city, onProgress) {
-  const prefEnc = encodeURIComponent(pref);
-  const cityEnc = encodeURIComponent(city);
+async function fetchAddressData(onProgress) {
+  const prefEnc = encodeURIComponent(ADDR_PREF);
+  const cityEnc = encodeURIComponent(ADDR_CITY);
   const baseUrl = `${ADDR_API_BASE}/${prefEnc}/${cityEnc}`;
 
   const cityRes = await fetch(`${baseUrl}.json`);
@@ -2811,24 +2784,19 @@ async function fetchAddressData(pref, city, onProgress) {
   }
   const cityJson = await cityRes.json();
 
-  // Collect ranges for both 住居表示 (rsdt=true) and 地番 (rsdt=false) areas.
-  // Many old downtown areas (e.g. Nihonbashi, Chuo-ku) use 地番 numbering,
-  // which is what Mapbox shows natively as building numbers.
-  const ranges = [];
-  (cityJson.data || []).forEach(m => {
-    if (!m.csv_ranges) return;
-    const name = (m.oaza_cho || '') + (m.chome || '');
-    if (m.rsdt && m.csv_ranges['住居表示']) {
-      ranges.push({ machiazaName: name, start: m.csv_ranges['住居表示'].start, length: m.csv_ranges['住居表示'].length, file: '住居表示' });
-    } else if (!m.rsdt && m.csv_ranges['地番']) {
-      ranges.push({ machiazaName: name, start: m.csv_ranges['地番'].start, length: m.csv_ranges['地番'].length, file: '地番' });
-    }
-  });
+  const ranges = (cityJson.data || [])
+    .filter(m => m.rsdt && m.csv_ranges && m.csv_ranges['住居表示'])
+    .map(m => ({
+      machiazaName: (m.oaza_cho || '') + (m.chome || ''),
+      start: m.csv_ranges['住居表示'].start,
+      length: m.csv_ranges['住居表示'].length
+    }));
 
   if (ranges.length === 0) {
     return { type: 'FeatureCollection', features: [] };
   }
 
+  const txtUrl = `${baseUrl}-住居表示.txt`;
   const features = [];
   let completed = 0;
   const total = ranges.length;
@@ -2839,7 +2807,6 @@ async function fetchAddressData(pref, city, onProgress) {
     while (nextIdx < ranges.length) {
       const r = ranges[nextIdx++];
       try {
-        const txtUrl = `${baseUrl}-${r.file}.txt`;
         const res = await fetch(txtUrl, {
           headers: { 'Range': `bytes=${r.start}-${r.start + r.length - 1}` }
         });
@@ -2908,488 +2875,42 @@ function parseAddrSection(text, machiazaName, features) {
   }
 }
 
-// Load the GSI municipality-code table (muniCd -> 都道府県/市区町村).
-// Uses the same JIS municipality definitions as the Geolonia address API,
-// so the resolved names can be used directly in the API path.
-function parseGsiMuniArray(arr) {
-  const table = {};
-  Object.keys(arr).forEach(code => {
-    const parts = String(arr[code]).split(',');
-    // parts: [prefCd, prefName, muniCd, cityName]
-    const pref = (parts[1] || '').trim();
-    let city = (parts[3] || '').trim();
-    if (!pref || !city) return;
-    // 郡名を含む町村 (例: 西多摩郡瑞穂町) は郡名を除いた市区町村名に正規化
-    city = city.replace(/^.+?郡/, '');
-    const entry = { pref, city };
-    table[String(code).trim()] = entry;
-    if (parts[2]) table[String(parts[2]).trim()] = entry; // 5桁muniCdでも引けるように
-  });
-  return table;
-}
+async function ensureAddressData(options = {}) {
+  if (addrData) return addrData;
+  if (addrLoading) return null;
 
-async function loadGsiMuniTable() {
-  if (gsiMuniTable) return gsiMuniTable;
-  try {
-    const cached = localStorage.getItem(GSI_MUNI_TABLE_KEY);
-    if (cached) {
-      const obj = JSON.parse(cached);
-      if (obj && typeof obj === 'object' && Object.keys(obj).length) { gsiMuniTable = obj; return obj; }
-    }
-  } catch (e) {}
-  // muni.js defines GSI.MUNI_ARRAY. Load via <script> to avoid CORS issues.
-  return new Promise(resolve => {
-    window.GSI = window.GSI || {};
-    const script = document.createElement('script');
-    script.src = GSI_MUNI_TABLE_URL;
-    script.async = true;
-    script.onload = () => {
-      try {
-        const arr = window.GSI && window.GSI.MUNI_ARRAY;
-        if (arr && typeof arr === 'object') {
-          const table = parseGsiMuniArray(arr);
-          if (Object.keys(table).length) {
-            gsiMuniTable = table;
-            try { localStorage.setItem(GSI_MUNI_TABLE_KEY, JSON.stringify(table)); } catch (e) {}
-            resolve(table);
-            return;
-          }
-        }
-      } catch (e) { console.warn('GSI muni table parse failed', e); }
-      resolve(null);
-    };
-    script.onerror = () => { console.warn('GSI muni table load failed'); resolve(null); };
-    document.head.appendChild(script);
-  });
-}
-
-// Reverse-geocode the given coordinate to a {pref, city, key} municipality.
-async function detectMunicipality(lng, lat) {
-  try {
-    const res = await fetch(`${GSI_REVERSE_GEOCODER}?lat=${lat}&lon=${lng}`);
-    if (!res.ok) return null;
-    const json = await res.json();
-    const muniCd = json && json.results && json.results.muniCd;
-    if (!muniCd) return null;
-    const table = await loadGsiMuniTable();
-    if (!table) return null;
-    const raw = String(muniCd);
-    const hit = table[raw] || table[String(Number(raw))] || table[raw.padStart(5, '0')];
-    if (!hit) return null;
-    return { pref: hit.pref, city: hit.city, key: `${hit.pref}/${hit.city}` };
-  } catch (e) {
-    console.warn('municipality detect failed', e);
-    return null;
-  }
-}
-
-// Ensure address-number data for one municipality is loaded & cached.
-async function ensureCityData(pref, city, options = {}) {
-  const key = `${pref}/${city}`;
-  if (addrCityCache.has(key)) return addrCityCache.get(key);
-  if (addrCityState.get(key) === 'loading') return null;
-
-  const showProgress = options.showProgress === true;
-  addrCityState.set(key, 'loading');
+  const showProgress = options.showProgress !== false;
+  addrLoading = true;
   try {
     try {
-      const cached = localStorage.getItem(ADDR_CITY_CACHE_PREFIX + key);
+      const cached = localStorage.getItem(ADDR_DATA_KEY);
       if (cached) {
         const data = JSON.parse(cached);
         if (data && data.type === 'FeatureCollection' && Array.isArray(data.features)) {
-          addrCityCache.set(key, data);
-          addrCityState.set(key, data.features.length ? 'loaded' : 'empty');
+          addrData = data;
           return data;
         }
       }
     } catch (e) {}
 
-    if (showProgress) showLoading(`番地データを取得中... (${city})`);
-    const data = await fetchAddressData(pref, city, (c, t) => {
-      if (showProgress) $('loading-msg').textContent = `番地データを取得中... ${city} ${c}/${t}`;
+    if (showProgress) showLoading('番地データを取得中...');
+    const data = await fetchAddressData((c, t) => {
+      if (showProgress) $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;
     });
-    addrCityCache.set(key, data);
-    addrCityState.set(key, data.features.length ? 'loaded' : 'empty');
+    addrData = data;
     try {
-      localStorage.setItem(ADDR_CITY_CACHE_PREFIX + key, JSON.stringify(data));
+      localStorage.setItem(ADDR_DATA_KEY, JSON.stringify(data));
     } catch (e) {
       console.warn('番地データのキャッシュ保存失敗 (容量超過の可能性)', e);
     }
     return data;
   } catch (e) {
-    addrCityState.set(key, 'failed');
-    console.warn(`番地データ取得失敗 (${key}):`, e);
+    showToast('番地データ取得失敗: ' + e.message, true);
     return null;
   } finally {
+    addrLoading = false;
     if (showProgress) hideLoading();
   }
-}
-
-// Detect the municipality at the current map center and make sure its data
-// is loaded, then refresh the overlay. Throttled to avoid excess requests.
-async function ensureCityDataForCenter(options = {}) {
-  if (!map || !map.getCenter) return;
-  const center = map.getCenter();
-  const now = Date.now();
-  const moved = !lastDetectCenter ||
-    Math.abs(center.lng - lastDetectCenter.lng) > 0.004 ||
-    Math.abs(center.lat - lastDetectCenter.lat) > 0.004;
-  if (!options.force && muniDetectInFlight) return;
-  if (!options.force && !moved && (now - lastDetectAt) < 1500) return;
-
-  muniDetectInFlight = true;
-  lastDetectAt = now;
-  lastDetectCenter = { lng: center.lng, lat: center.lat };
-  try {
-    const muni = await detectMunicipality(center.lng, center.lat);
-    if (!muni) return;
-    lastDetectedCityKey = muni.key;
-    const already = addrCityCache.has(muni.key);
-    const data = await ensureCityData(muni.pref, muni.city, { showProgress: options.showProgress === true });
-    if (data && !already) scheduleRysBuildingNumberUpdate(0);
-  } finally {
-    muniDetectInFlight = false;
-  }
-}
-
-function mapboxPoiLabelLayerIds() {
-  if (!map || !map.getStyle) return [];
-  const style = map.getStyle();
-  const layers = style && Array.isArray(style.layers) ? style.layers : [];
-  return layers
-    .filter(layer => layer && layer.type === 'symbol')
-    .filter(layer => String(layer.id || '').includes('poi-label') || String(layer['source-layer'] || '') === 'poi_label')
-    .map(layer => layer.id);
-}
-
-function updateBuildingNameButton() {
-  const btn = $('menu-toggle-building-names');
-  if (!btn) return;
-  btn.textContent = buildingNameVisible ? '🏢 建物名: ON' : '🏢 建物名: OFF';
-  btn.classList.toggle('on', buildingNameVisible);
-}
-
-function applyBuildingNameVisibility() {
-  if (!map) { updateBuildingNameButton(); return; }
-  const visibility = buildingNameVisible ? 'visible' : 'none';
-  mapboxPoiLabelLayerIds().forEach(id => {
-    try { map.setLayoutProperty(id, 'visibility', visibility); } catch (e) {}
-  });
-  updateBuildingNameButton();
-}
-
-function toggleBuildingNames() {
-  closeModal('modal-menu');
-  buildingNameVisible = !buildingNameVisible;
-  localStorage.setItem(BUILDING_NAME_VISIBLE_KEY, buildingNameVisible ? '1' : '0');
-  applyBuildingNameVisibility();
-  showToast(buildingNameVisible ? '建物名表示ON' : '建物名表示OFF');
-}
-
-function emptyFeatureCollection() {
-  return { type: 'FeatureCollection', features: [] };
-}
-
-
-function sourceFeatureCoordinate(feature) {
-  const geom = feature && feature.geometry;
-  if (!geom) return null;
-  if (geom.type === 'Point' && Array.isArray(geom.coordinates)) return geom.coordinates;
-  if (geom.type === 'MultiPoint' && Array.isArray(geom.coordinates) && geom.coordinates[0]) return geom.coordinates[0];
-  return null;
-}
-
-function featureTextValue(feature, keys) {
-  const props = feature && feature.properties ? feature.properties : {};
-  for (const key of keys) {
-    const value = props[key];
-    if (value == null) continue;
-    const text = String(value).trim();
-    if (text) return text;
-  }
-  return '';
-}
-
-function normalizeMapLabel(text) {
-  return String(text || '')
-    .replace(/\s+/g, ' ')
-    .replace(/[\u200b\u200c\u200d\ufeff]/g, '')
-    .trim();
-}
-
-function extractHouseNumberLabel(feature) {
-  const label = normalizeMapLabel(featureTextValue(feature, ['house_num', 'housenum', 'addr:housenumber', 'name']));
-  return /^\d+(?:[-\uFF0D\u30FC]\d+)*$/.test(label) ? label.replace(/[\uFF0D\u30FC]/g, '-') : '';
-}
-
-function extractBuildingNameLabel(feature) {
-  const label = normalizeMapLabel(featureTextValue(feature, ['name_ja', 'name', 'name_script', 'name_en', 'label', 'text']));
-  if (!label) return '';
-  if (/^\d+(?:[-\uFF0D\u30FC]\d+)*$/.test(label)) return '';
-  if (/^[A-Z]$/.test(label)) return '';
-  return label;
-}
-
-function featurePointEntry(feature, label) {
-  const coord = sourceFeatureCoordinate(feature);
-  if (!label || !coord || !Number.isFinite(coord[0]) || !Number.isFinite(coord[1])) return null;
-  const point = map && map.project ? map.project(coord) : null;
-  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
-  return { label, coord, point };
-}
-
-function dedupePointEntries(entries) {
-  const seen = new Set();
-  return entries.filter(entry => {
-    const key = `${entry.label}:${Math.round(entry.point.x / 3)},${Math.round(entry.point.y / 3)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-
-function mapboxSourceIdsForSourceLayer(sourceLayer) {
-  if (!map || !map.getStyle) return [];
-  const style = map.getStyle();
-  const layers = style && Array.isArray(style.layers) ? style.layers : [];
-  const ids = [];
-  layers.forEach(layer => {
-    if (!layer || layer['source-layer'] !== sourceLayer || !layer.source) return;
-    if (!ids.includes(layer.source)) ids.push(layer.source);
-  });
-  // Standard style (v3) uses 'mapbox' as the built-in vector source; older styles use 'composite'
-  if (map.getSource('mapbox') && !ids.includes('mapbox')) ids.push('mapbox');
-  if (map.getSource('composite') && !ids.includes('composite')) ids.push('composite');
-  return ids.filter(id => {
-    try { return !!map.getSource(id); } catch (e) { return false; }
-  });
-}
-
-function queryMapboxSourceLayerFeatures(sourceLayer) {
-  const features = [];
-  mapboxSourceIdsForSourceLayer(sourceLayer).forEach(sourceId => {
-    try { features.push(...(map.querySourceFeatures(sourceId, { sourceLayer }) || [])); } catch (e) {}
-  });
-  return features;
-}
-
-function renderedFeatureLayerInfo(feature) {
-  const layer = feature && feature.layer ? feature.layer : {};
-  return {
-    id: String(layer.id || ''),
-    type: String(layer.type || ''),
-    sourceLayer: String(layer['source-layer'] || feature.sourceLayer || '')
-  };
-}
-
-function isRenderedMapLabelFeature(feature) {
-  const info = renderedFeatureLayerInfo(feature);
-  if (info.id === RYS_BUILDING_NUMBER_LAYER_ID) return false;
-  if (info.type === 'symbol') return true;
-  if (info.id.includes('label')) return true;
-  if (info.sourceLayer.includes('label')) return true;
-  return false;
-}
-
-function queryRenderedMapLabelFeatures() {
-  if (!map || !map.queryRenderedFeatures) return [];
-  const collected = [];
-  const seen = new Set();
-  const pushFeatures = (features) => {
-    (features || []).forEach(feature => {
-      if (!isRenderedMapLabelFeature(feature)) return;
-      const text = normalizeMapLabel(featureTextValue(feature, ['house_num', 'housenum', 'addr:housenumber', 'name_ja', 'name', 'name_script', 'name_en', 'label', 'text']));
-      if (!text) return;
-      const coord = sourceFeatureCoordinate(feature);
-      if (!coord) return;
-      const info = renderedFeatureLayerInfo(feature);
-      const key = `${text}:${coord[0].toFixed(6)},${coord[1].toFixed(6)}:${info.id}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      collected.push(feature);
-    });
-  };
-
-  try { pushFeatures(map.queryRenderedFeatures()); } catch (e) {}
-  return collected;
-}
-
-function queryRenderedBuildingLabelFeatures() {
-  const rendered = queryRenderedMapLabelFeatures().filter(feature => extractBuildingNameLabel(feature));
-  if (rendered.length) return rendered;
-  return queryMapboxSourceLayerFeatures('poi_label').filter(feature => extractBuildingNameLabel(feature));
-}
-
-function collectHouseNumberEntriesFromAddrData() {
-  if (!map || !map.getBounds || addrCityCache.size === 0) return [];
-  const bounds = map.getBounds();
-  const entries = [];
-  for (const collection of addrCityCache.values()) {
-    if (!collection || !Array.isArray(collection.features)) continue;
-    for (const f of collection.features) {
-      const coord = f.geometry && f.geometry.coordinates;
-      if (!coord || !Number.isFinite(coord[0]) || !Number.isFinite(coord[1])) continue;
-      if (!bounds.contains(coord)) continue;
-      const entry = featurePointEntry(f, normalizeMapLabel(f.properties && f.properties.label));
-      if (entry) entries.push(entry);
-      if (entries.length >= 1200) return entries;
-    }
-  }
-  return entries;
-}
-
-function collectHouseNumberEntries() {
-  // Prefer the app's own address-number data (Geolonia ABR) — it is a real,
-  // restylable GeoJSON source. Mapbox Standard style does NOT expose its
-  // basemap `housenum_label` source/layer to the JS API, so querying it
-  // returns nothing; those queries remain only as a fallback for classic styles.
-  let entries = collectHouseNumberEntriesFromAddrData();
-  if (!entries.length) {
-    entries = queryMapboxSourceLayerFeatures('housenum_label')
-      .map(feature => featurePointEntry(feature, extractHouseNumberLabel(feature)))
-      .filter(Boolean);
-  }
-  if (!entries.length) {
-    entries = queryRenderedMapLabelFeatures()
-      .map(feature => featurePointEntry(feature, extractHouseNumberLabel(feature)))
-      .filter(Boolean);
-  }
-  return dedupePointEntries(entries);
-}
-
-function collectBuildingNameEntries() {
-  let features = queryRenderedBuildingLabelFeatures();
-  if (!features.length) features = queryMapboxSourceLayerFeatures('poi_label');
-  return dedupePointEntries(
-    features
-      .map(feature => featurePointEntry(feature, extractBuildingNameLabel(feature)))
-      .filter(Boolean)
-  ).slice(0, 220);
-}
-
-function buildingLabelLinkDistancePx() {
-  const zoom = map && map.getZoom ? map.getZoom() : 18;
-  return Math.max(52, Math.min(150, 42 + ((zoom - 17) * 34)));
-}
-
-function addBuildingLabelFeature(collection, coord, props) {
-  collection.features.push({
-    type: 'Feature',
-    geometry: { type: 'Point', coordinates: coord },
-    properties: props
-  });
-}
-
-function updateRysBuildingNumberSource() {
-  if (!map || !map.getSource(RYS_BUILDING_NUMBER_SOURCE_ID)) return;
-  const source = map.getSource(RYS_BUILDING_NUMBER_SOURCE_ID);
-  const collection = emptyFeatureCollection();
-  if (!addrVisible || map.getZoom() < 17) {
-    source.setData(collection);
-    return;
-  }
-
-  // Make sure the municipality at the current map center is loaded, then
-  // (when it arrives) this function is called again to render it.
-  ensureCityDataForCenter();
-
-  // Render building numbers only. Building names stay as the Standard
-  // basemap's native POI labels, so both names and big numbers are visible.
-  const numbers = collectHouseNumberEntries();
-  numbers.forEach(number => {
-    addBuildingLabelFeature(collection, number.coord, {
-      number: number.label,
-      label: number.label,
-      kind: 'number'
-    });
-  });
-
-  source.setData(collection);
-}
-
-function scheduleRysBuildingNumberUpdate(delay = 80) {
-  if (rysBuildingNumberUpdateTimer) clearTimeout(rysBuildingNumberUpdateTimer);
-  rysBuildingNumberUpdateTimer = setTimeout(() => {
-    rysBuildingNumberUpdateTimer = null;
-    updateRysBuildingNumberSource();
-  }, delay);
-}
-
-function addRysBuildingNumberLayer() {
-  if (!map) return;
-  if (!map.getSource(RYS_BUILDING_NUMBER_SOURCE_ID)) {
-    map.addSource(RYS_BUILDING_NUMBER_SOURCE_ID, { type: 'geojson', data: emptyFeatureCollection() });
-  }
-  if (!map.getLayer(RYS_BUILDING_NUMBER_LAYER_ID)) {
-    const layerDef = {
-      id: RYS_BUILDING_NUMBER_LAYER_ID,
-      type: 'symbol',
-      source: RYS_BUILDING_NUMBER_SOURCE_ID,
-      slot: 'top',
-      minzoom: 17,
-      layout: {
-        'visibility': addrVisible ? 'visible' : 'none',
-        'text-field': ['get', 'label'],
-        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-        'text-size': MAPBOX_BUILDING_NUMBER_TEXT_SIZE,
-        'text-line-height': 0.96,
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
-        'text-optional': false,
-        'text-padding': 0,
-        'text-anchor': 'center',
-        'text-offset': [0, 0.2],
-        'symbol-z-order': 'viewport-y'
-      },
-      paint: {
-        'text-color': '#0f172a',
-        'text-halo-color': 'rgba(255,255,255,0.99)',
-        'text-halo-width': 3.8,
-        'text-opacity': 1
-      }
-    };
-    try { map.addLayer(layerDef); } catch (e) {
-      try { const { slot, ...fallback } = layerDef; map.addLayer(fallback); } catch (e2) {}
-    }
-  }
-  scheduleRysBuildingNumberUpdate(0);
-}
-
-function mapboxBuildingNumberLayerIds() {
-  if (!map || !map.getStyle) return [];
-  const style = map.getStyle();
-  const layers = style && Array.isArray(style.layers) ? style.layers : [];
-  return layers
-    .filter(layer => layer && layer.type === 'symbol')
-    .filter(layer => {
-      const id = String(layer.id || '');
-      const sourceLayer = String(layer['source-layer'] || '');
-      return id.includes('building-number') || sourceLayer === 'housenum_label';
-    })
-    .map(layer => layer.id);
-}
-
-function strengthenMapboxBuildingNumberLayer(id) {
-  if (!map || !id || !map.getLayer(id)) return;
-  try { map.setLayoutProperty(id, 'visibility', 'visible'); } catch (e) {}
-  try { map.setLayoutProperty(id, 'text-size', MAPBOX_BUILDING_NUMBER_TEXT_SIZE); } catch (e) {}
-  try { map.setLayoutProperty(id, 'text-allow-overlap', true); } catch (e) {}
-  try { map.setLayoutProperty(id, 'text-ignore-placement', true); } catch (e) {}
-  try { map.setLayoutProperty(id, 'text-optional', false); } catch (e) {}
-  try { map.setLayoutProperty(id, 'text-offset', [0, 0.85]); } catch (e) {}
-  try { map.setPaintProperty(id, 'text-color', '#111827'); } catch (e) {}
-  try { map.setPaintProperty(id, 'text-halo-color', 'rgba(255,255,255,0.99)'); } catch (e) {}
-  try { map.setPaintProperty(id, 'text-halo-width', 3.4); } catch (e) {}
-  try { map.setPaintProperty(id, 'text-opacity', 1); } catch (e) {}
-  try { map.moveLayer(id); } catch (e) {}
-}
-
-function enlargeMapboxAddressLabels() {
-  if (!map) return;
-  addRysBuildingNumberLayer();
-  mapboxBuildingNumberLayerIds().forEach(strengthenMapboxBuildingNumberLayer);
-  try { if (map.getLayer(RYS_BUILDING_NUMBER_LAYER_ID)) map.moveLayer(RYS_BUILDING_NUMBER_LAYER_ID); } catch (e) {}
 }
 
 function addAddressLayer(data) {
@@ -3562,21 +3083,29 @@ function updateAddrButton() {
   btn.classList.toggle('on', addrVisible);
 }
 
-function toggleAddressBlocks() {
+async function toggleAddressBlocks() {
   closeModal('modal-menu');
-  addrVisible = !addrVisible;
-  localStorage.setItem(ADDR_VISIBLE_KEY, addrVisible ? '1' : '0');
-  if (map && map.getLayer(RYS_BUILDING_NUMBER_LAYER_ID)) {
-    try { map.setLayoutProperty(RYS_BUILDING_NUMBER_LAYER_ID, 'visibility', addrVisible ? 'visible' : 'none'); } catch (e) {}
-  }
-  updateAddrButton();
   if (addrVisible) {
-    ensureCityDataForCenter({ force: true, showProgress: true });
-    scheduleRysBuildingNumberUpdate(0);
-    showToast('番地表示ON — ズーム17以上で表示');
-  } else {
+    addrVisible = false;
+    removeAddressLayer();
+    localStorage.setItem(ADDR_VISIBLE_KEY, '0');
+    updateAddrButton();
     showToast('番地表示OFF');
+    return;
   }
+  if (!addrData) {
+    const data = await ensureAddressData();
+    if (!data) return;
+  }
+  addrVisible = true;
+  if (mapStyleLoaded) {
+    addAddressLayer(addrData);
+  } else {
+    pendingAddrData = addrData;
+  }
+  localStorage.setItem(ADDR_VISIBLE_KEY, '1');
+  updateAddrButton();
+  showToast(`番地表示ON (${addrData.features.length.toLocaleString()}件) — ズーム17以上で表示`);
 }
 
 async function refreshAddressData() {
@@ -3585,22 +3114,17 @@ async function refreshAddressData() {
     '番地データ再取得',
     'キャッシュを破棄して最新データを取り直しますか？\n通信が発生します(数百KB〜)。',
     async () => {
-      // Clear all cached municipality data (memory + localStorage).
-      addrCityCache.clear();
-      addrCityState.clear();
-      lastDetectedCityKey = '';
-      lastDetectCenter = null;
-      try {
-        const toRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && k.startsWith(ADDR_CITY_CACHE_PREFIX)) toRemove.push(k);
-        }
-        toRemove.forEach(k => localStorage.removeItem(k));
-      } catch (e) {}
-      await ensureCityDataForCenter({ force: true, showProgress: true });
-      scheduleRysBuildingNumberUpdate(0);
-      showToast('番地データを再取得しました');
+      addrData = null;
+      localStorage.removeItem(ADDR_DATA_KEY);
+      removeAddressLayer();
+      const data = await ensureAddressData();
+      if (!data) return;
+      if (addrVisible) {
+        addAddressLayer(data);
+        showToast(`番地データ再取得完了 (${data.features.length.toLocaleString()}件)`);
+      } else {
+        showToast(`番地データ再取得完了 (${data.features.length.toLocaleString()}件) — 「番地表示: ON」で表示`);
+      }
     }
   );
 }
@@ -7140,7 +6664,6 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
   toggleNeighborhoods();
 });
 $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
-$('menu-toggle-building-names').addEventListener('click', toggleBuildingNames);
 $('menu-toggle-gsi').addEventListener('click', () => {
   closeModal('modal-menu');
   toggleGsiOverlay();
@@ -7280,9 +6803,13 @@ document.addEventListener('visibilitychange', () => {
       });
     }
 
-    updateAddrButton();
-    if (addrVisible) {
-      ensureCityDataForCenter().catch(e => console.warn('address data init failed', e));
+    if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {
+      ensureAddressData({ showProgress: false }).then(data => {
+        if (!data) return;
+        addrVisible = true;
+        addAddressLayer(data);
+        updateAddrButton();
+      });
     }
   } catch (e) {
     hideLoading();
