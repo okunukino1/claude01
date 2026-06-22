@@ -3096,10 +3096,32 @@ function queryRenderedBuildingLabelFeatures() {
   return queryMapboxSourceLayerFeatures('poi_label').filter(feature => extractBuildingNameLabel(feature));
 }
 
+function collectHouseNumberEntriesFromAddrData() {
+  if (!addrData || !Array.isArray(addrData.features) || !map || !map.getBounds) return [];
+  const bounds = map.getBounds();
+  const entries = [];
+  for (const f of addrData.features) {
+    const coord = f.geometry && f.geometry.coordinates;
+    if (!coord || !Number.isFinite(coord[0]) || !Number.isFinite(coord[1])) continue;
+    if (!bounds.contains(coord)) continue;
+    const entry = featurePointEntry(f, normalizeMapLabel(f.properties && f.properties.label));
+    if (entry) entries.push(entry);
+    if (entries.length >= 800) break;
+  }
+  return entries;
+}
+
 function collectHouseNumberEntries() {
-  let entries = queryMapboxSourceLayerFeatures('housenum_label')
-    .map(feature => featurePointEntry(feature, extractHouseNumberLabel(feature)))
-    .filter(Boolean);
+  // Prefer the app's own address-number data (Geolonia ABR) — it is a real,
+  // restylable GeoJSON source. Mapbox Standard style does NOT expose its
+  // basemap `housenum_label` source/layer to the JS API, so querying it
+  // returns nothing; those queries remain only as a fallback for classic styles.
+  let entries = collectHouseNumberEntriesFromAddrData();
+  if (!entries.length) {
+    entries = queryMapboxSourceLayerFeatures('housenum_label')
+      .map(feature => featurePointEntry(feature, extractHouseNumberLabel(feature)))
+      .filter(Boolean);
+  }
   if (!entries.length) {
     entries = queryRenderedMapLabelFeatures()
       .map(feature => featurePointEntry(feature, extractHouseNumberLabel(feature)))
@@ -3138,6 +3160,14 @@ function updateRysBuildingNumberSource() {
   if (map.getZoom() < 17) {
     source.setData(collection);
     return;
+  }
+
+  // Load our own address-number data silently the first time we zoom in,
+  // then re-render once it is available.
+  if (!addrData && !addrLoading) {
+    ensureAddressData({ showProgress: false }).then(d => {
+      if (d) scheduleRysBuildingNumberUpdate(0);
+    });
   }
 
   const numbers = collectHouseNumberEntries();
@@ -3204,7 +3234,7 @@ function addRysBuildingNumberLayer() {
       layout: {
         'text-field': ['get', 'label'],
         'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-        'text-size': MAPBOX_BUILDING_COMBINED_TEXT_SIZE,
+        'text-size': MAPBOX_BUILDING_NUMBER_TEXT_SIZE,
         'text-line-height': 0.96,
         'text-allow-overlap': true,
         'text-ignore-placement': true,
