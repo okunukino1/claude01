@@ -1431,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.25';
+const APP_VERSION = 'v2026.06.22-test.26';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1471,6 +1471,7 @@ const PHOTO_OCR_MAX_SIZE = 1120;
 const PHOTO_OCR_QUALITY = 0.8;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
+const MAPBOX_ADDRESS_LABEL_TEXT_SIZE = ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 15, 20, 18, 22, 20];
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
 const TIME_WINDOW_DEFAULTS = [
   { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
@@ -2561,6 +2562,8 @@ function initMap() {
     map.on('load', () => {
       mapStyleLoaded = true;
       try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
+      enlargeMapboxAddressLabels();
+      setTimeout(enlargeMapboxAddressLabels, 800);
       addGeoshapeNeighborhoodLayers();
       addGsiOverlayLayer();
       if (pendingAddrData) {
@@ -2911,6 +2914,23 @@ async function ensureAddressData(options = {}) {
     addrLoading = false;
     if (showProgress) hideLoading();
   }
+}
+
+function enlargeMapboxAddressLabels() {
+  if (!map) return;
+  const style = map.getStyle && map.getStyle();
+  const layers = style && Array.isArray(style.layers) ? style.layers : [];
+  const targetPattern = /house[-_ ]?number|housenumber|address[-_ ]?(label|number)?|addr[-_ ]?(label|number)?/i;
+  layers.forEach(layer => {
+    if (!layer || layer.type !== 'symbol') return;
+    const id = String(layer.id || '');
+    if (id === 'addr-points-label' || id.indexOf('delivery') >= 0) return;
+    const sourceLayer = String(layer['source-layer'] || '');
+    const textField = JSON.stringify(layer.layout && layer.layout['text-field'] || '');
+    if (!targetPattern.test(`${id} ${sourceLayer} ${textField}`)) return;
+    try { map.setLayoutProperty(id, 'text-size', MAPBOX_ADDRESS_LABEL_TEXT_SIZE); } catch (e) {}
+    try { map.setPaintProperty(id, 'text-halo-width', 1.6); } catch (e) {}
+  });
 }
 
 function addAddressLayer(data) {
