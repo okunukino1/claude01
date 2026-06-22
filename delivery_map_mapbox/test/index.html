@@ -1432,7 +1432,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.38';
+const APP_VERSION = 'v2026.06.22-test.39';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -3033,6 +3033,8 @@ function mapboxSourceIdsForSourceLayer(sourceLayer) {
     if (!layer || layer['source-layer'] !== sourceLayer || !layer.source) return;
     if (!ids.includes(layer.source)) ids.push(layer.source);
   });
+  // Standard style (v3) uses 'mapbox' as the built-in vector source; older styles use 'composite'
+  if (map.getSource('mapbox') && !ids.includes('mapbox')) ids.push('mapbox');
   if (map.getSource('composite') && !ids.includes('composite')) ids.push('composite');
   return ids.filter(id => {
     try { return !!map.getSource(id); } catch (e) { return false; }
