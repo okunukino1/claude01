@@ -1432,7 +1432,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.35';
+const APP_VERSION = 'v2026.06.22-test.36';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -3028,15 +3028,38 @@ function queryCompositeSourceFeatures(sourceLayer) {
   try { return map.querySourceFeatures('composite', { sourceLayer }) || []; } catch (e) { return []; }
 }
 
-function queryRenderedPoiLabelFeatures() {
+function queryRenderedBuildingLabelFeatures() {
   if (!map || !map.queryRenderedFeatures) return [];
+  const collected = [];
+  const seen = new Set();
+  const pushFeatures = (features) => {
+    (features || []).forEach(feature => {
+      const label = extractBuildingNameLabel(feature);
+      const layer = feature && feature.layer ? feature.layer : {};
+      const layerId = String(layer.id || '');
+      if (layerId === RYS_BUILDING_NUMBER_LAYER_ID) return;
+      const sourceLayer = String(layer['source-layer'] || feature.sourceLayer || '');
+      const isLikelyLabel = layer.type === 'symbol' || layerId.includes('label') || sourceLayer.includes('label');
+      if (!label || !isLikelyLabel) return;
+      const coord = sourceFeatureCoordinate(feature);
+      const key = `${label}:${coord ? coord.join(',') : layerId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      collected.push(feature);
+    });
+  };
+
   const layerIds = mapboxPoiLabelLayerIds().filter(id => {
     try { return !!map.getLayer(id); } catch (e) { return false; }
   });
-  if (!layerIds.length) return [];
-  try { return map.queryRenderedFeatures({ layers: layerIds }) || []; } catch (e) {}
-  try { return map.queryRenderedFeatures(undefined, { layers: layerIds }) || []; } catch (e) {}
-  return [];
+  if (layerIds.length) {
+    try { pushFeatures(map.queryRenderedFeatures(undefined, { layers: layerIds })); } catch (e) {}
+    try { pushFeatures(map.queryRenderedFeatures({ layers: layerIds })); } catch (e) {}
+  }
+  if (collected.length < 8) {
+    try { pushFeatures(map.queryRenderedFeatures()); } catch (e) {}
+  }
+  return collected;
 }
 
 function collectHouseNumberEntries() {
@@ -3048,7 +3071,7 @@ function collectHouseNumberEntries() {
 }
 
 function collectBuildingNameEntries() {
-  let features = queryRenderedPoiLabelFeatures();
+  let features = queryRenderedBuildingLabelFeatures();
   if (!features.length) features = queryCompositeSourceFeatures('poi_label');
   return dedupePointEntries(
     features
@@ -3141,21 +3164,16 @@ function addRysBuildingNumberLayer() {
       slot: 'top',
       minzoom: 17,
       layout: {
-        'text-field': [
-          'case',
-          ['all', ['has', 'name'], ['has', 'number']],
-          ['format', ['get', 'name'], { 'font-scale': 0.68 }, '\n', {}, ['get', 'number'], { 'font-scale': 1.12 }],
-          ['get', 'label']
-        ],
+        'text-field': ['get', 'label'],
         'text-font': ['Arial Unicode MS Bold'],
         'text-size': MAPBOX_BUILDING_COMBINED_TEXT_SIZE,
-        'text-line-height': 0.98,
+        'text-line-height': 0.96,
         'text-allow-overlap': true,
         'text-ignore-placement': true,
         'text-optional': false,
         'text-padding': 0,
         'text-anchor': 'center',
-        'text-offset': [0, 0.25],
+        'text-offset': [0, 0.2],
         'symbol-z-order': 'viewport-y'
       },
       paint: {
