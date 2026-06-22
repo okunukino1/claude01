@@ -1431,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.28';
+const APP_VERSION = 'v2026.06.22-test.29';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1471,7 +1471,8 @@ const PHOTO_OCR_MAX_SIZE = 1120;
 const PHOTO_OCR_QUALITY = 0.8;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
-const MAPBOX_BUILDING_NUMBER_TEXT_SIZE = ['interpolate', ['linear'], ['zoom'], 17, 13, 18, 16, 19, 19, 20, 22, 22, 24];
+const MAPBOX_BUILDING_NUMBER_TEXT_SIZE = ['interpolate', ['linear'], ['zoom'], 17, 14, 18, 17, 19, 21, 20, 24, 22, 26];
+const MAPBOX_POI_LABEL_TEXT_OPACITY = ['interpolate', ['linear'], ['zoom'], 17, 1, 18.5, 0.9, 19.5, 0.72, 21, 0.65];
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
 const TIME_WINDOW_DEFAULTS = [
   { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
@@ -2922,11 +2923,12 @@ function enlargeMapboxAddressLabels() {
   try { map.setLayoutProperty('building-number-label', 'text-allow-overlap', true); } catch (e) {}
   try { map.setLayoutProperty('building-number-label', 'text-ignore-placement', true); } catch (e) {}
   try { map.setLayoutProperty('building-number-label', 'text-optional', false); } catch (e) {}
-  try { map.setLayoutProperty('building-number-label', 'text-offset', [0, 0.45]); } catch (e) {}
-  try { map.setPaintProperty('building-number-label', 'text-color', '#374151'); } catch (e) {}
-  try { map.setPaintProperty('building-number-label', 'text-halo-color', 'rgba(255,255,255,0.98)'); } catch (e) {}
-  try { map.setPaintProperty('building-number-label', 'text-halo-width', 2.4); } catch (e) {}
+  try { map.setLayoutProperty('building-number-label', 'text-offset', [0, 0.9]); } catch (e) {}
+  try { map.setPaintProperty('building-number-label', 'text-color', '#1f2937'); } catch (e) {}
+  try { map.setPaintProperty('building-number-label', 'text-halo-color', 'rgba(255,255,255,0.99)'); } catch (e) {}
+  try { map.setPaintProperty('building-number-label', 'text-halo-width', 3.1); } catch (e) {}
   try { if (map.getLayer('transit-label')) map.moveLayer('building-number-label', 'transit-label'); } catch (e) {}
+  try { if (map.getLayer('poi-label')) map.setPaintProperty('poi-label', 'text-opacity', MAPBOX_POI_LABEL_TEXT_OPACITY); } catch (e) {}
 }
 
 function addAddressLayer(data) {
