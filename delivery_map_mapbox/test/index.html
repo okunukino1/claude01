@@ -1431,7 +1431,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.26';
+const APP_VERSION = 'v2026.06.22-test.27';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2962,6 +2962,32 @@ function addAddressLayer(data) {
       'text-halo-width': 2.2
     }
   });
+  map.addLayer({
+    id: 'addr-points-label-large',
+    type: 'symbol',
+    source: 'addr-points',
+    minzoom: 19.2,
+    maxzoom: 22,
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-size': [
+        'interpolate', ['linear'], ['zoom'],
+        19.2, 20,
+        20.2, 23,
+        21.2, 26
+      ],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+      'text-padding': 0,
+      'text-anchor': 'center',
+      'symbol-sort-key': ['length', ['get', 'label']]
+    },
+    paint: {
+      'text-color': '#111827',
+      'text-halo-color': 'rgba(255,255,255,0.99)',
+      'text-halo-width': 3.4
+    }
+  });
 }
 
 function addOptimizedRouteLayer() {
@@ -3091,6 +3117,7 @@ async function updateNextSegmentHighlight() {
 function removeAddressLayer() {
   if (!map) return;
   if (map.getLayer('addr-points-label-dense')) map.removeLayer('addr-points-label-dense');
+  if (map.getLayer('addr-points-label-large')) map.removeLayer('addr-points-label-large');
   if (map.getLayer('addr-points-dot')) map.removeLayer('addr-points-dot');
   if (map.getLayer('addr-points-label')) map.removeLayer('addr-points-label');
   if (map.getSource('addr-points')) map.removeSource('addr-points');
