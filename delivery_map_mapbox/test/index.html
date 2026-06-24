@@ -1148,24 +1148,13 @@
     color: var(--muted);
     font-size: calc(12px * var(--text-scale));
   }
-  .manual-address-preview {
-    margin-top: 8px;
-    padding: 8px;
-    border-radius: 6px;
-    background: #fff;
-    color: var(--ink);
-    font-size: calc(13px * var(--text-scale));
-    font-weight: 700;
-    line-height: 1.4;
-    overflow-wrap: anywhere;
-  }
   .hidden-input { display: none; }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.4</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.5</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1212,7 +1201,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.4</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.5</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1442,11 +1431,6 @@
         </div>
       </div>
       <div class="manual-address-wheel-guide">上下に回して選択します。選んだ住所は下の住所欄へ自動で入ります。</div>
-      <div class="manual-address-preview" id="manual-address-preview"></div>
-      <div class="modal-actions">
-        <button class="primary" id="btn-manual-address-apply" type="button">住所欄に反映</button>
-      </div>
-    </div>
     <label>住所 (必須)</label>
     <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
     <label>備考 (建物名・部屋番号など)</label>
@@ -1531,7 +1515,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.4';
+const APP_VERSION = 'v2026.06.24-test.5';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -4762,12 +4746,8 @@ function buildManualSelectedAddress() {
 }
 
 function updateManualAddressPreview({ apply = false } = {}) {
-  const address = buildManualSelectedAddress();
-  const preview = $('manual-address-preview');
-  if (preview) preview.textContent = address;
-  if (apply) $('add-address').value = address;
+  if (apply) $('add-address').value = buildManualSelectedAddress();
 }
-
 function updateManualAddressBuilder({ apply = false } = {}) {
   loadManualAddressState();
   const builder = $('manual-address-builder');
@@ -4777,10 +4757,6 @@ function updateManualAddressBuilder({ apply = false } = {}) {
   if (!visible) return;
   renderManualAddressWheels();
   updateManualAddressPreview({ apply });
-}
-
-function applyManualSelectedAddress() {
-  updateManualAddressBuilder({ apply: true });
 }
 
 function openManualAddModal() {
@@ -6934,7 +6910,6 @@ $('btn-add-confirm').addEventListener('click', () => {
   closeModal('modal-add');
   addDelivery({ address, note, deliveryCourse: appMode === 'delivery' ? getSelectedDeliveryCourse() : '' });
 });
-$('btn-manual-address-apply').addEventListener('click', applyManualSelectedAddress);
 
 $('btn-edit-save').addEventListener('click', saveEditedItem);
 $('btn-edit-geocode').addEventListener('click', reGeocodeEditedItem);
