@@ -1085,13 +1085,44 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-overlay .msg { font-size: 14px; font-weight: 600; }
 
+  .manual-address-builder {
+    margin: 0 0 12px;
+    padding: 10px;
+    border: 1px solid #d8d0b7;
+    border-radius: 8px;
+    background: var(--paper-soft);
+  }
+  .manual-address-builder h4 {
+    margin: 0 0 8px;
+    font-size: calc(14px * var(--text-scale));
+  }
+  .manual-address-builder .builder-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .manual-address-builder label { margin-top: 0; }
+  .manual-address-builder select,
+  .manual-address-builder input { width: 100%; }
+  .manual-address-preview {
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    font-size: calc(13px * var(--text-scale));
+    font-weight: 700;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
   .hidden-input { display: none; }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.10-test.4</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.1</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1138,7 +1169,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.12-test.3</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.1</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1327,7 +1358,7 @@
 
 <div class="modal-bg" id="modal-pickup-import">
   <div class="modal">
-    <h3>モード・集荷コースを選択</h3>
+    <h3>モード・コースを選択</h3>
     <label>モード / コース</label>
     <select id="pickup-sheet"></select>
     <label class="checkbox-line" style="display:none">
@@ -1335,7 +1366,7 @@
       現在の配送リストを置き換える
     </label>
     <div class="modal-help">
-      配送モード、または集荷コースを選んで開きます。集荷コースを選ぶと定期集荷とスポット集荷を読み込みます。
+      配送コース、または集荷コースを選んで開きます。小舟町店の配送コースでは手入力の住所選択を使えます。
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-pickup-import">キャンセル</button>
@@ -1347,6 +1378,36 @@
 <div class="modal-bg" id="modal-add">
   <div class="modal">
     <h3>配送先を追加</h3>
+    <div class="manual-address-builder" id="manual-address-builder" hidden>
+      <h4>小舟町店向け 住所選択</h4>
+      <div class="builder-grid">
+        <div>
+          <label>町名</label>
+          <select id="manual-town">
+            <option value="日本橋本町">日本橋本町</option>
+            <option value="日本橋室町">日本橋室町</option>
+            <option value="日本橋小舟町">日本橋小舟町</option>
+            <option value="日本橋本石町">日本橋本石町</option>
+          </select>
+        </div>
+        <div id="manual-chome-wrap">
+          <label>丁目</label>
+          <select id="manual-chome"></select>
+        </div>
+        <div>
+          <label>番</label>
+          <select id="manual-ban"></select>
+        </div>
+        <div>
+          <label>号</label>
+          <input type="number" id="manual-go" min="1" inputmode="numeric" placeholder="例: 3">
+        </div>
+      </div>
+      <div class="manual-address-preview" id="manual-address-preview"></div>
+      <div class="modal-actions">
+        <button class="primary" id="btn-manual-address-apply" type="button">住所欄に反映</button>
+      </div>
+    </div>
     <label>住所 (必須)</label>
     <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
     <label>備考 (建物名・部屋番号など)</label>
@@ -1431,7 +1492,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-test.25';
+const APP_VERSION = 'v2026.06.24-test.1';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1449,6 +1510,7 @@ const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-test-pickup-selected-sheet';
 const PICKUP_PENDING_SYNC_KEY = 'rys-mapbox-test-pickup-pending-sync-v1';
 const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-test-pickup-location-admin-pin-v1';
 const PICKUP_LIST_TAB_KEY = 'rys-mapbox-test-pickup-list-tab-v1';
+const DELIVERY_COURSE_KEY = 'rys-mapbox-test-delivery-course-v1';
 const PUSH_SELECTED_COURSES_KEY = 'rys-mapbox-test-push-selected-courses-v1';
 const TEXT_SIZE_KEY = 'rys-mapbox-test-text-size-v1';
 const APP_VERSION_CHECK_KEY = 'rys-mapbox-test-version-check-v1';
@@ -1512,6 +1574,16 @@ const PICKUP_SPOT_SHEETS_BY_COURSE = {
   '浜町店 北': '浜町店 北スポット'
 };
 const PICKUP_DELIVERY_MODE_VALUE = '__delivery__';
+const DELIVERY_COURSES = ['小舟町店', '浜町店', 'その他'];
+const DELIVERY_COURSE_DEFAULT = '小舟町店';
+const DELIVERY_COURSE_OPTION_PREFIX = '__delivery_course__:';
+const KOBUNACHO_DELIVERY_COURSE = '小舟町店';
+const MANUAL_ADDRESS_TOWNS = {
+  '日本橋本町': { chome: true },
+  '日本橋室町': { chome: true },
+  '日本橋小舟町': { chome: false },
+  '日本橋本石町': { chome: true }
+};
 const PICKUP_LIST_TAB_REGULAR = 'regular';
 const PICKUP_LIST_TAB_SPOT = 'spot';
 const PICKUP_SYNC_INTERVAL_MS = 20000;
@@ -1536,6 +1608,7 @@ function detectInitialAppMode() {
 let map = null;
 let mapboxConfig = null;
 let appMode = detectInitialAppMode();
+let selectedDeliveryCourse = normalizeDeliveryCourse(localStorage.getItem(DELIVERY_COURSE_KEY));
 let deliveries = [];
 let lastVisibleDeliveries = [];
 let markers = new Map();
@@ -2185,6 +2258,34 @@ function modeLabel() {
   return appMode === 'pickup' ? '集荷' : '配送';
 }
 
+function normalizeDeliveryCourse(course) {
+  return DELIVERY_COURSES.includes(course) ? course : DELIVERY_COURSE_DEFAULT;
+}
+
+function getSelectedDeliveryCourse() {
+  selectedDeliveryCourse = normalizeDeliveryCourse(selectedDeliveryCourse);
+  return selectedDeliveryCourse;
+}
+
+function setSelectedDeliveryCourse(course) {
+  selectedDeliveryCourse = normalizeDeliveryCourse(course);
+  localStorage.setItem(DELIVERY_COURSE_KEY, selectedDeliveryCourse);
+}
+
+function deliveryCourseOptionValue(course) {
+  return `${DELIVERY_COURSE_OPTION_PREFIX}${course}`;
+}
+
+function deliveryCourseFromOptionValue(value) {
+  const s = String(value || '');
+  if (!s.startsWith(DELIVERY_COURSE_OPTION_PREFIX)) return '';
+  return normalizeDeliveryCourse(s.slice(DELIVERY_COURSE_OPTION_PREFIX.length));
+}
+
+function isKobunachoDeliveryCourse() {
+  return appMode === 'delivery' && getSelectedDeliveryCourse() === KOBUNACHO_DELIVERY_COURSE;
+}
+
 function getSelectedPickupSheet() {
   const saved = localStorage.getItem(PICKUP_SELECTED_SHEET_KEY) || '';
   return PICKUP_SHEETS.includes(saved) ? saved : '';
@@ -2248,8 +2349,15 @@ function updatePickupListTabs() {
 function updateModeUi() {
   const modeBtn = $('btn-app-mode');
   if (modeBtn) {
-    const course = appMode === 'pickup' ? getSelectedPickupSheet() : '';
-    modeBtn.textContent = appMode === 'pickup' && course ? `モード: 集荷 (${course})` : `モード: ${modeLabel()}`;
+    const pickupCourse = appMode === 'pickup' ? getSelectedPickupSheet() : '';
+    const deliveryCourse = appMode === 'delivery' ? getSelectedDeliveryCourse() : '';
+    if (appMode === 'pickup' && pickupCourse) {
+      modeBtn.textContent = `集荷 (${pickupCourse})`;
+    } else if (appMode === 'delivery' && deliveryCourse) {
+      modeBtn.textContent = `配送 (${deliveryCourse})`;
+    } else {
+      modeBtn.textContent = modeLabel();
+    }
     modeBtn.classList.toggle('on', appMode === 'pickup');
   }
   const menuBtn = $('menu-toggle-mode');
@@ -3954,7 +4062,7 @@ function setCachedGeocode(key, result) {
   persistGeocodeCache();
 }
 
-async function addDelivery({ address, note }) {
+async function addDelivery({ address, note, deliveryCourse }) {
   if (!address) { showToast('住所が空です', true); return; }
   showLoading('住所を検索中...');
   const result = await geocodeAddress(address);
@@ -3971,6 +4079,7 @@ async function addDelivery({ address, note }) {
     formatted: result.formatted,
     completed: false,
     completedAt: null,
+    deliveryCourse: deliveryCourse || (appMode === 'delivery' ? getSelectedDeliveryCourse() : ''),
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -4492,6 +4601,62 @@ function splitAddressAndBuilding(text) {
   return { address, note };
 }
 
+function fillSelectRange(select, start, end) {
+  if (!select) return;
+  const current = select.value;
+  const options = [];
+  for (let i = start; i <= end; i++) {
+    options.push(`<option value="${i}">${i}</option>`);
+  }
+  select.innerHTML = options.join('');
+  if ([...select.options].some(option => option.value === current)) select.value = current;
+}
+
+function manualAddressTownConfig() {
+  const town = $('manual-town')?.value || '日本橋本町';
+  return MANUAL_ADDRESS_TOWNS[town] || MANUAL_ADDRESS_TOWNS['日本橋本町'];
+}
+
+function buildManualSelectedAddress() {
+  const town = $('manual-town')?.value || '日本橋本町';
+  const config = manualAddressTownConfig();
+  const chome = $('manual-chome')?.value || '1';
+  const ban = $('manual-ban')?.value || '1';
+  const go = String($('manual-go')?.value || '').trim();
+  const parts = config.chome ? [chome, ban] : [ban];
+  if (go) parts.push(go);
+  return `${ADDR_PREF}${ADDR_CITY}${town}${parts.join('-')}`;
+}
+
+function updateManualAddressBuilder({ apply = false } = {}) {
+  const builder = $('manual-address-builder');
+  if (!builder) return;
+  const visible = isKobunachoDeliveryCourse();
+  builder.hidden = !visible;
+  if (!visible) return;
+
+  fillSelectRange($('manual-chome'), 1, 4);
+  fillSelectRange($('manual-ban'), 1, 15);
+  const config = manualAddressTownConfig();
+  const chomeWrap = $('manual-chome-wrap');
+  if (chomeWrap) chomeWrap.style.display = config.chome ? '' : 'none';
+  const address = buildManualSelectedAddress();
+  const preview = $('manual-address-preview');
+  if (preview) preview.textContent = address;
+  if (apply) $('add-address').value = address;
+}
+
+function applyManualSelectedAddress() {
+  updateManualAddressBuilder({ apply: true });
+}
+
+function openManualAddModal() {
+  $('add-address').value = '';
+  $('add-note').value = '';
+  updateManualAddressBuilder({ apply: isKobunachoDeliveryCourse() });
+  openModal('modal-add');
+}
+
 function startVoiceInput() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { showToast('音声入力に対応していません', true); return; }
@@ -4859,12 +5024,14 @@ function setupPickupSheetOptions() {
   if (!select) return;
   if (select.options.length === 0) {
     select.innerHTML = [
-      `<option value="${PICKUP_DELIVERY_MODE_VALUE}">配送</option>`,
+      ...DELIVERY_COURSES.map(course => `<option value="${escapeHtml(deliveryCourseOptionValue(course))}">配送 (${escapeHtml(course)})</option>`),
       ...PICKUP_SHEETS.map(name => `<option value="${escapeHtml(name)}">集荷 (${escapeHtml(name)})</option>`)
     ].join('');
   }
   const saved = getSelectedPickupSheet();
-  select.value = appMode === 'pickup' ? (saved || PICKUP_SHEETS[0]) : PICKUP_DELIVERY_MODE_VALUE;
+  select.value = appMode === 'pickup'
+    ? (saved || PICKUP_SHEETS[0])
+    : deliveryCourseOptionValue(getSelectedDeliveryCourse());
 }
 
 function openPickupCourseModal() {
@@ -6107,9 +6274,12 @@ async function refreshSelectedPickupCourseInBackground() {
 
 async function importPickupSheet() {
   const sheetName = $('pickup-sheet').value;
-  if (sheetName === PICKUP_DELIVERY_MODE_VALUE) {
+  const deliveryCourse = deliveryCourseFromOptionValue(sheetName);
+  if (sheetName === PICKUP_DELIVERY_MODE_VALUE || deliveryCourse) {
+    if (deliveryCourse) setSelectedDeliveryCourse(deliveryCourse);
     closeModal('modal-pickup-import');
     if (appMode !== 'delivery') await switchAppMode('delivery');
+    updateModeUi();
     return;
   }
   const replaceList = true;
@@ -6624,19 +6794,20 @@ $('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(9
 $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
 $('btn-photo-read').addEventListener('click', readPendingPhoto);
 $('btn-add-voice').addEventListener('click', startVoiceInput);
-$('btn-add-manual').addEventListener('click', () => {
-  $('add-address').value = '';
-  $('add-note').value = '';
-  openModal('modal-add');
-});
+$('btn-add-manual').addEventListener('click', openManualAddModal);
 
 $('btn-add-confirm').addEventListener('click', () => {
   const address = $('add-address').value.trim();
   const note = $('add-note').value.trim();
   if (!address) { showToast('住所を入力してください', true); return; }
   closeModal('modal-add');
-  addDelivery({ address, note });
+  addDelivery({ address, note, deliveryCourse: appMode === 'delivery' ? getSelectedDeliveryCourse() : '' });
 });
+$('manual-town').addEventListener('change', () => updateManualAddressBuilder({ apply: true }));
+$('manual-chome').addEventListener('change', () => updateManualAddressBuilder({ apply: true }));
+$('manual-ban').addEventListener('change', () => updateManualAddressBuilder({ apply: true }));
+$('manual-go').addEventListener('input', () => updateManualAddressBuilder({ apply: true }));
+$('btn-manual-address-apply').addEventListener('click', applyManualSelectedAddress);
 
 $('btn-edit-save').addEventListener('click', saveEditedItem);
 $('btn-edit-geocode').addEventListener('click', reGeocodeEditedItem);
