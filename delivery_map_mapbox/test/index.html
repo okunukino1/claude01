@@ -681,6 +681,28 @@
     font-weight: 700;
     cursor: pointer;
   }
+  .address-roulette-panel {
+    margin: -2px 0 12px;
+    padding: 10px;
+    border: 1.5px solid #c0bca8;
+    border-radius: 8px;
+    background: #faf8ef;
+  }
+  .address-roulette-panel[hidden] { display: none; }
+  .address-roulette-panel select { margin-bottom: 8px; }
+  .address-roulette-preview {
+    min-height: 34px;
+    margin: 0 0 8px;
+    padding: 8px;
+    border-radius: 6px;
+    background: white;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.4;
+    word-break: break-all;
+  }
+  .address-roulette-panel .inline-action { margin: 0; }
   .checkbox-line {
     display: flex;
     align-items: center;
@@ -1410,6 +1432,15 @@
     </div>
     <label>住所 (必須)</label>
     <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
+    <button class="inline-action" id="btn-add-address-roulette" type="button">住所ルーレットで選ぶ</button>
+    <div class="address-roulette-panel" id="address-roulette-panel" hidden>
+      <label>町名</label>
+      <select id="address-roulette-town"></select>
+      <label>番地</label>
+      <select id="address-roulette-number"></select>
+      <div class="address-roulette-preview" id="address-roulette-preview">町名と番地を選んでください</div>
+      <button class="inline-action" id="btn-address-roulette-apply" type="button">この住所を入力</button>
+    </div>
     <label>備考 (建物名・部屋番号など)</label>
     <textarea id="add-note" placeholder="○○ビル 5F"></textarea>
     <div class="modal-actions">
@@ -1660,6 +1691,7 @@ let addrVisible = false;
 let addrData = null;
 let addrLoading = false;
 let pendingAddrData = null;
+let addressRouletteIndex = null;
 
 const OCR_COST_PER_CALL = 0.00015;
 const GEOCODE_COST_PER_CALL = 0.005;
@@ -3019,6 +3051,116 @@ async function ensureAddressData(options = {}) {
     addrLoading = false;
     if (showProgress) hideLoading();
   }
+}
+
+
+function addressPartNumber(value) {
+  const n = parseInt(String(value || '').replace(/[^0-9]/g, ''), 10);
+  return Number.isFinite(n) ? n : 999999;
+}
+
+function compareAddressEntries(a, b) {
+  const an1 = addressPartNumber(a.n1);
+  const bn1 = addressPartNumber(b.n1);
+  if (an1 !== bn1) return an1 - bn1;
+  const an2 = addressPartNumber(a.n2);
+  const bn2 = addressPartNumber(b.n2);
+  if (an2 !== bn2) return an2 - bn2;
+  const an3 = addressPartNumber(a.n3);
+  const bn3 = addressPartNumber(b.n3);
+  if (an3 !== bn3) return an3 - bn3;
+  return String(a.label).localeCompare(String(b.label), 'ja', { numeric: true });
+}
+
+function buildAddressRouletteIndex(data) {
+  const byTown = new Map();
+  const features = data && Array.isArray(data.features) ? data.features : [];
+  features.forEach(feature => {
+    const props = feature && feature.properties ? feature.properties : {};
+    const town = String(props.machiaza || '').trim();
+    const label = String(props.label || '').trim();
+    if (!town || !label) return;
+    const entry = {
+      town,
+      label,
+      n1: props.n1 || '',
+      n2: props.n2 || '',
+      n3: props.n3 || '',
+      address: `${ADDR_PREF}${ADDR_CITY}${town}${label}`
+    };
+    if (!byTown.has(town)) byTown.set(town, []);
+    byTown.get(town).push(entry);
+  });
+  byTown.forEach(entries => entries.sort(compareAddressEntries));
+  return byTown;
+}
+
+function setSelectOptions(select, items, getValue, getText) {
+  if (!select) return;
+  select.innerHTML = '';
+  items.forEach(item => {
+    const option = document.createElement('option');
+    option.value = getValue(item);
+    option.textContent = getText(item);
+    select.appendChild(option);
+  });
+}
+
+function selectedAddressRouletteEntry() {
+  if (!addressRouletteIndex) return null;
+  const town = $('address-roulette-town').value;
+  const index = parseInt($('address-roulette-number').value, 10);
+  const entries = addressRouletteIndex.get(town) || [];
+  return entries[index] || null;
+}
+
+function updateAddressRoulettePreview() {
+  const entry = selectedAddressRouletteEntry();
+  const preview = $('address-roulette-preview');
+  if (!preview) return;
+  preview.textContent = entry ? entry.address : '\u753a\u540d\u3068\u756a\u5730\u3092\u9078\u3093\u3067\u304f\u3060\u3055\u3044';
+}
+
+function updateAddressRouletteNumbers() {
+  if (!addressRouletteIndex) return;
+  const town = $('address-roulette-town').value;
+  const entries = addressRouletteIndex.get(town) || [];
+  setSelectOptions(
+    $('address-roulette-number'),
+    entries.map((entry, index) => ({ entry, index })),
+    item => String(item.index),
+    item => item.entry.label
+  );
+  updateAddressRoulettePreview();
+}
+
+async function openAddressRoulette() {
+  const panel = $('address-roulette-panel');
+  if (!panel) return;
+  if (!addrData) {
+    const data = await ensureAddressData();
+    if (!data) return;
+  }
+  addressRouletteIndex = buildAddressRouletteIndex(addrData);
+  const towns = Array.from(addressRouletteIndex.keys()).sort((a, b) => a.localeCompare(b, 'ja', { numeric: true }));
+  if (!towns.length) { showToast('\u4f4f\u6240\u5019\u88dc\u3092\u4f5c\u6210\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', true); return; }
+  setSelectOptions($('address-roulette-town'), towns, town => town, town => town);
+  panel.hidden = false;
+  updateAddressRouletteNumbers();
+}
+
+function applyAddressRouletteSelection() {
+  const entry = selectedAddressRouletteEntry();
+  if (!entry) { showToast('\u4f4f\u6240\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044', true); return; }
+  $('add-address').value = entry.address;
+  showToast('\u4f4f\u6240\u3092\u5165\u529b\u3057\u307e\u3057\u305f');
+}
+
+function resetAddressRoulette() {
+  const panel = $('address-roulette-panel');
+  if (panel) panel.hidden = true;
+  const preview = $('address-roulette-preview');
+  if (preview) preview.textContent = '\u753a\u540d\u3068\u756a\u5730\u3092\u9078\u3093\u3067\u304f\u3060\u3055\u3044';
 }
 
 function addAddressLayer(data) {
@@ -4653,6 +4795,7 @@ function applyManualSelectedAddress() {
 function openManualAddModal() {
   $('add-address').value = '';
   $('add-note').value = '';
+  resetAddressRoulette();
   updateManualAddressBuilder({ apply: isKobunachoDeliveryCourse() });
   openModal('modal-add');
 }
@@ -6795,6 +6938,10 @@ $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
 $('btn-photo-read').addEventListener('click', readPendingPhoto);
 $('btn-add-voice').addEventListener('click', startVoiceInput);
 $('btn-add-manual').addEventListener('click', openManualAddModal);
+$('btn-add-address-roulette').addEventListener('click', openAddressRoulette);
+$('address-roulette-town').addEventListener('change', updateAddressRouletteNumbers);
+$('address-roulette-number').addEventListener('change', updateAddressRoulettePreview);
+$('btn-address-roulette-apply').addEventListener('click', applyAddressRouletteSelection);
 
 $('btn-add-confirm').addEventListener('click', () => {
   const address = $('add-address').value.trim();
