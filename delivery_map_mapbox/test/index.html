@@ -848,7 +848,7 @@
     color: white;
   }
   .text-size-choice.size-small { font-size: calc(12px * var(--text-scale)); }
-  .text-size-choice.size-large { font-size: calc(17px * var(--text-scale)); }
+  .text-size-choice.size-large { font-size: calc(16px * var(--text-scale)); }
   .app-version-info {
     margin: 0 0 10px;
     padding: 8px 10px;
@@ -1098,8 +1098,8 @@
   }
   .manual-address-builder .builder-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: minmax(74px, 1.45fr) repeat(3, minmax(48px, 0.75fr));
+    gap: 6px;
   }
   .manual-address-builder label { margin-top: 0; }
   .manual-address-wheel-caption {
@@ -1131,7 +1131,7 @@
     justify-content: center;
     padding: 0 6px;
     scroll-snap-align: center;
-    font-size: calc(17px * var(--text-scale));
+    font-size: calc(16px * var(--text-scale));
     font-weight: 700;
     color: #6b7280;
     text-align: center;
@@ -1159,18 +1159,13 @@
     line-height: 1.4;
     overflow-wrap: anywhere;
   }
-  @media (max-width: 560px) {
-    .manual-address-builder .builder-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
   .hidden-input { display: none; }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.2</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.3</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1217,7 +1212,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.2</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.3</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1536,7 +1531,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.2';
+const APP_VERSION = 'v2026.06.24-test.3';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -4671,9 +4666,9 @@ function manualWheelItems(field) {
   if (field === 'town') {
     return Object.keys(MANUAL_ADDRESS_TOWNS).map(town => ({ value: town, label: town.replace(/^日本橋/, '') }));
   }
-  if (field === 'chome') return rangeItems(1, 4, '丁目');
-  if (field === 'ban') return rangeItems(1, 15, '番');
-  if (field === 'go') return [{ value: '', label: 'なし' }, ...rangeItems(1, 30, '号')];
+  if (field === 'chome') return rangeItems(1, 4);
+  if (field === 'ban') return rangeItems(1, 15);
+  if (field === 'go') return [{ value: '', label: '-' }, ...rangeItems(1, 30)];
   return [];
 }
 
