@@ -233,25 +233,41 @@
     left: calc(8px + env(safe-area-inset-left));
     top: calc(58px + env(safe-area-inset-top));
     z-index: 30;
-    display: flex; flex-direction: column; gap: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
     align-items: flex-start;
   }
-  .map-control-left button {
+  .course-selector-row {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border: 2px solid var(--ink);
+    border-radius: 9px;
+    background: rgba(255,255,255,0.96);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .course-selector-row button {
     background: white;
     color: var(--ink);
-    border: 2px solid var(--ink);
-    border-radius: 8px;
-    padding: 8px 12px;
-    font-size: 12px; font-weight: 700;
+    border: 0;
+    border-radius: 6px;
+    padding: 7px 9px;
+    font-size: 12px;
+    font-weight: 800;
     cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    min-height: 36px;
+    min-height: 32px;
     white-space: nowrap;
   }
-  .map-control-left button.on {
+  .course-selector-row button.on {
     background: var(--accent);
     color: white;
   }
+  .course-selector-row button:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
 
   /* ===== Placement mode ===== */
   body.placing-mode #map {
@@ -1157,7 +1173,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.6</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.7</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1169,9 +1185,9 @@
   <div class="gps-status" id="gps-status"></div>
 </div>
 
-<div class="map-control-left">
-  <button id="btn-app-mode" type="button">配送</button>
-  <button id="btn-label-mode" type="button">表示: 番地+建物</button>
+<div class="map-control-left" aria-label="コース選択">
+  <div class="course-selector-row" id="course-area-row" aria-label="エリア"></div>
+  <div class="course-selector-row" id="course-mode-row" aria-label="配送・集荷"></div>
 </div>
 
 <div class="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
@@ -1204,10 +1220,11 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.6</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.7</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
+      <button id="menu-label-mode" type="button">🏷 表示: 番地+建物</button>
       <button id="menu-import-pickup" type="button">📦 集荷コースを選択</button>
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
@@ -1518,7 +1535,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.6';
+const APP_VERSION = 'v2026.06.24-test.7';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1603,6 +1620,12 @@ const PICKUP_SPOT_SHEETS_BY_COURSE = {
 const PICKUP_DELIVERY_MODE_VALUE = '__delivery__';
 const DELIVERY_COURSES = ['小舟町店', '浜町店', 'その他'];
 const DELIVERY_COURSE_DEFAULT = '小舟町店';
+const COURSE_AREA_KEY = 'rys-mapbox-test-course-area-v1';
+const COURSE_AREAS = [
+  { key: 'kobunacho', label: '小舟町', deliveryCourse: '小舟町店', pickupModes: [{ key: 'pickup', label: '集荷', sheet: '小舟町店' }] },
+  { key: 'hamacho', label: '浜町', deliveryCourse: '浜町店', pickupModes: [{ key: 'pickup-north', label: '集荷北', sheet: '浜町店 北' }, { key: 'pickup-south', label: '集荷南', sheet: '浜町店 南' }] },
+  { key: 'other', label: 'その他', deliveryCourse: 'その他', pickupModes: [] }
+];
 const DELIVERY_COURSE_OPTION_PREFIX = '__delivery_course__:';
 const KOBUNACHO_DELIVERY_COURSE = '小舟町店';
 const MANUAL_ADDRESS_TOWNS = {
@@ -1636,6 +1659,7 @@ let map = null;
 let mapboxConfig = null;
 let appMode = detectInitialAppMode();
 let selectedDeliveryCourse = normalizeDeliveryCourse(localStorage.getItem(DELIVERY_COURSE_KEY));
+let selectedCourseArea = localStorage.getItem(COURSE_AREA_KEY) || '';
 let deliveries = [];
 let lastVisibleDeliveries = [];
 let markers = new Map();
@@ -2309,6 +2333,91 @@ function deliveryCourseFromOptionValue(value) {
   return normalizeDeliveryCourse(s.slice(DELIVERY_COURSE_OPTION_PREFIX.length));
 }
 
+function courseAreaByKey(key) {
+  return COURSE_AREAS.find(area => area.key === key) || COURSE_AREAS[0];
+}
+
+function courseAreaForDeliveryCourse(course) {
+  const normalized = normalizeDeliveryCourse(course);
+  return COURSE_AREAS.find(area => area.deliveryCourse === normalized) || COURSE_AREAS[0];
+}
+
+function courseAreaForPickupSheet(sheetName) {
+  const sheet = String(sheetName || '');
+  return COURSE_AREAS.find(area => area.pickupModes.some(mode => mode.sheet === sheet)) || COURSE_AREAS[0];
+}
+
+function currentCourseArea() {
+  if (appMode === 'pickup') return courseAreaForPickupSheet(getSelectedPickupSheet());
+  return courseAreaForDeliveryCourse(getSelectedDeliveryCourse());
+}
+
+function setSelectedCourseArea(areaKey) {
+  selectedCourseArea = courseAreaByKey(areaKey).key;
+  localStorage.setItem(COURSE_AREA_KEY, selectedCourseArea);
+}
+
+function ensureSelectedCourseArea() {
+  if (!COURSE_AREAS.some(area => area.key === selectedCourseArea)) {
+    setSelectedCourseArea(currentCourseArea().key);
+  }
+  return courseAreaByKey(selectedCourseArea);
+}
+
+function activeCourseModeKey(area) {
+  if (appMode === 'delivery' && getSelectedDeliveryCourse() === area.deliveryCourse) return 'delivery';
+  if (appMode === 'pickup') {
+    const selectedSheet = getSelectedPickupSheet();
+    const pickupMode = area.pickupModes.find(mode => mode.sheet === selectedSheet);
+    if (pickupMode) return pickupMode.key;
+  }
+  return '';
+}
+
+function courseModeOptions(area) {
+  return [
+    { key: 'delivery', label: '配送', type: 'delivery', deliveryCourse: area.deliveryCourse },
+    ...area.pickupModes.map(mode => ({ ...mode, type: 'pickup' }))
+  ];
+}
+
+function renderCourseSelectorUi() {
+  const areaRow = $('course-area-row');
+  const modeRow = $('course-mode-row');
+  if (!areaRow || !modeRow) return;
+  const area = ensureSelectedCourseArea();
+  areaRow.innerHTML = COURSE_AREAS.map(item => `
+    <button type="button" data-course-area="${escapeHtml(item.key)}" class="${item.key === area.key ? 'on' : ''}">${escapeHtml(item.label)}</button>
+  `).join('');
+  const activeMode = activeCourseModeKey(area);
+  modeRow.innerHTML = courseModeOptions(area).map(item => `
+    <button type="button" data-course-mode="${escapeHtml(item.key)}" class="${item.key === activeMode ? 'on' : ''}">${escapeHtml(item.label)}</button>
+  `).join('');
+}
+
+async function selectCourseMode(modeKey) {
+  const area = ensureSelectedCourseArea();
+  const option = courseModeOptions(area).find(item => item.key === modeKey);
+  if (!option) return;
+  if (option.type === 'delivery') {
+    setSelectedCourseArea(area.key);
+    setSelectedDeliveryCourse(option.deliveryCourse);
+    if (appMode !== 'delivery') {
+      await switchAppMode('delivery', false, { openCourseModal: false });
+    } else {
+      updateModeUi();
+      renderMarkers();
+      renderList();
+    }
+    showToast(`配送 (${option.deliveryCourse})`);
+    return;
+  }
+  setSelectedCourseArea(area.key);
+  setupPickupSheetOptions();
+  $('pickup-sheet').value = option.sheet;
+  await importPickupSheet();
+}
+
 function isKobunachoDeliveryCourse() {
   return appMode === 'delivery' && getSelectedDeliveryCourse() === KOBUNACHO_DELIVERY_COURSE;
 }
@@ -2374,19 +2483,7 @@ function updatePickupListTabs() {
 }
 
 function updateModeUi() {
-  const modeBtn = $('btn-app-mode');
-  if (modeBtn) {
-    const pickupCourse = appMode === 'pickup' ? getSelectedPickupSheet() : '';
-    const deliveryCourse = appMode === 'delivery' ? getSelectedDeliveryCourse() : '';
-    if (appMode === 'pickup' && pickupCourse) {
-      modeBtn.textContent = `集荷 (${pickupCourse})`;
-    } else if (appMode === 'delivery' && deliveryCourse) {
-      modeBtn.textContent = `配送 (${deliveryCourse})`;
-    } else {
-      modeBtn.textContent = modeLabel();
-    }
-    modeBtn.classList.toggle('on', appMode === 'pickup');
-  }
+  renderCourseSelectorUi();
   const menuBtn = $('menu-toggle-mode');
   if (menuBtn) {
     menuBtn.textContent = '🔁 モード・コースを選択';
@@ -3558,8 +3655,9 @@ function cycleLabelMode() {
 }
 
 function updateLabelModeButton() {
-  const btn = $('btn-label-mode');
-  if (btn) btn.textContent = `表示: ${LABEL_MODES[labelModeIndex].label}`;
+  const label = `🏷 表示: ${LABEL_MODES[labelModeIndex].label}`;
+  const btn = $('menu-label-mode');
+  if (btn) btn.textContent = label;
 }
 
 function loadLabelMode() {
@@ -6387,7 +6485,10 @@ async function importPickupSheet() {
   const sheetName = $('pickup-sheet').value;
   const deliveryCourse = deliveryCourseFromOptionValue(sheetName);
   if (sheetName === PICKUP_DELIVERY_MODE_VALUE || deliveryCourse) {
-    if (deliveryCourse) setSelectedDeliveryCourse(deliveryCourse);
+    if (deliveryCourse) {
+      setSelectedDeliveryCourse(deliveryCourse);
+      setSelectedCourseArea(courseAreaForDeliveryCourse(deliveryCourse).key);
+    }
     closeModal('modal-pickup-import');
     if (appMode !== 'delivery') await switchAppMode('delivery');
     updateModeUi();
@@ -6396,6 +6497,7 @@ async function importPickupSheet() {
   const replaceList = true;
   if (appMode !== 'pickup') await switchAppMode('pickup', false, { openCourseModal: false });
   setSelectedPickupSheet(sheetName);
+  setSelectedCourseArea(courseAreaForPickupSheet(sheetName).key);
   updateModeUi();
   closeModal('modal-pickup-import');
   const cacheVisible = showCachedRegularPickupCourse(sheetName);
@@ -6873,8 +6975,17 @@ function centerOnUser() {
 
 $('btn-menu').addEventListener('click', () => openModal('modal-menu'));
 $('btn-gps').addEventListener('click', toggleGpsTracking);
-$('btn-app-mode').addEventListener('click', openPickupCourseModal);
-$('btn-label-mode').addEventListener('click', cycleLabelMode);
+$('course-area-row').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-course-area]');
+  if (!button) return;
+  setSelectedCourseArea(button.dataset.courseArea);
+  renderCourseSelectorUi();
+});
+$('course-mode-row').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-course-mode]');
+  if (!button) return;
+  selectCourseMode(button.dataset.courseMode).catch(e => showToast(e.message || 'コース切替に失敗しました', true));
+});
 
 function toggleListCollapse(forceState) {
   const willCollapse = (typeof forceState === 'boolean')
@@ -6922,6 +7033,7 @@ $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 
 $('menu-center-user').addEventListener('click', centerOnUser);
 $('menu-toggle-mode').addEventListener('click', toggleAppMode);
+$('menu-label-mode').addEventListener('click', cycleLabelMode);
 $('menu-import-pickup').addEventListener('click', openPickupImportModal);
 $('menu-reset-pickup').addEventListener('click', resetPickupCompletionsManually);
 $('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
