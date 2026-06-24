@@ -1165,7 +1165,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.3</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.4</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1212,7 +1212,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.3</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.4</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1531,8 +1531,9 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.3';
+const APP_VERSION = 'v2026.06.24-test.4';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
+const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
 const APP_MODE_KEY = 'rys-mapbox-test-app-mode';
@@ -4642,15 +4643,32 @@ function splitAddressAndBuilding(text) {
   return { address, note };
 }
 
-const MANUAL_ADDRESS_STATE = {
-  town: '日本橋本町',
+const MANUAL_ADDRESS_DEFAULT_STATE = {
+  town: '?????',
   chome: '1',
   ban: '1',
   go: ''
 };
+const MANUAL_ADDRESS_STATE = { ...MANUAL_ADDRESS_DEFAULT_STATE };
 const MANUAL_WHEEL_OPTION_HEIGHT = 44;
 const manualWheelTimers = new Map();
 
+function loadManualAddressState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MANUAL_ADDRESS_STATE_KEY) || 'null');
+    if (!saved || typeof saved !== 'object') return;
+    if (MANUAL_ADDRESS_TOWNS[saved.town]) MANUAL_ADDRESS_STATE.town = saved.town;
+    ['chome', 'ban', 'go'].forEach(key => {
+      if (saved[key] !== undefined && saved[key] !== null) MANUAL_ADDRESS_STATE[key] = String(saved[key]);
+    });
+  } catch (e) {}
+}
+
+function saveManualAddressState() {
+  try {
+    localStorage.setItem(MANUAL_ADDRESS_STATE_KEY, JSON.stringify(MANUAL_ADDRESS_STATE));
+  } catch (e) {}
+}
 function manualAddressTownConfig() {
   const town = MANUAL_ADDRESS_STATE.town || '日本橋本町';
   return MANUAL_ADDRESS_TOWNS[town] || MANUAL_ADDRESS_TOWNS['日本橋本町'];
@@ -4676,6 +4694,7 @@ function selectManualWheelValue(field, value, { render = true, apply = true, fro
   if (!field) return;
   MANUAL_ADDRESS_STATE[field] = String(value ?? '');
   if (field === 'town' && !manualAddressTownConfig().chome) MANUAL_ADDRESS_STATE.chome = '1';
+  saveManualAddressState();
   if (render) renderManualAddressWheels({ preserveScroll: fromScroll });
   updateManualAddressPreview({ apply });
 }
@@ -4750,6 +4769,7 @@ function updateManualAddressPreview({ apply = false } = {}) {
 }
 
 function updateManualAddressBuilder({ apply = false } = {}) {
+  loadManualAddressState();
   const builder = $('manual-address-builder');
   if (!builder) return;
   const visible = isKobunachoDeliveryCourse();
