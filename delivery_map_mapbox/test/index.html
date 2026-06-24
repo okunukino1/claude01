@@ -1131,9 +1131,10 @@
     justify-content: center;
     padding: 0 6px;
     scroll-snap-align: center;
-    font-size: calc(16px * var(--text-scale));
+    font-size: calc(14px * var(--text-scale));
     font-weight: 700;
     color: #6b7280;
+    opacity: 0.58;
     text-align: center;
     border-top: 1px solid #f2eee3;
     user-select: none;
@@ -1141,6 +1142,8 @@
   .manual-address-wheel-option.is-selected {
     color: var(--ink);
     background: #fff3e8;
+    font-size: calc(17px * var(--text-scale));
+    opacity: 1;
   }
   .manual-address-wheel-option:first-child { border-top: 0; }
   .manual-address-wheel-guide {
@@ -1154,7 +1157,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.5</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.6</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1201,7 +1204,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.5</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.6</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1515,7 +1518,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.5';
+const APP_VERSION = 'v2026.06.24-test.6';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
