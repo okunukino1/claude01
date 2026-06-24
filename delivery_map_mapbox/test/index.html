@@ -681,28 +681,6 @@
     font-weight: 700;
     cursor: pointer;
   }
-  .address-roulette-panel {
-    margin: -2px 0 12px;
-    padding: 10px;
-    border: 1.5px solid #c0bca8;
-    border-radius: 8px;
-    background: #faf8ef;
-  }
-  .address-roulette-panel[hidden] { display: none; }
-  .address-roulette-panel select { margin-bottom: 8px; }
-  .address-roulette-preview {
-    min-height: 34px;
-    margin: 0 0 8px;
-    padding: 8px;
-    border-radius: 6px;
-    background: white;
-    color: var(--ink);
-    font-size: 13px;
-    font-weight: 700;
-    line-height: 1.4;
-    word-break: break-all;
-  }
-  .address-roulette-panel .inline-action { margin: 0; }
   .checkbox-line {
     display: flex;
     align-items: center;
@@ -1120,12 +1098,56 @@
   }
   .manual-address-builder .builder-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
   }
   .manual-address-builder label { margin-top: 0; }
-  .manual-address-builder select,
-  .manual-address-builder input { width: 100%; }
+  .manual-address-wheel-caption {
+    display: block;
+    margin: 0 0 4px;
+    font-size: calc(12px * var(--text-scale));
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .manual-address-wheel {
+    height: 132px;
+    padding: 44px 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-snap-type: y mandatory;
+    border: 1px solid #c9c2ad;
+    border-radius: 8px;
+    background: #fff;
+    -webkit-overflow-scrolling: touch;
+  }
+  .manual-address-wheel:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .manual-address-wheel-option {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    scroll-snap-align: center;
+    font-size: calc(17px * var(--text-scale));
+    font-weight: 700;
+    color: #6b7280;
+    text-align: center;
+    border-top: 1px solid #f2eee3;
+    user-select: none;
+  }
+  .manual-address-wheel-option.is-selected {
+    color: var(--ink);
+    background: #fff3e8;
+  }
+  .manual-address-wheel-option:first-child { border-top: 0; }
+  .manual-address-wheel-guide {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: calc(12px * var(--text-scale));
+  }
   .manual-address-preview {
     margin-top: 8px;
     padding: 8px;
@@ -1137,14 +1159,18 @@
     line-height: 1.4;
     overflow-wrap: anywhere;
   }
-
+  @media (max-width: 560px) {
+    .manual-address-builder .builder-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
   .hidden-input { display: none; }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.1</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.2</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1191,7 +1217,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.1</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.2</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1404,27 +1430,23 @@
       <h4>小舟町店向け 住所選択</h4>
       <div class="builder-grid">
         <div>
-          <label>町名</label>
-          <select id="manual-town">
-            <option value="日本橋本町">日本橋本町</option>
-            <option value="日本橋室町">日本橋室町</option>
-            <option value="日本橋小舟町">日本橋小舟町</option>
-            <option value="日本橋本石町">日本橋本石町</option>
-          </select>
+          <span class="manual-address-wheel-caption">町名</span>
+          <div class="manual-address-wheel" id="manual-town-wheel" data-field="town" tabindex="0" role="listbox" aria-label="町名"></div>
         </div>
         <div id="manual-chome-wrap">
-          <label>丁目</label>
-          <select id="manual-chome"></select>
+          <span class="manual-address-wheel-caption">丁目</span>
+          <div class="manual-address-wheel" id="manual-chome-wheel" data-field="chome" tabindex="0" role="listbox" aria-label="丁目"></div>
         </div>
         <div>
-          <label>番</label>
-          <select id="manual-ban"></select>
+          <span class="manual-address-wheel-caption">番</span>
+          <div class="manual-address-wheel" id="manual-ban-wheel" data-field="ban" tabindex="0" role="listbox" aria-label="番"></div>
         </div>
         <div>
-          <label>号</label>
-          <input type="number" id="manual-go" min="1" inputmode="numeric" placeholder="例: 3">
+          <span class="manual-address-wheel-caption">号</span>
+          <div class="manual-address-wheel" id="manual-go-wheel" data-field="go" tabindex="0" role="listbox" aria-label="号"></div>
         </div>
       </div>
+      <div class="manual-address-wheel-guide">上下に回して選択します。選んだ住所は下の住所欄へ自動で入ります。</div>
       <div class="manual-address-preview" id="manual-address-preview"></div>
       <div class="modal-actions">
         <button class="primary" id="btn-manual-address-apply" type="button">住所欄に反映</button>
@@ -1432,15 +1454,6 @@
     </div>
     <label>住所 (必須)</label>
     <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
-    <button class="inline-action" id="btn-add-address-roulette" type="button">住所ルーレットで選ぶ</button>
-    <div class="address-roulette-panel" id="address-roulette-panel" hidden>
-      <label>町名</label>
-      <select id="address-roulette-town"></select>
-      <label>番地</label>
-      <select id="address-roulette-number"></select>
-      <div class="address-roulette-preview" id="address-roulette-preview">町名と番地を選んでください</div>
-      <button class="inline-action" id="btn-address-roulette-apply" type="button">この住所を入力</button>
-    </div>
     <label>備考 (建物名・部屋番号など)</label>
     <textarea id="add-note" placeholder="○○ビル 5F"></textarea>
     <div class="modal-actions">
@@ -1523,7 +1536,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.1';
+const APP_VERSION = 'v2026.06.24-test.2';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -1691,7 +1704,6 @@ let addrVisible = false;
 let addrData = null;
 let addrLoading = false;
 let pendingAddrData = null;
-let addressRouletteIndex = null;
 
 const OCR_COST_PER_CALL = 0.00015;
 const GEOCODE_COST_PER_CALL = 0.005;
@@ -3054,114 +3066,6 @@ async function ensureAddressData(options = {}) {
 }
 
 
-function addressPartNumber(value) {
-  const n = parseInt(String(value || '').replace(/[^0-9]/g, ''), 10);
-  return Number.isFinite(n) ? n : 999999;
-}
-
-function compareAddressEntries(a, b) {
-  const an1 = addressPartNumber(a.n1);
-  const bn1 = addressPartNumber(b.n1);
-  if (an1 !== bn1) return an1 - bn1;
-  const an2 = addressPartNumber(a.n2);
-  const bn2 = addressPartNumber(b.n2);
-  if (an2 !== bn2) return an2 - bn2;
-  const an3 = addressPartNumber(a.n3);
-  const bn3 = addressPartNumber(b.n3);
-  if (an3 !== bn3) return an3 - bn3;
-  return String(a.label).localeCompare(String(b.label), 'ja', { numeric: true });
-}
-
-function buildAddressRouletteIndex(data) {
-  const byTown = new Map();
-  const features = data && Array.isArray(data.features) ? data.features : [];
-  features.forEach(feature => {
-    const props = feature && feature.properties ? feature.properties : {};
-    const town = String(props.machiaza || '').trim();
-    const label = String(props.label || '').trim();
-    if (!town || !label) return;
-    const entry = {
-      town,
-      label,
-      n1: props.n1 || '',
-      n2: props.n2 || '',
-      n3: props.n3 || '',
-      address: `${ADDR_PREF}${ADDR_CITY}${town}${label}`
-    };
-    if (!byTown.has(town)) byTown.set(town, []);
-    byTown.get(town).push(entry);
-  });
-  byTown.forEach(entries => entries.sort(compareAddressEntries));
-  return byTown;
-}
-
-function setSelectOptions(select, items, getValue, getText) {
-  if (!select) return;
-  select.innerHTML = '';
-  items.forEach(item => {
-    const option = document.createElement('option');
-    option.value = getValue(item);
-    option.textContent = getText(item);
-    select.appendChild(option);
-  });
-}
-
-function selectedAddressRouletteEntry() {
-  if (!addressRouletteIndex) return null;
-  const town = $('address-roulette-town').value;
-  const index = parseInt($('address-roulette-number').value, 10);
-  const entries = addressRouletteIndex.get(town) || [];
-  return entries[index] || null;
-}
-
-function updateAddressRoulettePreview() {
-  const entry = selectedAddressRouletteEntry();
-  const preview = $('address-roulette-preview');
-  if (!preview) return;
-  preview.textContent = entry ? entry.address : '\u753a\u540d\u3068\u756a\u5730\u3092\u9078\u3093\u3067\u304f\u3060\u3055\u3044';
-}
-
-function updateAddressRouletteNumbers() {
-  if (!addressRouletteIndex) return;
-  const town = $('address-roulette-town').value;
-  const entries = addressRouletteIndex.get(town) || [];
-  setSelectOptions(
-    $('address-roulette-number'),
-    entries.map((entry, index) => ({ entry, index })),
-    item => String(item.index),
-    item => item.entry.label
-  );
-  updateAddressRoulettePreview();
-}
-
-async function openAddressRoulette() {
-  const panel = $('address-roulette-panel');
-  if (!panel) return;
-  if (!addrData) {
-    const data = await ensureAddressData();
-    if (!data) return;
-  }
-  addressRouletteIndex = buildAddressRouletteIndex(addrData);
-  const towns = Array.from(addressRouletteIndex.keys()).sort((a, b) => a.localeCompare(b, 'ja', { numeric: true }));
-  if (!towns.length) { showToast('\u4f4f\u6240\u5019\u88dc\u3092\u4f5c\u6210\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', true); return; }
-  setSelectOptions($('address-roulette-town'), towns, town => town, town => town);
-  panel.hidden = false;
-  updateAddressRouletteNumbers();
-}
-
-function applyAddressRouletteSelection() {
-  const entry = selectedAddressRouletteEntry();
-  if (!entry) { showToast('\u4f4f\u6240\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044', true); return; }
-  $('add-address').value = entry.address;
-  showToast('\u4f4f\u6240\u3092\u5165\u529b\u3057\u307e\u3057\u305f');
-}
-
-function resetAddressRoulette() {
-  const panel = $('address-roulette-panel');
-  if (panel) panel.hidden = true;
-  const preview = $('address-roulette-preview');
-  if (preview) preview.textContent = '\u753a\u540d\u3068\u756a\u5730\u3092\u9078\u3093\u3067\u304f\u3060\u3055\u3044';
-}
 
 function addAddressLayer(data) {
   if (!map || map.getSource('addr-points')) return;
@@ -4743,31 +4647,111 @@ function splitAddressAndBuilding(text) {
   return { address, note };
 }
 
-function fillSelectRange(select, start, end) {
-  if (!select) return;
-  const current = select.value;
-  const options = [];
-  for (let i = start; i <= end; i++) {
-    options.push(`<option value="${i}">${i}</option>`);
-  }
-  select.innerHTML = options.join('');
-  if ([...select.options].some(option => option.value === current)) select.value = current;
-}
+const MANUAL_ADDRESS_STATE = {
+  town: '日本橋本町',
+  chome: '1',
+  ban: '1',
+  go: ''
+};
+const MANUAL_WHEEL_OPTION_HEIGHT = 44;
+const manualWheelTimers = new Map();
 
 function manualAddressTownConfig() {
-  const town = $('manual-town')?.value || '日本橋本町';
+  const town = MANUAL_ADDRESS_STATE.town || '日本橋本町';
   return MANUAL_ADDRESS_TOWNS[town] || MANUAL_ADDRESS_TOWNS['日本橋本町'];
 }
 
-function buildManualSelectedAddress() {
-  const town = $('manual-town')?.value || '日本橋本町';
+function rangeItems(start, end, suffix = '') {
+  const items = [];
+  for (let i = start; i <= end; i++) items.push({ value: String(i), label: `${i}${suffix}` });
+  return items;
+}
+
+function manualWheelItems(field) {
+  if (field === 'town') {
+    return Object.keys(MANUAL_ADDRESS_TOWNS).map(town => ({ value: town, label: town.replace(/^日本橋/, '') }));
+  }
+  if (field === 'chome') return rangeItems(1, 4, '丁目');
+  if (field === 'ban') return rangeItems(1, 15, '番');
+  if (field === 'go') return [{ value: '', label: 'なし' }, ...rangeItems(1, 30, '号')];
+  return [];
+}
+
+function selectManualWheelValue(field, value, { render = true, apply = true, fromScroll = false } = {}) {
+  if (!field) return;
+  MANUAL_ADDRESS_STATE[field] = String(value ?? '');
+  if (field === 'town' && !manualAddressTownConfig().chome) MANUAL_ADDRESS_STATE.chome = '1';
+  if (render) renderManualAddressWheels({ preserveScroll: fromScroll });
+  updateManualAddressPreview({ apply });
+}
+
+function renderManualWheel(wheel, field, selectedValue, { preserveScroll = false } = {}) {
+  if (!wheel) return;
+  const items = manualWheelItems(field);
+  if (!items.some(item => item.value === selectedValue)) selectedValue = items[0]?.value || '';
+  wheel.innerHTML = items.map(item => {
+    const selected = item.value === selectedValue;
+    return `<div class="manual-address-wheel-option${selected ? ' is-selected' : ''}" role="option" aria-selected="${selected ? 'true' : 'false'}" data-value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</div>`;
+  }).join('');
+  if (!wheel.dataset.manualWheelBound) {
+    wheel.dataset.manualWheelBound = '1';
+    wheel.addEventListener('click', (event) => {
+      const option = event.target.closest('.manual-address-wheel-option');
+      if (!option) return;
+      selectManualWheelValue(wheel.dataset.field, option.dataset.value || '', { render: true, apply: true });
+    });
+    wheel.addEventListener('scroll', () => {
+      const key = wheel.id || field;
+      clearTimeout(manualWheelTimers.get(key));
+      manualWheelTimers.set(key, setTimeout(() => {
+        const options = [...wheel.querySelectorAll('.manual-address-wheel-option')];
+        if (!options.length) return;
+        const index = Math.max(0, Math.min(options.length - 1, Math.round(wheel.scrollTop / MANUAL_WHEEL_OPTION_HEIGHT)));
+        const value = options[index].dataset.value || '';
+        selectManualWheelValue(wheel.dataset.field, value, { render: false, apply: true, fromScroll: true });
+        options.forEach((option, i) => {
+          const selected = i === index;
+          option.classList.toggle('is-selected', selected);
+          option.setAttribute('aria-selected', selected ? 'true' : 'false');
+        });
+        wheel.scrollTo({ top: index * MANUAL_WHEEL_OPTION_HEIGHT, behavior: 'smooth' });
+      }, 100));
+    }, { passive: true });
+  }
+  const selectedIndex = Math.max(0, items.findIndex(item => item.value === selectedValue));
+  if (!preserveScroll) {
+    requestAnimationFrame(() => {
+      wheel.scrollTop = selectedIndex * MANUAL_WHEEL_OPTION_HEIGHT;
+    });
+  }
+}
+
+function renderManualAddressWheels(options = {}) {
+  renderManualWheel($('manual-town-wheel'), 'town', MANUAL_ADDRESS_STATE.town, options);
+  renderManualWheel($('manual-chome-wheel'), 'chome', MANUAL_ADDRESS_STATE.chome, options);
+  renderManualWheel($('manual-ban-wheel'), 'ban', MANUAL_ADDRESS_STATE.ban, options);
+  renderManualWheel($('manual-go-wheel'), 'go', MANUAL_ADDRESS_STATE.go, options);
   const config = manualAddressTownConfig();
-  const chome = $('manual-chome')?.value || '1';
-  const ban = $('manual-ban')?.value || '1';
-  const go = String($('manual-go')?.value || '').trim();
+  const chomeWrap = $('manual-chome-wrap');
+  if (chomeWrap) chomeWrap.style.display = config.chome ? '' : 'none';
+}
+
+function buildManualSelectedAddress() {
+  const town = MANUAL_ADDRESS_STATE.town || '日本橋本町';
+  const config = manualAddressTownConfig();
+  const chome = MANUAL_ADDRESS_STATE.chome || '1';
+  const ban = MANUAL_ADDRESS_STATE.ban || '1';
+  const go = String(MANUAL_ADDRESS_STATE.go || '').trim();
   const parts = config.chome ? [chome, ban] : [ban];
   if (go) parts.push(go);
   return `${ADDR_PREF}${ADDR_CITY}${town}${parts.join('-')}`;
+}
+
+function updateManualAddressPreview({ apply = false } = {}) {
+  const address = buildManualSelectedAddress();
+  const preview = $('manual-address-preview');
+  if (preview) preview.textContent = address;
+  if (apply) $('add-address').value = address;
 }
 
 function updateManualAddressBuilder({ apply = false } = {}) {
@@ -4776,16 +4760,8 @@ function updateManualAddressBuilder({ apply = false } = {}) {
   const visible = isKobunachoDeliveryCourse();
   builder.hidden = !visible;
   if (!visible) return;
-
-  fillSelectRange($('manual-chome'), 1, 4);
-  fillSelectRange($('manual-ban'), 1, 15);
-  const config = manualAddressTownConfig();
-  const chomeWrap = $('manual-chome-wrap');
-  if (chomeWrap) chomeWrap.style.display = config.chome ? '' : 'none';
-  const address = buildManualSelectedAddress();
-  const preview = $('manual-address-preview');
-  if (preview) preview.textContent = address;
-  if (apply) $('add-address').value = address;
+  renderManualAddressWheels();
+  updateManualAddressPreview({ apply });
 }
 
 function applyManualSelectedAddress() {
@@ -4795,11 +4771,9 @@ function applyManualSelectedAddress() {
 function openManualAddModal() {
   $('add-address').value = '';
   $('add-note').value = '';
-  resetAddressRoulette();
   updateManualAddressBuilder({ apply: isKobunachoDeliveryCourse() });
   openModal('modal-add');
 }
-
 function startVoiceInput() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { showToast('音声入力に対応していません', true); return; }
@@ -6938,11 +6912,6 @@ $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
 $('btn-photo-read').addEventListener('click', readPendingPhoto);
 $('btn-add-voice').addEventListener('click', startVoiceInput);
 $('btn-add-manual').addEventListener('click', openManualAddModal);
-$('btn-add-address-roulette').addEventListener('click', openAddressRoulette);
-$('address-roulette-town').addEventListener('change', updateAddressRouletteNumbers);
-$('address-roulette-number').addEventListener('change', updateAddressRoulettePreview);
-$('btn-address-roulette-apply').addEventListener('click', applyAddressRouletteSelection);
-
 $('btn-add-confirm').addEventListener('click', () => {
   const address = $('add-address').value.trim();
   const note = $('add-note').value.trim();
@@ -6950,10 +6919,6 @@ $('btn-add-confirm').addEventListener('click', () => {
   closeModal('modal-add');
   addDelivery({ address, note, deliveryCourse: appMode === 'delivery' ? getSelectedDeliveryCourse() : '' });
 });
-$('manual-town').addEventListener('change', () => updateManualAddressBuilder({ apply: true }));
-$('manual-chome').addEventListener('change', () => updateManualAddressBuilder({ apply: true }));
-$('manual-ban').addEventListener('change', () => updateManualAddressBuilder({ apply: true }));
-$('manual-go').addEventListener('input', () => updateManualAddressBuilder({ apply: true }));
 $('btn-manual-address-apply').addEventListener('click', applyManualSelectedAddress);
 
 $('btn-edit-save').addEventListener('click', saveEditedItem);
