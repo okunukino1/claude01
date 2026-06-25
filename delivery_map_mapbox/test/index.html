@@ -240,32 +240,48 @@
   }
   .course-selector-row {
     display: flex;
-    gap: 4px;
-    padding: 3px;
-    border: 2px solid var(--ink);
-    border-radius: 9px;
-    background: rgba(255,255,255,0.96);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
   }
   .course-selector-row button {
-    background: white;
+    background: rgba(255,255,255,0.96);
     color: var(--ink);
-    border: 0;
-    border-radius: 6px;
-    padding: 7px 9px;
+    border: 2px solid var(--ink);
+    border-radius: 9px;
+    padding: 8px 12px;
     font-size: 12px;
     font-weight: 800;
     cursor: pointer;
-    min-height: 32px;
+    min-height: 36px;
+    min-width: 92px;
     white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
   }
   .course-selector-row button.on {
     background: var(--accent);
     color: white;
   }
-  .course-selector-row button:disabled {
-    opacity: 0.55;
-    cursor: default;
+  .course-selector-row button::after {
+    content: " \25be";
+    font-size: 10px;
+  }
+  .course-choice-list {
+    display: grid;
+    gap: 8px;
+    margin: 8px 0 12px;
+  }
+  .course-choice-list button {
+    width: 100%;
+    min-height: 48px;
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    background: white;
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 800;
+    text-align: center;
+  }
+  .course-choice-list button.on {
+    background: var(--accent);
+    color: white;
   }
 
 
@@ -1173,7 +1189,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.7</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.8</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1220,7 +1236,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.7</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.8</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1408,6 +1424,16 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-course-choice">
+  <div class="modal">
+    <h3 id="course-choice-title">コースを選択</h3>
+    <div class="course-choice-list" id="course-choice-list"></div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-course-choice">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-pickup-import">
   <div class="modal">
     <h3>モード・コースを選択</h3>
@@ -1535,7 +1561,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.7';
+const APP_VERSION = 'v2026.06.24-test.8';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2381,18 +2407,45 @@ function courseModeOptions(area) {
   ];
 }
 
+function courseModeLabelForDisplay(area) {
+  const activeMode = activeCourseModeKey(area);
+  const active = courseModeOptions(area).find(item => item.key === activeMode);
+  return active || courseModeOptions(area)[0];
+}
+
 function renderCourseSelectorUi() {
   const areaRow = $('course-area-row');
   const modeRow = $('course-mode-row');
   if (!areaRow || !modeRow) return;
   const area = ensureSelectedCourseArea();
-  areaRow.innerHTML = COURSE_AREAS.map(item => `
-    <button type="button" data-course-area="${escapeHtml(item.key)}" class="${item.key === area.key ? 'on' : ''}">${escapeHtml(item.label)}</button>
-  `).join('');
+  const mode = courseModeLabelForDisplay(area);
+  const modeIsActive = mode && mode.key === activeCourseModeKey(area);
+  areaRow.innerHTML = `<button type="button" data-open-course-choice="area" class="on">${escapeHtml(area.label)}</button>`;
+  modeRow.innerHTML = `<button type="button" data-open-course-choice="mode" class="${modeIsActive ? 'on' : ''}">${escapeHtml(mode.label)}</button>`;
+}
+
+function renderCourseChoiceModal(kind) {
+  const title = $('course-choice-title');
+  const list = $('course-choice-list');
+  if (!title || !list) return;
+  const area = ensureSelectedCourseArea();
+  if (kind === 'area') {
+    title.textContent = 'エリアを選択';
+    list.innerHTML = COURSE_AREAS.map(item => `
+      <button type="button" data-course-choice-area="${escapeHtml(item.key)}" class="${item.key === area.key ? 'on' : ''}">${escapeHtml(item.label)}</button>
+    `).join('');
+    return;
+  }
+  title.textContent = `${area.label} のコースを選択`;
   const activeMode = activeCourseModeKey(area);
-  modeRow.innerHTML = courseModeOptions(area).map(item => `
-    <button type="button" data-course-mode="${escapeHtml(item.key)}" class="${item.key === activeMode ? 'on' : ''}">${escapeHtml(item.label)}</button>
+  list.innerHTML = courseModeOptions(area).map(item => `
+    <button type="button" data-course-choice-mode="${escapeHtml(item.key)}" class="${item.key === activeMode ? 'on' : ''}">${escapeHtml(item.label)}</button>
   `).join('');
+}
+
+function openCourseChoiceModal(kind) {
+  renderCourseChoiceModal(kind);
+  openModal('modal-course-choice');
 }
 
 async function selectCourseMode(modeKey) {
@@ -6975,18 +7028,21 @@ function centerOnUser() {
 
 $('btn-menu').addEventListener('click', () => openModal('modal-menu'));
 $('btn-gps').addEventListener('click', toggleGpsTracking);
-$('course-area-row').addEventListener('click', (event) => {
-  const button = event.target.closest('[data-course-area]');
-  if (!button) return;
-  setSelectedCourseArea(button.dataset.courseArea);
-  renderCourseSelectorUi();
+$('course-area-row').addEventListener('click', () => openCourseChoiceModal('area'));
+$('course-mode-row').addEventListener('click', () => openCourseChoiceModal('mode'));
+$('course-choice-list').addEventListener('click', (event) => {
+  const areaButton = event.target.closest('[data-course-choice-area]');
+  if (areaButton) {
+    setSelectedCourseArea(areaButton.dataset.courseChoiceArea);
+    closeModal('modal-course-choice');
+    renderCourseSelectorUi();
+    return;
+  }
+  const modeButton = event.target.closest('[data-course-choice-mode]');
+  if (!modeButton) return;
+  closeModal('modal-course-choice');
+  selectCourseMode(modeButton.dataset.courseChoiceMode).catch(e => showToast(e.message || 'コース切替に失敗しました', true));
 });
-$('course-mode-row').addEventListener('click', (event) => {
-  const button = event.target.closest('[data-course-mode]');
-  if (!button) return;
-  selectCourseMode(button.dataset.courseMode).catch(e => showToast(e.message || 'コース切替に失敗しました', true));
-});
-
 function toggleListCollapse(forceState) {
   const willCollapse = (typeof forceState === 'boolean')
     ? forceState
