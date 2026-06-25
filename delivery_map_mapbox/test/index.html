@@ -1215,7 +1215,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.13</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.14</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1262,7 +1262,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.13</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.14</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1494,15 +1494,14 @@
           <div class="manual-address-wheel" id="manual-chome-wheel" data-field="chome" tabindex="0" role="listbox" aria-label="丁目"></div>
         </div>
         <div>
-          <span class="manual-address-wheel-caption">番</span>
-          <div class="manual-address-wheel" id="manual-ban-wheel" data-field="ban" tabindex="0" role="listbox" aria-label="番"></div>
+          <span class="manual-address-wheel-caption">番地</span>
+          <div class="manual-address-wheel" id="manual-ban-wheel" data-field="ban" tabindex="0" role="listbox" aria-label="番地"></div>
         </div>
         <div>
           <span class="manual-address-wheel-caption">号</span>
           <div class="manual-address-wheel" id="manual-go-wheel" data-field="go" tabindex="0" role="listbox" aria-label="号"></div>
         </div>
       </div>
-      <div class="manual-address-wheel-guide">上下に回して選択します。選んだ住所は下の住所欄へ自動で入ります。</div>
       <div class="manual-address-direct-grid" id="manual-direct-inputs">
         <div class="manual-address-direct-spacer" aria-hidden="true"></div>
         <label id="manual-chome-input-wrap">丁目
@@ -1600,7 +1599,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.13';
+const APP_VERSION = 'v2026.06.24-test.14';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
