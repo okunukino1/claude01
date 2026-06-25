@@ -1183,13 +1183,37 @@
     color: var(--muted);
     font-size: calc(12px * var(--text-scale));
   }
+  .manual-address-direct-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(58px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .manual-address-direct-grid label {
+    display: block;
+    margin: 0;
+    font-size: calc(12px * var(--text-scale));
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .manual-address-direct-grid input {
+    width: 100%;
+    margin-top: 4px;
+    padding: 8px 10px;
+    border: 1px solid #c9c2ad;
+    border-radius: 8px;
+    font-size: calc(16px * var(--text-scale));
+    font-weight: 700;
+    text-align: center;
+    background: #fff;
+  }
   .hidden-input { display: none; }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.11</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.12</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1236,7 +1260,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.11</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.12</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1477,6 +1501,17 @@
         </div>
       </div>
       <div class="manual-address-wheel-guide">上下に回して選択します。選んだ住所は下の住所欄へ自動で入ります。</div>
+      <div class="manual-address-direct-grid" id="manual-direct-inputs">
+        <label id="manual-chome-input-wrap">丁目
+          <input type="tel" inputmode="numeric" pattern="[0-9]*" id="manual-chome-input" autocomplete="off">
+        </label>
+        <label>番
+          <input type="tel" inputmode="numeric" pattern="[0-9]*" id="manual-ban-input" autocomplete="off">
+        </label>
+        <label>号
+          <input type="tel" inputmode="numeric" pattern="[0-9]*" id="manual-go-input" autocomplete="off" placeholder="なし">
+        </label>
+      </div>
     </div>
     <label>住所 (必須)</label>
     <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
@@ -1562,7 +1597,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.11';
+const APP_VERSION = 'v2026.06.24-test.12';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -4975,6 +5010,62 @@ function renderManualWheel(wheel, field, selectedValue, { preserveScroll = false
     });
   }
 }
+function manualAddressNumericValue(value) {
+  return String(value || '').replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '');
+}
+
+function syncManualAddressDirectInputs() {
+  const config = manualAddressTownConfig();
+  const hasChome = manualAddressHasChome(config);
+  const chomeWrap = $('manual-chome-input-wrap');
+  const chomeInput = $('manual-chome-input');
+  const banInput = $('manual-ban-input');
+  const goInput = $('manual-go-input');
+  if (chomeWrap) chomeWrap.style.display = hasChome ? '' : 'none';
+  if (chomeInput) {
+    chomeInput.disabled = !hasChome;
+    chomeInput.value = hasChome ? (MANUAL_ADDRESS_STATE.chome || '') : '';
+    const chomeValues = manualAddressChomeValues(config).map(value => Number(value)).filter(Number.isFinite);
+    if (chomeValues.length) {
+      chomeInput.min = String(Math.min(...chomeValues));
+      chomeInput.max = String(Math.max(...chomeValues));
+    }
+  }
+  if (banInput) {
+    banInput.value = MANUAL_ADDRESS_STATE.ban || '';
+    banInput.min = '1';
+    banInput.max = String(manualAddressBanMax(config));
+  }
+  if (goInput) {
+    goInput.value = MANUAL_ADDRESS_STATE.go || '';
+    goInput.min = '1';
+    goInput.max = String(manualAddressGoMax(config));
+  }
+}
+
+function bindManualAddressDirectInputs() {
+  const fields = [
+    { id: 'manual-chome-input', field: 'chome', allowEmpty: false },
+    { id: 'manual-ban-input', field: 'ban', allowEmpty: false },
+    { id: 'manual-go-input', field: 'go', allowEmpty: true }
+  ];
+  fields.forEach(({ id, field, allowEmpty }) => {
+    const input = $(id);
+    if (!input || input.dataset.manualDirectBound) return;
+    input.dataset.manualDirectBound = '1';
+    const applyInput = () => {
+      const digits = manualAddressNumericValue(input.value);
+      if (input.value !== digits) input.value = digits;
+      if (!digits) {
+        if (allowEmpty) selectManualWheelValue(field, '', { render: true, apply: true });
+        return;
+      }
+      selectManualWheelValue(field, digits, { render: true, apply: true });
+    };
+    input.addEventListener('input', applyInput);
+    input.addEventListener('change', applyInput);
+  });
+}
 
 function renderManualAddressWheels(options = {}) {
   const title = $('manual-address-builder-title');
@@ -4987,6 +5078,8 @@ function renderManualAddressWheels(options = {}) {
   const config = manualAddressTownConfig();
   const chomeWrap = $('manual-chome-wrap');
   if (chomeWrap) chomeWrap.style.display = manualAddressHasChome(config) ? '' : 'none';
+  bindManualAddressDirectInputs();
+  syncManualAddressDirectInputs();
 }
 
 function buildManualSelectedAddress() {
