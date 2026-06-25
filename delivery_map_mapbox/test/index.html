@@ -1189,7 +1189,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.9</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.10</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1236,7 +1236,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.9</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.10</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1444,7 +1444,7 @@
       現在の配送リストを置き換える
     </label>
     <div class="modal-help">
-      配送コース、または集荷コースを選んで開きます。小舟町店の配送コースでは手入力の住所選択を使えます。
+      配送コース、または集荷コースを選んで開きます。小舟町店・浜町店の配送コースでは手入力の住所選択を使えます。
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-pickup-import">キャンセル</button>
@@ -1457,7 +1457,7 @@
   <div class="modal">
     <h3>配送先を追加</h3>
     <div class="manual-address-builder" id="manual-address-builder" hidden>
-      <h4>小舟町店向け 住所選択</h4>
+      <h4 id="manual-address-builder-title">住所選択</h4>
       <div class="builder-grid">
         <div>
           <span class="manual-address-wheel-caption">町名</span>
@@ -1477,6 +1477,7 @@
         </div>
       </div>
       <div class="manual-address-wheel-guide">上下に回して選択します。選んだ住所は下の住所欄へ自動で入ります。</div>
+    </div>
     <label>住所 (必須)</label>
     <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
     <label>備考 (建物名・部屋番号など)</label>
@@ -1561,7 +1562,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.9';
+const APP_VERSION = 'v2026.06.24-test.10';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1654,11 +1655,31 @@ const COURSE_AREAS = [
 ];
 const DELIVERY_COURSE_OPTION_PREFIX = '__delivery_course__:';
 const KOBUNACHO_DELIVERY_COURSE = '小舟町店';
-const MANUAL_ADDRESS_TOWNS = {
-  '日本橋本町': { chome: true },
-  '日本橋室町': { chome: true },
-  '日本橋小舟町': { chome: false },
-  '日本橋本石町': { chome: true }
+const HAMACHO_DELIVERY_COURSE = '浜町店';
+const MANUAL_ADDRESS_PROFILES = {
+  kobunacho: {
+    key: 'kobunacho',
+    title: '小舟町店向け 住所選択',
+    deliveryCourse: KOBUNACHO_DELIVERY_COURSE,
+    defaultTown: '日本橋本町',
+    towns: {
+      '日本橋本町': { chome: [1, 2, 3, 4] },
+      '日本橋室町': { chome: [1, 2, 3, 4] },
+      '日本橋小舟町': { chome: false },
+      '日本橋本石町': { chome: [1, 2, 3, 4] }
+    }
+  },
+  hamacho: {
+    key: 'hamacho',
+    title: '浜町店向け 住所選択',
+    deliveryCourse: HAMACHO_DELIVERY_COURSE,
+    defaultTown: '日本橋浜町',
+    towns: {
+      '日本橋浜町': { chome: [1, 2, 3] },
+      '東日本橋': { chome: [1, 2] },
+      '日本橋中洲': { chome: false }
+    }
+  }
 };
 const PICKUP_LIST_TAB_REGULAR = 'regular';
 const PICKUP_LIST_TAB_SPOT = 'spot';
@@ -4782,7 +4803,7 @@ function splitAddressAndBuilding(text) {
 }
 
 const MANUAL_ADDRESS_DEFAULT_STATE = {
-  town: '?????',
+  town: '',
   chome: '1',
   ban: '1',
   go: ''
@@ -4791,25 +4812,74 @@ const MANUAL_ADDRESS_STATE = { ...MANUAL_ADDRESS_DEFAULT_STATE };
 const MANUAL_WHEEL_OPTION_HEIGHT = 44;
 const manualWheelTimers = new Map();
 
+function currentManualAddressProfile() {
+  if (appMode !== 'delivery') return null;
+  const course = getSelectedDeliveryCourse();
+  return Object.values(MANUAL_ADDRESS_PROFILES).find(profile => profile.deliveryCourse === course) || null;
+}
+
+function manualAddressStorageKey(profile = currentManualAddressProfile()) {
+  return profile ? `${MANUAL_ADDRESS_STATE_KEY}:${profile.key}` : MANUAL_ADDRESS_STATE_KEY;
+}
+
+function manualAddressTowns() {
+  const profile = currentManualAddressProfile();
+  return profile ? profile.towns : MANUAL_ADDRESS_PROFILES.kobunacho.towns;
+}
+
+function manualAddressDefaultTown() {
+  const profile = currentManualAddressProfile();
+  const towns = manualAddressTowns();
+  return (profile && profile.defaultTown) || Object.keys(towns)[0] || '日本橋本町';
+}
+
+function manualAddressHasChome(config) {
+  return Array.isArray(config && config.chome) ? config.chome.length > 0 : !!(config && config.chome);
+}
+
+function manualAddressChomeValues(config) {
+  if (Array.isArray(config && config.chome)) return config.chome;
+  return config && config.chome ? [1, 2, 3, 4] : [];
+}
+
+function normalizeManualAddressStateForProfile() {
+  const towns = manualAddressTowns();
+  if (!towns[MANUAL_ADDRESS_STATE.town]) MANUAL_ADDRESS_STATE.town = manualAddressDefaultTown();
+  const config = manualAddressTownConfig();
+  const chomeValues = manualAddressChomeValues(config).map(value => String(value));
+  if (chomeValues.length && !chomeValues.includes(MANUAL_ADDRESS_STATE.chome)) MANUAL_ADDRESS_STATE.chome = chomeValues[0];
+  if (!MANUAL_ADDRESS_STATE.ban) MANUAL_ADDRESS_STATE.ban = '1';
+  if (MANUAL_ADDRESS_STATE.go === undefined || MANUAL_ADDRESS_STATE.go === null) MANUAL_ADDRESS_STATE.go = '';
+}
+
 function loadManualAddressState() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(MANUAL_ADDRESS_STATE_KEY) || 'null');
-    if (!saved || typeof saved !== 'object') return;
-    if (MANUAL_ADDRESS_TOWNS[saved.town]) MANUAL_ADDRESS_STATE.town = saved.town;
-    ['chome', 'ban', 'go'].forEach(key => {
-      if (saved[key] !== undefined && saved[key] !== null) MANUAL_ADDRESS_STATE[key] = String(saved[key]);
-    });
-  } catch (e) {}
+  Object.assign(MANUAL_ADDRESS_STATE, MANUAL_ADDRESS_DEFAULT_STATE);
+  const profile = currentManualAddressProfile();
+  const keys = [manualAddressStorageKey(profile), MANUAL_ADDRESS_STATE_KEY].filter(Boolean);
+  for (const key of keys) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) || 'null');
+      if (!saved || typeof saved !== 'object') continue;
+      const towns = manualAddressTowns();
+      if (towns[saved.town]) MANUAL_ADDRESS_STATE.town = saved.town;
+      ['chome', 'ban', 'go'].forEach(itemKey => {
+        if (saved[itemKey] !== undefined && saved[itemKey] !== null) MANUAL_ADDRESS_STATE[itemKey] = String(saved[itemKey]);
+      });
+      break;
+    } catch (e) {}
+  }
+  normalizeManualAddressStateForProfile();
 }
 
 function saveManualAddressState() {
   try {
-    localStorage.setItem(MANUAL_ADDRESS_STATE_KEY, JSON.stringify(MANUAL_ADDRESS_STATE));
+    localStorage.setItem(manualAddressStorageKey(), JSON.stringify(MANUAL_ADDRESS_STATE));
   } catch (e) {}
 }
 function manualAddressTownConfig() {
-  const town = MANUAL_ADDRESS_STATE.town || '日本橋本町';
-  return MANUAL_ADDRESS_TOWNS[town] || MANUAL_ADDRESS_TOWNS['日本橋本町'];
+  const towns = manualAddressTowns();
+  const town = MANUAL_ADDRESS_STATE.town || manualAddressDefaultTown();
+  return towns[town] || towns[manualAddressDefaultTown()] || {};
 }
 
 function rangeItems(start, end, suffix = '') {
@@ -4820,9 +4890,9 @@ function rangeItems(start, end, suffix = '') {
 
 function manualWheelItems(field) {
   if (field === 'town') {
-    return Object.keys(MANUAL_ADDRESS_TOWNS).map(town => ({ value: town, label: town.replace(/^日本橋/, '') }));
+    return Object.keys(manualAddressTowns()).map(town => ({ value: town, label: town.replace(/^日本橋/, '') }));
   }
-  if (field === 'chome') return rangeItems(1, 4);
+  if (field === 'chome') return manualAddressChomeValues(manualAddressTownConfig()).map(value => ({ value: String(value), label: String(value) }));
   if (field === 'ban') return rangeItems(1, 15);
   if (field === 'go') return [{ value: '', label: '-' }, ...rangeItems(1, 30)];
   return [];
@@ -4831,7 +4901,12 @@ function manualWheelItems(field) {
 function selectManualWheelValue(field, value, { render = true, apply = true, fromScroll = false } = {}) {
   if (!field) return;
   MANUAL_ADDRESS_STATE[field] = String(value ?? '');
-  if (field === 'town' && !manualAddressTownConfig().chome) MANUAL_ADDRESS_STATE.chome = '1';
+  if (field === 'town') {
+    const config = manualAddressTownConfig();
+    const chomeValues = manualAddressChomeValues(config).map(item => String(item));
+    MANUAL_ADDRESS_STATE.chome = chomeValues[0] || '1';
+  }
+  normalizeManualAddressStateForProfile();
   saveManualAddressState();
   if (render) renderManualAddressWheels({ preserveScroll: fromScroll });
   updateManualAddressPreview({ apply });
@@ -4879,22 +4954,25 @@ function renderManualWheel(wheel, field, selectedValue, { preserveScroll = false
 }
 
 function renderManualAddressWheels(options = {}) {
+  const title = $('manual-address-builder-title');
+  const profile = currentManualAddressProfile();
+  if (title && profile) title.textContent = profile.title;
   renderManualWheel($('manual-town-wheel'), 'town', MANUAL_ADDRESS_STATE.town, options);
   renderManualWheel($('manual-chome-wheel'), 'chome', MANUAL_ADDRESS_STATE.chome, options);
   renderManualWheel($('manual-ban-wheel'), 'ban', MANUAL_ADDRESS_STATE.ban, options);
   renderManualWheel($('manual-go-wheel'), 'go', MANUAL_ADDRESS_STATE.go, options);
   const config = manualAddressTownConfig();
   const chomeWrap = $('manual-chome-wrap');
-  if (chomeWrap) chomeWrap.style.display = config.chome ? '' : 'none';
+  if (chomeWrap) chomeWrap.style.display = manualAddressHasChome(config) ? '' : 'none';
 }
 
 function buildManualSelectedAddress() {
-  const town = MANUAL_ADDRESS_STATE.town || '日本橋本町';
+  const town = MANUAL_ADDRESS_STATE.town || manualAddressDefaultTown();
   const config = manualAddressTownConfig();
   const chome = MANUAL_ADDRESS_STATE.chome || '1';
   const ban = MANUAL_ADDRESS_STATE.ban || '1';
   const go = String(MANUAL_ADDRESS_STATE.go || '').trim();
-  const parts = config.chome ? [chome, ban] : [ban];
+  const parts = manualAddressHasChome(config) ? [chome, ban] : [ban];
   if (go) parts.push(go);
   return `${ADDR_PREF}${ADDR_CITY}${town}${parts.join('-')}`;
 }
@@ -4903,12 +4981,12 @@ function updateManualAddressPreview({ apply = false } = {}) {
   if (apply) $('add-address').value = buildManualSelectedAddress();
 }
 function updateManualAddressBuilder({ apply = false } = {}) {
-  loadManualAddressState();
   const builder = $('manual-address-builder');
   if (!builder) return;
-  const visible = isKobunachoDeliveryCourse();
-  builder.hidden = !visible;
-  if (!visible) return;
+  const profile = currentManualAddressProfile();
+  builder.hidden = !profile;
+  if (!profile) return;
+  loadManualAddressState();
   renderManualAddressWheels();
   updateManualAddressPreview({ apply });
 }
@@ -4916,7 +4994,7 @@ function updateManualAddressBuilder({ apply = false } = {}) {
 function openManualAddModal() {
   $('add-address').value = '';
   $('add-note').value = '';
-  updateManualAddressBuilder({ apply: isKobunachoDeliveryCourse() });
+  updateManualAddressBuilder({ apply: !!currentManualAddressProfile() });
   openModal('modal-add');
 }
 function startVoiceInput() {
