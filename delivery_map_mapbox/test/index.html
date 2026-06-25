@@ -1189,7 +1189,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.10</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.11</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1236,7 +1236,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.10</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.11</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1562,7 +1562,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.10';
+const APP_VERSION = 'v2026.06.24-test.11';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1675,9 +1675,9 @@ const MANUAL_ADDRESS_PROFILES = {
     deliveryCourse: HAMACHO_DELIVERY_COURSE,
     defaultTown: '日本橋浜町',
     towns: {
-      '日本橋浜町': { chome: [1, 2, 3] },
-      '東日本橋': { chome: [1, 2] },
-      '日本橋中洲': { chome: false }
+      '日本橋浜町': { chome: [{ value: 1, banMax: 20, goMax: 40 }, { value: 2, banMax: 70, goMax: 60 }, { value: 3, banMax: 60, goMax: 60 }] },
+      '東日本橋': { chome: [{ value: 1, banMax: 15, goMax: 40 }, { value: 2, banMax: 35, goMax: 50 }] },
+      '日本橋中洲': { chome: false, banMax: 15, goMax: 40 }
     }
   }
 };
@@ -4837,9 +4837,27 @@ function manualAddressHasChome(config) {
   return Array.isArray(config && config.chome) ? config.chome.length > 0 : !!(config && config.chome);
 }
 
+function manualAddressChomeValue(item) {
+  return (item && typeof item === 'object') ? item.value : item;
+}
+
 function manualAddressChomeValues(config) {
-  if (Array.isArray(config && config.chome)) return config.chome;
+  if (Array.isArray(config && config.chome)) return config.chome.map(manualAddressChomeValue);
   return config && config.chome ? [1, 2, 3, 4] : [];
+}
+
+function manualAddressSelectedChomeConfig(config = manualAddressTownConfig()) {
+  if (!Array.isArray(config && config.chome)) return {};
+  const selected = String(MANUAL_ADDRESS_STATE.chome || '');
+  return config.chome.find(item => String(manualAddressChomeValue(item)) === selected && item && typeof item === 'object') || {};
+}
+
+function manualAddressBanMax(config = manualAddressTownConfig()) {
+  return Number(manualAddressSelectedChomeConfig(config).banMax || config.banMax || 15);
+}
+
+function manualAddressGoMax(config = manualAddressTownConfig()) {
+  return Number(manualAddressSelectedChomeConfig(config).goMax || config.goMax || 30);
 }
 
 function normalizeManualAddressStateForProfile() {
@@ -4849,7 +4867,12 @@ function normalizeManualAddressStateForProfile() {
   const chomeValues = manualAddressChomeValues(config).map(value => String(value));
   if (chomeValues.length && !chomeValues.includes(MANUAL_ADDRESS_STATE.chome)) MANUAL_ADDRESS_STATE.chome = chomeValues[0];
   if (!MANUAL_ADDRESS_STATE.ban) MANUAL_ADDRESS_STATE.ban = '1';
+  const banMax = manualAddressBanMax(config);
+  const ban = Math.max(1, Math.min(banMax, Number(MANUAL_ADDRESS_STATE.ban) || 1));
+  MANUAL_ADDRESS_STATE.ban = String(ban);
   if (MANUAL_ADDRESS_STATE.go === undefined || MANUAL_ADDRESS_STATE.go === null) MANUAL_ADDRESS_STATE.go = '';
+  const goValue = Number(MANUAL_ADDRESS_STATE.go || 0);
+  if (goValue > manualAddressGoMax(config)) MANUAL_ADDRESS_STATE.go = String(manualAddressGoMax(config));
 }
 
 function loadManualAddressState() {
@@ -4893,8 +4916,8 @@ function manualWheelItems(field) {
     return Object.keys(manualAddressTowns()).map(town => ({ value: town, label: town.replace(/^日本橋/, '') }));
   }
   if (field === 'chome') return manualAddressChomeValues(manualAddressTownConfig()).map(value => ({ value: String(value), label: String(value) }));
-  if (field === 'ban') return rangeItems(1, 15);
-  if (field === 'go') return [{ value: '', label: '-' }, ...rangeItems(1, 30)];
+  if (field === 'ban') return rangeItems(1, manualAddressBanMax());
+  if (field === 'go') return [{ value: '', label: '-' }, ...rangeItems(1, manualAddressGoMax())];
   return [];
 }
 
