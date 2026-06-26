@@ -1133,7 +1133,10 @@
     grid-template-columns: minmax(74px, 1.45fr) repeat(3, minmax(48px, 0.75fr));
     gap: 6px;
   }
-  .manual-address-builder label { margin-top: 0; }
+    .manual-address-builder.no-chome .builder-grid {
+    grid-template-columns: minmax(94px, 1.45fr) repeat(2, minmax(64px, 0.75fr));
+  }
+.manual-address-builder label { margin-top: 0; }
   .manual-address-wheel-caption {
     display: block;
     margin: 0 0 4px;
@@ -1206,7 +1209,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.19</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.20</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1253,7 +1256,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.19</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.20</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1578,7 +1581,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.19';
+const APP_VERSION = 'v2026.06.24-test.20';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -4881,7 +4884,11 @@ function normalizeManualAddressStateForProfile() {
   if (!towns[MANUAL_ADDRESS_STATE.town]) MANUAL_ADDRESS_STATE.town = manualAddressDefaultTown();
   const config = manualAddressTownConfig();
   const chomeValues = manualAddressChomeValues(config).map(value => String(value));
-  if (chomeValues.length && !chomeValues.includes(MANUAL_ADDRESS_STATE.chome)) MANUAL_ADDRESS_STATE.chome = chomeValues[0];
+  if (chomeValues.length) {
+    if (!chomeValues.includes(MANUAL_ADDRESS_STATE.chome)) MANUAL_ADDRESS_STATE.chome = chomeValues[0];
+  } else {
+    MANUAL_ADDRESS_STATE.chome = '';
+  }
   if (MANUAL_ADDRESS_STATE.ban) {
     const banMax = manualAddressBanMax(config);
     const ban = Math.max(1, Math.min(banMax, Number(MANUAL_ADDRESS_STATE.ban) || 1));
@@ -4952,7 +4959,7 @@ function selectManualWheelValue(field, value, { render = true, apply = true, fro
   if (field === 'town') {
     const config = manualAddressTownConfig();
     const chomeValues = manualAddressChomeValues(config).map(item => String(item));
-    MANUAL_ADDRESS_STATE.chome = chomeValues[0] || '1';
+    MANUAL_ADDRESS_STATE.chome = chomeValues[0] || '';
   }
   normalizeManualAddressStateForProfile();
   saveManualAddressState();
@@ -5099,8 +5106,11 @@ function renderManualAddressWheels(options = {}) {
   renderManualWheel($('manual-town-wheel'), 'town', MANUAL_ADDRESS_STATE.town, options);
   renderManualWheel($('manual-chome-wheel'), 'chome', MANUAL_ADDRESS_STATE.chome, options);
   const config = manualAddressTownConfig();
+  const hasChome = manualAddressHasChome(config);
+  const builder = $('manual-address-builder');
+  if (builder) builder.classList.toggle('no-chome', !hasChome);
   const chomeWrap = $('manual-chome-wrap');
-  if (chomeWrap) chomeWrap.style.display = manualAddressHasChome(config) ? '' : 'none';
+  if (chomeWrap) chomeWrap.style.display = hasChome ? '' : 'none';
   bindManualAddressDirectInputs();
   syncManualAddressDirectInputs();
 }
@@ -5108,7 +5118,7 @@ function renderManualAddressWheels(options = {}) {
 function buildManualSelectedAddress() {
   const town = MANUAL_ADDRESS_STATE.town || manualAddressDefaultTown();
   const config = manualAddressTownConfig();
-  const chome = MANUAL_ADDRESS_STATE.chome || '1';
+  const chome = MANUAL_ADDRESS_STATE.chome || '';
   const ban = String(MANUAL_ADDRESS_STATE.ban || '').trim();
   const go = String(MANUAL_ADDRESS_STATE.go || '').trim();
   const parts = [];
