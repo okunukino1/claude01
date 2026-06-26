@@ -1206,7 +1206,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.18</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.19</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1253,7 +1253,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.18</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.19</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1578,7 +1578,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.18';
+const APP_VERSION = 'v2026.06.24-test.19';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -5058,9 +5058,9 @@ function bindManualAddressDirectInputs() {
       clearTimeout(goConfirmTimer);
       goConfirmTimer = setTimeout(() => {
         const active = document.activeElement;
-        if (active && ['add-note', 'add-address', 'manual-ban-input'].includes(active.id)) return;
+        if (!active || active.id !== 'add-address') return;
         confirmFromGoInput();
-      }, 120);
+      }, 160);
     };
     input.addEventListener('beforeinput', (event) => {
       if (isGoInput && event.inputType === 'insertLineBreak') {
@@ -5086,6 +5086,8 @@ function bindManualAddressDirectInputs() {
         });
       });
       input.addEventListener('change', scheduleGoDoneConfirm);
+      input.addEventListener('blur', scheduleGoDoneConfirm);
+      input.addEventListener('focusout', scheduleGoDoneConfirm);
     }
   });
 }
