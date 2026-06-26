@@ -1206,7 +1206,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.17</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.18</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1253,7 +1253,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.17</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.18</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1578,7 +1578,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.17';
+const APP_VERSION = 'v2026.06.24-test.18';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -4882,10 +4882,13 @@ function normalizeManualAddressStateForProfile() {
   const config = manualAddressTownConfig();
   const chomeValues = manualAddressChomeValues(config).map(value => String(value));
   if (chomeValues.length && !chomeValues.includes(MANUAL_ADDRESS_STATE.chome)) MANUAL_ADDRESS_STATE.chome = chomeValues[0];
-  if (!MANUAL_ADDRESS_STATE.ban) MANUAL_ADDRESS_STATE.ban = '1';
-  const banMax = manualAddressBanMax(config);
-  const ban = Math.max(1, Math.min(banMax, Number(MANUAL_ADDRESS_STATE.ban) || 1));
-  MANUAL_ADDRESS_STATE.ban = String(ban);
+  if (MANUAL_ADDRESS_STATE.ban) {
+    const banMax = manualAddressBanMax(config);
+    const ban = Math.max(1, Math.min(banMax, Number(MANUAL_ADDRESS_STATE.ban) || 1));
+    MANUAL_ADDRESS_STATE.ban = String(ban);
+  } else {
+    MANUAL_ADDRESS_STATE.ban = '';
+  }
   if (MANUAL_ADDRESS_STATE.go === undefined || MANUAL_ADDRESS_STATE.go === null) MANUAL_ADDRESS_STATE.go = '';
   const goValue = Number(MANUAL_ADDRESS_STATE.go || 0);
   if (goValue > manualAddressGoMax(config)) MANUAL_ADDRESS_STATE.go = String(manualAddressGoMax(config));
@@ -4914,6 +4917,12 @@ function saveManualAddressState() {
   try {
     localStorage.setItem(manualAddressStorageKey(), JSON.stringify(MANUAL_ADDRESS_STATE));
   } catch (e) {}
+}
+
+function resetManualAddressDirectInputsForNewItem() {
+  MANUAL_ADDRESS_STATE.ban = '';
+  MANUAL_ADDRESS_STATE.go = '';
+  saveManualAddressState();
 }
 function manualAddressTownConfig() {
   const towns = manualAddressTowns();
@@ -5025,12 +5034,40 @@ function bindManualAddressDirectInputs() {
       const digits = manualAddressNumericValue(input.value);
       if (input.value !== digits) input.value = digits;
       if (!digits) {
-        if (allowEmpty) selectManualWheelValue(field, '', { render: true, apply: true });
+        MANUAL_ADDRESS_STATE[field] = '';
+        saveManualAddressState();
+        updateManualAddressPreview({ apply: true });
         return;
       }
       selectManualWheelValue(field, digits, { render: true, apply: true });
     };
+    const isGoInput = id === 'manual-go-input';
+    let goConfirmTimer = null;
+    let goConfirming = false;
+    const confirmFromGoInput = () => {
+      if (!isGoInput || goConfirming) return;
+      const modal = $('modal-add');
+      if (!modal || !modal.classList.contains('show')) return;
+      goConfirming = true;
+      applyInput();
+      $('btn-add-confirm').click();
+      setTimeout(() => { goConfirming = false; }, 500);
+    };
+    const scheduleGoDoneConfirm = () => {
+      if (!isGoInput) return;
+      clearTimeout(goConfirmTimer);
+      goConfirmTimer = setTimeout(() => {
+        const active = document.activeElement;
+        if (active && ['add-note', 'add-address', 'manual-ban-input'].includes(active.id)) return;
+        confirmFromGoInput();
+      }, 120);
+    };
     input.addEventListener('beforeinput', (event) => {
+      if (isGoInput && event.inputType === 'insertLineBreak') {
+        event.preventDefault();
+        confirmFromGoInput();
+        return;
+      }
       if (event.inputType && event.inputType.startsWith('delete')) return;
       if (event.data && !/^[0-9０-９]+$/.test(event.data)) event.preventDefault();
     });
@@ -5040,13 +5077,15 @@ function bindManualAddressDirectInputs() {
     });
     input.addEventListener('input', applyInput);
     input.addEventListener('change', applyInput);
-    if (id === 'manual-go-input') {
-      input.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter') return;
-        event.preventDefault();
-        applyInput();
-        $('btn-add-confirm').click();
+    if (isGoInput) {
+      ['keydown', 'keypress', 'keyup'].forEach(eventName => {
+        input.addEventListener(eventName, (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          confirmFromGoInput();
+        });
       });
+      input.addEventListener('change', scheduleGoDoneConfirm);
     }
   });
 }
@@ -5068,11 +5107,13 @@ function buildManualSelectedAddress() {
   const town = MANUAL_ADDRESS_STATE.town || manualAddressDefaultTown();
   const config = manualAddressTownConfig();
   const chome = MANUAL_ADDRESS_STATE.chome || '1';
-  const ban = MANUAL_ADDRESS_STATE.ban || '1';
+  const ban = String(MANUAL_ADDRESS_STATE.ban || '').trim();
   const go = String(MANUAL_ADDRESS_STATE.go || '').trim();
-  const parts = manualAddressHasChome(config) ? [chome, ban] : [ban];
+  const parts = [];
+  if (manualAddressHasChome(config)) parts.push(chome);
+  if (ban) parts.push(ban);
   if (go) parts.push(go);
-  return `${ADDR_PREF}${ADDR_CITY}${town}${parts.join('-')}`;
+  return `${ADDR_PREF}${ADDR_CITY}${town}${parts.length ? parts.join('-') : ''}`;
 }
 
 function updateManualAddressPreview({ apply = false } = {}) {
@@ -5085,6 +5126,7 @@ function updateManualAddressBuilder({ apply = false } = {}) {
   builder.hidden = !profile;
   if (!profile) return;
   loadManualAddressState();
+  resetManualAddressDirectInputsForNewItem();
   renderManualAddressWheels();
   updateManualAddressPreview({ apply });
 }
@@ -7250,6 +7292,15 @@ $('btn-photo-read').addEventListener('click', readPendingPhoto);
 $('btn-add-voice').addEventListener('click', startVoiceInput);
 $('btn-add-manual').addEventListener('click', openManualAddModal);
 $('btn-add-confirm').addEventListener('click', () => {
+  const builder = $('manual-address-builder');
+  if (builder && !builder.hidden) {
+    const banInput = $('manual-ban-input');
+    if (!manualAddressNumericValue(banInput ? banInput.value : '')) {
+      showToast('番地を入力してください', true);
+      if (banInput) banInput.focus();
+      return;
+    }
+  }
   const address = $('add-address').value.trim();
   const note = $('add-note').value.trim();
   if (!address) { showToast('住所を入力してください', true); return; }
