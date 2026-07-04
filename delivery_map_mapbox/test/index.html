@@ -1287,7 +1287,7 @@
       <button id="menu-cache-admin" type="button">🗄 DBキャッシュ管理</button>
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
-      <button id="menu-toggle-gsi" type="button">🗺 番地ライン(地理院) ON/OFF</button>
+      <button id="menu-toggle-gsi" type="button">📐 番地境界線(法務省) ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
       <button id="menu-banchi-debug" type="button">🩺 番地表示の状態</button>
       <button id="menu-time-windows" type="button">⏰ 時間指定設定</button>
@@ -1604,7 +1604,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.27';
+const APP_VERSION = 'v2026.06.24-test.28';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -3106,38 +3106,50 @@ function updateNeighborhoodButton() {
   btn.classList.toggle('on', neighborhoodVisible);
 }
 
-// 地理院標準地図の半透明オーバーレイ。ズーム16以上で街区の輪郭線と
-// 街区番号(○番)が見える。ラスター画像のため文字の重なりは許容する。
-const GSI_OVERLAY_SOURCE_ID = 'gsi-std';
-const GSI_OVERLAY_LAYER_ID = 'gsi-std-overlay';
+// 番地境界線オーバーレイ。
+// 法務省の登記所備付地図(筆ポリゴン)を amx-project がタイル化したものを、
+// api/amx_tile_proxy.php (PMTiles→z/x/y変換) 経由で読み込み、
+// 土地の区画(筆)の境界線を描く。fude レイヤーは z14-16、z17以上はオーバーズーム。
+const GSI_OVERLAY_SOURCE_ID = 'amx-fude';
+const GSI_OVERLAY_LAYER_ID = 'amx-fude-line';
 
 function addGsiOverlayLayer() {
   if (!map || map.getSource(GSI_OVERLAY_SOURCE_ID)) return;
-  map.addSource(GSI_OVERLAY_SOURCE_ID, {
-    type: 'raster',
-    tiles: ['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'],
-    tileSize: 256,
-    minzoom: 5,
-    maxzoom: 18,
-    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>'
-  });
+  try {
+    map.addSource(GSI_OVERLAY_SOURCE_ID, {
+      type: 'vector',
+      tiles: [new URL('../api/amx_tile_proxy.php', location.href).href + '?z={z}&x={x}&y={y}'],
+      minzoom: 14,
+      maxzoom: 16,
+      attribution: '筆界: <a href="https://front.geospatial.jp/moj-chizu-xml-readme/" target="_blank">登記所備付地図(法務省)</a> / amx-project'
+    });
+  } catch (e) {
+    banchiSetError('筆界ソース追加', e);
+    return;
+  }
   const layerDef = {
     id: GSI_OVERLAY_LAYER_ID,
-    type: 'raster',
+    type: 'line',
     source: GSI_OVERLAY_SOURCE_ID,
-    minzoom: 16,
+    'source-layer': 'fude',
+    minzoom: 15.5,
     slot: 'middle',
-    layout: { 'visibility': gsiOverlayVisible ? 'visible' : 'none' },
+    layout: {
+      'visibility': gsiOverlayVisible ? 'visible' : 'none',
+      'line-join': 'round'
+    },
     paint: {
-      // z18以降はベクター番地が主役になるため、ラスターの焼き込み数字が
-      // 二重表示に見えないようフェードアウトする
-      'raster-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.2, 17, 0.5, 18, 0.45, 19, 0.12]
+      'line-color': '#c2410c',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 16, 0.6, 18, 1.2, 20, 2.0],
+      'line-opacity': ['interpolate', ['linear'], ['zoom'], 15.5, 0.35, 17, 0.65, 19, 0.75]
     }
   };
   try {
     map.addLayer(layerDef);
   } catch (e) {
-    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {
+      banchiSetError('筆界レイヤー追加', e2);
+    }
   }
 }
 
@@ -3148,13 +3160,13 @@ function toggleGsiOverlay() {
     map.setLayoutProperty(GSI_OVERLAY_LAYER_ID, 'visibility', gsiOverlayVisible ? 'visible' : 'none');
   }
   updateGsiOverlayButton();
-  showToast(gsiOverlayVisible ? '番地ライン(地理院)をON（地図を拡大すると表示）' : '番地ライン(地理院)をOFF');
+  showToast(gsiOverlayVisible ? '番地境界線をON（ズーム16以上で表示）' : '番地境界線をOFF');
 }
 
 function updateGsiOverlayButton() {
   const btn = $('menu-toggle-gsi');
   if (!btn) return;
-  btn.textContent = gsiOverlayVisible ? '🗺 番地ライン(地理院): ON' : '🗺 番地ライン(地理院): OFF';
+  btn.textContent = gsiOverlayVisible ? '📐 番地境界線(法務省): ON' : '📐 番地境界線(法務省): OFF';
   btn.classList.toggle('on', gsiOverlayVisible);
 }
 
@@ -3781,6 +3793,12 @@ function openBanchiDebug() {
       lines.push(`Mapbox番地(streets): 画面内 ${streetsCount}件`);
     } catch (e) {
       lines.push('Mapbox番地(streets): レイヤーなし');
+    }
+    try {
+      const fudeCount = map.queryRenderedFeatures({ layers: [GSI_OVERLAY_LAYER_ID] }).length;
+      lines.push(`番地境界線(法務省): ${gsiOverlayVisible ? 'ON' : 'OFF'} / 画面内 ${fudeCount}筆`);
+    } catch (e) {
+      lines.push('番地境界線(法務省): レイヤーなし');
     }
   }
   lines.push(`最終エラー: ${banchiStatus.lastError || 'なし'}`);
