@@ -1593,7 +1593,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.24';
+const APP_VERSION = 'v2026.06.24-test.25';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -3371,8 +3371,10 @@ function addStreetsHousenumLayer() {
         20, 28,
         22, 32
       ],
-      'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'],
-      'text-radial-offset': 0.4,
+      // 'top'を先頭に = まず「点の下」に置く。建物名は点の上に出るため重なりにくい。
+      // 'center'を外して番地が名前の真上に乗らないようにする。
+      'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+      'text-radial-offset': 0.5,
       'text-allow-overlap': ['step', ['zoom'], false, 18, true],
       'text-ignore-placement': ['step', ['zoom'], false, 18, true],
       'text-padding': 1
@@ -3430,8 +3432,10 @@ function addBanchiLayer() {
         22, 32
       ],
       // 建物名ラベル等と重なる場合は上下左右へずらして配置を試みる
-      'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'],
-      'text-radial-offset': 0.4,
+      // 'top'を先頭に = まず「点の下」に置く。建物名は点の上に出るため重なりにくい。
+      // 'center'を外して番地が名前の真上に乗らないようにする。
+      'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+      'text-radial-offset': 0.5,
       // ズーム18以上では衝突判定を無効化して全番地を必ず表示する
       'text-allow-overlap': ['step', ['zoom'], false, 18, true],
       'text-ignore-placement': ['step', ['zoom'], false, 18, true],
