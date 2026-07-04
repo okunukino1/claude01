@@ -164,8 +164,30 @@ function amx_tileid($z, $x, $y) {
     return $acc + $d;
 }
 
-// MVTタイル内のレイヤー名と地物数を取得 (デバッグ用)
+// MVT feature メッセージからジオメトリ種別 (field 3) を取り出す
+function amx_mvt_feature_type($blob) {
+    $len = strlen($blob);
+    $pos = 0;
+    while ($pos < $len) {
+        $tag = amx_varint($blob, $pos, $len);
+        $f = $tag >> 3;
+        $w = $tag & 7;
+        if ($w === 0) {
+            $v = amx_varint($blob, $pos, $len);
+            if ($f === 3) return $v; // 1=POINT 2=LINESTRING 3=POLYGON
+            continue;
+        }
+        if ($w === 2) { $l = amx_varint($blob, $pos, $len); $pos += $l; continue; }
+        if ($w === 5) { $pos += 4; continue; }
+        if ($w === 1) { $pos += 8; continue; }
+        break;
+    }
+    return 0;
+}
+
+// MVTタイル内のレイヤー名・地物数・ジオメトリ種別・属性キーを取得 (デバッグ用)
 function amx_mvt_layers($tile) {
+    $typeNames = [0 => 'unknown', 1 => 'point', 2 => 'line', 3 => 'polygon'];
     $layers = [];
     $len = strlen($tile);
     $pos = 0;
@@ -178,6 +200,8 @@ function amx_mvt_layers($tile) {
             $end = min($pos + $l, $len);
             $name = '';
             $count = 0;
+            $types = [];
+            $keys = [];
             while ($pos < $end) {
                 $t2 = amx_varint($tile, $pos, $end);
                 $f2 = $t2 >> 3;
@@ -188,14 +212,20 @@ function amx_mvt_layers($tile) {
                 if ($w2 === 2) {
                     $l2 = amx_varint($tile, $pos, $end);
                     if ($f2 === 1) { $name = substr($tile, $pos, $l2); }
-                    if ($f2 === 2) { $count++; }
+                    if ($f2 === 2) {
+                        $count++;
+                        $t = amx_mvt_feature_type(substr($tile, $pos, $l2));
+                        $tn = $typeNames[$t] ?? "type{$t}";
+                        $types[$tn] = ($types[$tn] ?? 0) + 1;
+                    }
+                    if ($f2 === 3 && count($keys) < 20) { $keys[] = substr($tile, $pos, $l2); }
                     $pos += $l2;
                     continue;
                 }
                 $pos = $end;
             }
             $pos = $end;
-            $layers[] = ['name' => $name, 'features' => $count];
+            $layers[] = ['name' => $name, 'features' => $count, 'types' => $types, 'keys' => $keys];
         } else {
             if ($wire === 0) { amx_varint($tile, $pos, $len); }
             elseif ($wire === 2) { $l = amx_varint($tile, $pos, $len); $pos += $l; }
