@@ -1276,6 +1276,7 @@
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
       <button id="menu-label-mode" type="button">🏷 表示: 番地+建物</button>
+      <button id="menu-batch-photo" type="button">📸 連続撮影モード: OFF</button>
       <button id="menu-import-pickup" type="button">📦 集荷コースを選択</button>
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
@@ -1610,7 +1611,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.37';
+const APP_VERSION = 'v2026.06.24-test.38';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -6043,6 +6044,107 @@ async function readPendingPhoto() {
   }
 }
 
+// ===== 連続撮影モード =====
+// プレビューも確認モーダルも省略し、撮影→裏でOCR+住所検索+ピン追加を自動実行。
+// 朝の積み込みで伝票を次々読み込む用途。処理は撮影と並行して進む。
+let batchPhotoMode = false;
+const batchStats = { pending: 0, added: 0, skipped: 0, failed: 0 };
+
+function updateBatchPhotoUi() {
+  const btn = $('btn-add-photo');
+  if (btn) {
+    btn.textContent = batchPhotoMode
+      ? `📸 連写${batchStats.pending > 0 ? ` (処理中${batchStats.pending})` : ''}`
+      : '📷 伝票撮影';
+  }
+  const menuBtn = $('menu-batch-photo');
+  if (menuBtn) {
+    menuBtn.textContent = batchPhotoMode ? '📸 連続撮影モード: ON' : '📸 連続撮影モード: OFF';
+    menuBtn.classList.toggle('on', batchPhotoMode);
+  }
+}
+
+function toggleBatchPhotoMode() {
+  closeModal('modal-menu');
+  batchPhotoMode = !batchPhotoMode;
+  if (batchPhotoMode) {
+    batchStats.pending = 0;
+    batchStats.added = 0;
+    batchStats.skipped = 0;
+    batchStats.failed = 0;
+    showToast('連続撮影モードON — 「📸 連写」で伝票を次々撮影してください');
+  } else {
+    const parts = [`追加${batchStats.added}件`];
+    if (batchStats.skipped) parts.push(`重複${batchStats.skipped}件`);
+    if (batchStats.failed) parts.push(`失敗${batchStats.failed}件`);
+    showToast(`連続撮影終了: ${parts.join(' / ')}${batchStats.failed ? ' — 失敗分は通常モードで撮り直してください' : ''}`, batchStats.failed > 0);
+  }
+  updateBatchPhotoUi();
+}
+
+async function processBatchPhoto(file) {
+  batchStats.pending++;
+  updateBatchPhotoUi();
+  try {
+    const compressed = await compressImage(file, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, 0);
+    bumpUsage('ocr');
+    const res = await fetch('../api/extract_address.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: compressed
+    });
+    const data = await res.json();
+    if (!res.ok || !data.address) {
+      throw new Error((data && data.error) || '住所が読み取れませんでした');
+    }
+
+    const ocrFields = splitOcrAddressFields(data);
+    const recipient = normalizeOcrField(data.recipient || '');
+    let note = ocrFields.note || data.note || data.building || '';
+    if (recipient && !note.includes(recipient)) {
+      note = note ? `${note}\n宛名: ${recipient}` : `宛名: ${recipient}`;
+    }
+    const address = ocrFields.address || data.address;
+
+    // 重複は自動スキップ (連写中に確認ダイアログは出さない)
+    const canon = canonicalAddressForCache(address);
+    if (canon && deliveries.some(d => canonicalAddressForCache(d.address || '') === canon)) {
+      batchStats.skipped++;
+      showToast(`重複スキップ: ${address}`);
+      return;
+    }
+
+    const result = await geocodeAddress(address);
+    if (!result) throw new Error('住所が見つかりません: ' + address);
+
+    deliveries.push({
+      id: uid(),
+      address,
+      note,
+      lat: result.lat,
+      lng: result.lng,
+      approx: result.approx,
+      formatted: result.formatted,
+      completed: false,
+      completedAt: null,
+      deliveryCourse: appMode === 'delivery' ? getSelectedDeliveryCourse() : '',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    batchStats.added++;
+    showToast(`✅ 追加: ${address}${result.approx ? ' (⚠概算位置)' : ''}${String(data.confidence || '').toLowerCase() === 'low' ? ' (⚠要確認)' : ''}`);
+  } catch (e) {
+    batchStats.failed++;
+    showToast(`❌ 読み取り失敗 — その伝票を撮り直してください (${e.message})`, true);
+  } finally {
+    batchStats.pending--;
+    updateBatchPhotoUi();
+  }
+}
+
 function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -8036,11 +8138,16 @@ $('btn-north').addEventListener('click', () => {
 
 $('btn-add-photo').addEventListener('click', () => $('file-photo').click());
 $('file-photo').addEventListener('change', (e) => {
-  if (e.target.files && e.target.files[0]) {
-    openPhotoPreview(e.target.files[0]);
-    e.target.value = '';
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (batchPhotoMode) {
+    processBatchPhoto(file);
+  } else {
+    openPhotoPreview(file);
   }
 });
+$('menu-batch-photo').addEventListener('click', toggleBatchPhotoMode);
 $('btn-photo-rotate-left').addEventListener('click', () => rotatePendingPhoto(-90));
 $('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(90));
 $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
