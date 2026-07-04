@@ -1294,8 +1294,9 @@
 <div class="modal-bg" id="modal-banchi-debug">
   <div class="modal">
     <h3>番地表示の状態</h3>
-    <pre id="banchi-debug-text" style="white-space:pre-wrap;font-size:12px;line-height:1.6;background:#f1f5f9;border-radius:8px;padding:10px;overflow-x:auto;margin:8px 0;"></pre>
+    <pre id="banchi-debug-text" style="white-space:pre-wrap;font-size:12px;line-height:1.6;background:#f1f5f9;border-radius:8px;padding:10px;overflow-x:auto;margin:8px 0;max-height:50vh;overflow-y:auto;"></pre>
     <div class="modal-actions">
+      <button class="primary" type="button" id="banchi-debug-copy">📋 コピー</button>
       <button class="cancel" type="button" data-close="modal-banchi-debug">閉じる</button>
     </div>
   </div>
@@ -1592,7 +1593,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.22';
+const APP_VERSION = 'v2026.06.24-test.23';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1654,8 +1655,9 @@ const ADDR_CITY = '中央区';   // 〃
 const ADDR_API_BASE = 'https://japanese-addresses-v2.geoloniamaps.com/api/ja';
 const BANCHI_SOURCE_ID = 'rys-banchi';
 const BANCHI_LAYER_ID = 'rys-banchi-label';
-const BANCHI_DISPLAY_MIN_ZOOM = 17;   // ラベルを表示する最小ズーム
-const BANCHI_PREFETCH_MIN_ZOOM = 16;  // データ先読みを始めるズーム
+const BANCHI_DISPLAY_MIN_ZOOM = 16.5; // ラベルを表示する最小ズーム
+const BANCHI_PREFETCH_MIN_ZOOM = 15.8; // データ先読みを始めるズーム
+const BANCHI_MIN_RADIUS_DEG = 0.012;  // 町字検索の最低半径(度) ≒ 1.2km。高ズームでも維持
 const BANCHI_NEARBY_CITY_COUNT = 4;   // 地図中心から近い順に読む市区町村数
 const BANCHI_CITY_MAX_DEG = 0.4;      // 市区町村代表点までの許容距離(度)
 const BANCHI_MACHIAZA_FETCH_LIMIT = 150; // 1回の更新で取得する町字数の上限
@@ -3349,11 +3351,12 @@ function addBanchiLayer() {
       'text-field': ['get', 'label'],
       'text-size': [
         'interpolate', ['linear'], ['zoom'],
-        17, 13,
-        18, 17,
-        19, 21,
-        20, 25,
-        22, 28
+        16.5, 13,
+        17, 16,
+        18, 20,
+        19, 24,
+        20, 28,
+        22, 32
       ],
       // 建物名ラベル等と重なる場合は上下左右へずらして配置を試みる
       'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'],
@@ -3428,24 +3431,39 @@ async function banchiUpdate() {
     banchiStatus.cities = cities.map(banchiCityKey);
     const indexes = await Promise.all(cities.map(c => banchiEnsureCityIndex(c)));
 
-    // 画面(+60%の余白)内にある未取得の町字を集める
+    // 画面(+60%の余白)内にある未取得の町字を集める。
+    // 高ズームでは画面が数十mまで狭くなり、町字の代表点(町の中心)が
+    // 窓に入らず永遠に取得されなくなるため、最低半径を必ず確保する。
     const bounds = map.getBounds();
-    const padLng = Math.abs(bounds.getEast() - bounds.getWest()) * 0.6;
-    const padLat = Math.abs(bounds.getNorth() - bounds.getSouth()) * 0.6;
+    const padLng = Math.max(Math.abs(bounds.getEast() - bounds.getWest()) * 0.6, BANCHI_MIN_RADIUS_DEG);
+    const padLat = Math.max(Math.abs(bounds.getNorth() - bounds.getSouth()) * 0.6, BANCHI_MIN_RADIUS_DEG);
     const west = bounds.getWest() - padLng, east = bounds.getEast() + padLng;
     const south = bounds.getSouth() - padLat, north = bounds.getNorth() + padLat;
 
     const targets = [];
+    const allMachi = [];
     cities.forEach((city, i) => {
       const idx = indexes[i] || banchiCityIndexes.get(banchiCityKey(city));
       if (!idx || !Array.isArray(idx.machiaza)) return;
       idx.machiaza.forEach(m => {
+        allMachi.push({ city, m });
         if (m.lng < west || m.lng > east || m.lat < south || m.lat > north) return;
         const machiKey = `${banchiCityKey(city)}|${m.id}|${m.kind}`;
         if (banchiMachiData.has(machiKey)) return;
         targets.push({ city, m });
       });
     });
+
+    // 保険: 代表点が窓の外でも、中心に最も近い町字3件は必ず取得する
+    allMachi
+      .map(t => ({ t, d2: (t.m.lng - center.lng) * (t.m.lng - center.lng) + (t.m.lat - center.lat) * (t.m.lat - center.lat) }))
+      .sort((a, b) => a.d2 - b.d2)
+      .slice(0, 3)
+      .forEach(({ t }) => {
+        const machiKey = `${banchiCityKey(t.city)}|${t.m.id}|${t.m.kind}`;
+        if (banchiMachiData.has(machiKey)) return;
+        if (!targets.includes(t)) targets.push(t);
+      });
     banchiStatus.machiNearby = targets.length;
 
     const limited = targets.slice(0, BANCHI_MACHIAZA_FETCH_LIMIT);
@@ -3615,7 +3633,7 @@ function toggleAddressBlocks() {
   updateAddrButton();
   if (addrVisible) {
     banchiScheduleUpdate(0);
-    showToast('番地表示ON — ズーム17以上で表示');
+    showToast(`番地表示ON — ズーム${BANCHI_DISPLAY_MIN_ZOOM}以上で表示`);
   } else {
     showToast('番地表示OFF');
   }
@@ -3665,9 +3683,53 @@ function openBanchiDebug() {
   lines.push(`取得済み町字: ${banchiMachiData.size}件 (画面近傍の未取得: ${banchiStatus.machiNearby}件)`);
   lines.push(`描画中の番地点: ${banchiStatus.rendered}件 (最終更新 ${banchiStatus.lastUpdate || '-'})`);
   lines.push(`最終エラー: ${banchiStatus.lastError || 'なし'}`);
+
+  // 中心に近い町字ごとの取得状況 (どの町のデータが無い/空かを特定できる)
+  if (map) {
+    const c = map.getCenter();
+    const all = [];
+    banchiStatus.cities.forEach(key => {
+      const idx = banchiCityIndexes.get(key);
+      if (!idx || !Array.isArray(idx.machiaza)) return;
+      idx.machiaza.forEach(m => all.push({ key, m }));
+    });
+    all.sort((a, b) => {
+      const da = (a.m.lng - c.lng) ** 2 + (a.m.lat - c.lat) ** 2;
+      const db = (b.m.lng - c.lng) ** 2 + (b.m.lat - c.lat) ** 2;
+      return da - db;
+    });
+    if (all.length) {
+      lines.push('― 中心に近い町字 (上位12件) ―');
+      all.slice(0, 12).forEach(({ key, m }) => {
+        const machiKey = `${key}|${m.id}|${m.kind}`;
+        const d = banchiMachiData.get(machiKey);
+        const state = banchiMachiLoading.has(machiKey) ? '取得中'
+          : (d ? `${d.length}件` : '未取得');
+        lines.push(`  ${m.name} [${m.kind}]: ${state}`);
+      });
+    }
+  }
+
   const el = $('banchi-debug-text');
   if (el) el.textContent = lines.join('\n');
   openModal('modal-banchi-debug');
+}
+
+function copyBanchiDebug() {
+  const el = $('banchi-debug-text');
+  const text = el ? el.textContent : '';
+  if (!text) return;
+  const done = () => showToast('診断情報をコピーしました');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => {});
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) {}
+    ta.remove();
+  }
 }
 
 function clearAllMarkers() {
@@ -7567,6 +7629,7 @@ $('menu-toggle-gsi').addEventListener('click', () => {
 });
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
 $('menu-banchi-debug').addEventListener('click', openBanchiDebug);
+$('banchi-debug-copy').addEventListener('click', copyBanchiDebug);
 $('menu-text-size').addEventListener('click', openTextSizeSettings);
 $('menu-notifications').addEventListener('click', openNotificationSettings);
 $('menu-reload-app').addEventListener('click', reloadLatestApp);
