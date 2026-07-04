@@ -1606,7 +1606,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.30';
+const APP_VERSION = 'v2026.06.24-test.31';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -3148,15 +3148,16 @@ function addGsiOverlayLayer() {
     source: GSI_OVERLAY_SOURCE_ID,
     'source-layer': 'fude',
     minzoom: 15.5,
-    slot: 'middle',
+    // top スロット必須: middle だと建物ポリゴンの下に隠れてほぼ見えない
+    slot: 'top',
     layout: {
       'visibility': gsiOverlayVisible ? 'visible' : 'none',
       'line-join': 'round'
     },
     paint: {
-      'line-color': '#c2410c',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 16, 0.6, 18, 1.2, 20, 2.0],
-      'line-opacity': ['interpolate', ['linear'], ['zoom'], 15.5, 0.35, 17, 0.65, 19, 0.75]
+      'line-color': '#ea580c',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 16, 1.0, 18, 2.0, 20, 3.0],
+      'line-opacity': ['interpolate', ['linear'], ['zoom'], 15.5, 0.5, 17, 0.85]
     }
   };
   try {
