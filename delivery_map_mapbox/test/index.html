@@ -1604,7 +1604,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.28';
+const APP_VERSION = 'v2026.06.24-test.29';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2940,6 +2940,17 @@ function initMap() {
   map.on('moveend', () => banchiScheduleUpdate());
   map.on('zoomend', () => banchiScheduleUpdate());
   map.on('zoom', updateZoomBadge);
+  // 筆界タイルの取得成功/失敗を記録 (診断パネルで確認できる)
+  map.on('sourcedata', (e) => {
+    if (e.sourceId === GSI_OVERLAY_SOURCE_ID && e.tile) fudeTileStats.loaded++;
+  });
+  map.on('error', (e) => {
+    if (e.sourceId === GSI_OVERLAY_SOURCE_ID) {
+      fudeTileStats.errors++;
+      fudeTileStats.lastError = (e.error && e.error.message) || String(e.error || '不明');
+      console.warn('[fude tile]', fudeTileStats.lastError);
+    }
+  });
 
   return new Promise((resolve) => {
     map.on('load', () => {
@@ -3112,6 +3123,8 @@ function updateNeighborhoodButton() {
 // 土地の区画(筆)の境界線を描く。fude レイヤーは z14-16、z17以上はオーバーズーム。
 const GSI_OVERLAY_SOURCE_ID = 'amx-fude';
 const GSI_OVERLAY_LAYER_ID = 'amx-fude-line';
+// 筆界タイルの取得状況 (診断パネル表示用)
+const fudeTileStats = { loaded: 0, errors: 0, lastError: '' };
 
 function addGsiOverlayLayer() {
   if (!map || map.getSource(GSI_OVERLAY_SOURCE_ID)) return;
@@ -3796,9 +3809,11 @@ function openBanchiDebug() {
     }
     try {
       const fudeCount = map.queryRenderedFeatures({ layers: [GSI_OVERLAY_LAYER_ID] }).length;
-      lines.push(`番地境界線(法務省): ${gsiOverlayVisible ? 'ON' : 'OFF'} / 画面内 ${fudeCount}筆`);
+      const hasLayer = !!map.getLayer(GSI_OVERLAY_LAYER_ID);
+      lines.push(`番地境界線(法務省): ${gsiOverlayVisible ? 'ON' : 'OFF'} / レイヤー${hasLayer ? 'あり' : '無し!'} / 画面内 ${fudeCount}筆`);
+      lines.push(`  タイル取得: 成功${fudeTileStats.loaded}回 / 失敗${fudeTileStats.errors}回${fudeTileStats.lastError ? ` (直近: ${fudeTileStats.lastError})` : ''}`);
     } catch (e) {
-      lines.push('番地境界線(法務省): レイヤーなし');
+      lines.push('番地境界線(法務省): 状態取得エラー');
     }
   }
   lines.push(`最終エラー: ${banchiStatus.lastError || 'なし'}`);

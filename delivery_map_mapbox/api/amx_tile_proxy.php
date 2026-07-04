@@ -285,11 +285,22 @@ $entry = amx_dir_find($dir, $tid);
 $hops = 0;
 while ($entry !== null && $entry['leaf'] && $hops < 4) {
     $hops++;
-    $raw = amx_range_fetch($h['leafOff'] + $entry['offset'], $entry['length'], $err, $code);
-    $dbg["leaf{$hops}Http"] = $code;
-    if ($raw === null) { $entry = null; break; }
-    $data = amx_decompress($raw, $h['internalComp']);
-    if ($data === null) { $entry = null; break; }
+    // リーフディレクトリはタイル群で共有されるためキャッシュする
+    $leafFile = "{$cacheDir}/leaf_{$entry['offset']}.bin";
+    $data = null;
+    if ($cacheOk && is_file($leafFile) && (time() - filemtime($leafFile)) < AMX_DIR_TTL) {
+        $data = file_get_contents($leafFile);
+        if ($data === false || $data === '') $data = null;
+        else $dbg["leaf{$hops}From"] = 'cache';
+    }
+    if ($data === null) {
+        $raw = amx_range_fetch($h['leafOff'] + $entry['offset'], $entry['length'], $err, $code);
+        $dbg["leaf{$hops}Http"] = $code;
+        if ($raw === null) { $entry = null; break; }
+        $data = amx_decompress($raw, $h['internalComp']);
+        if ($data === null) { $entry = null; break; }
+        if ($cacheOk) { @file_put_contents($leafFile, $data); }
+    }
     $leafDir = amx_parse_dir($data);
     if ($leafDir === null) { $entry = null; break; }
     $entry = amx_dir_find($leafDir, $tid);
