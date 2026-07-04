@@ -1606,7 +1606,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.32';
+const APP_VERSION = 'v2026.06.24-test.33';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2882,14 +2882,33 @@ function resetTimeWindowSettings() {
   });
 }
 
+const MAPS_CONFIG_CACHE_KEY = 'rys-mapbox-test-maps-config-v1';
+
 async function loadMapboxConfig() {
-  const res = await fetch('../api/maps_config.php');
-  if (!res.ok) throw new Error('地図設定の取得に失敗しました');
-  const cfg = await res.json();
-  if (!cfg.mapboxAccessToken) {
-    throw new Error('Mapboxアクセストークンが設定されていません。api/config.php を確認してください。');
+  // 設定は滅多に変わらないため、キャッシュがあれば即使用して地図の準備を
+  // 先に始め、最新の設定は裏で取得して次回起動に備える。
+  let cached = null;
+  try {
+    const raw = JSON.parse(localStorage.getItem(MAPS_CONFIG_CACHE_KEY) || 'null');
+    if (raw && raw.cfg && raw.cfg.mapboxAccessToken) cached = raw.cfg;
+  } catch (e) {}
+
+  const fetchFresh = async () => {
+    const res = await fetch('../api/maps_config.php');
+    if (!res.ok) throw new Error('地図設定の取得に失敗しました');
+    const cfg = await res.json();
+    if (!cfg.mapboxAccessToken) {
+      throw new Error('Mapboxアクセストークンが設定されていません。api/config.php を確認してください。');
+    }
+    try { localStorage.setItem(MAPS_CONFIG_CACHE_KEY, JSON.stringify({ cfg, ts: Date.now() })); } catch (e) {}
+    return cfg;
+  };
+
+  if (cached) {
+    fetchFresh().catch(e => console.warn('maps config background refresh failed', e));
+    return cached;
   }
-  return cfg;
+  return fetchFresh();
 }
 
 function savedLastView() {
@@ -2980,6 +2999,12 @@ function initMap() {
       fudeTileStats.lastError = (e.error && e.error.message) || String(e.error || '不明');
       console.warn('[fude tile]', fudeTileStats.lastError);
     }
+  });
+
+  // タイルが全部揃うのを待たず、最初の描画が始まった時点で
+  // 「地図を読み込み中...」の覆いを外す (地図は徐々に表示される)
+  map.once('style.load', () => {
+    map.once('render', hideLoading);
   });
 
   return new Promise((resolve) => {
