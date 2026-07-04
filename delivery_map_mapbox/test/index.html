@@ -1278,6 +1278,7 @@
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
       <button id="menu-toggle-gsi" type="button">🗺 番地ライン(地理院) ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
+      <button id="menu-banchi-debug" type="button">🩺 番地表示の状態</button>
       <button id="menu-time-windows" type="button">⏰ 時間指定設定</button>
       <button id="menu-text-size" type="button">Aa 文字サイズ</button>
       <button id="menu-notifications" type="button">🔔 通知設定</button>
@@ -1286,6 +1287,16 @@
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-banchi-debug">
+  <div class="modal">
+    <h3>番地表示の状態</h3>
+    <pre id="banchi-debug-text" style="white-space:pre-wrap;font-size:12px;line-height:1.6;background:#f1f5f9;border-radius:8px;padding:10px;overflow-x:auto;margin:8px 0;"></pre>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-banchi-debug">閉じる</button>
     </div>
   </div>
 </div>
@@ -1581,7 +1592,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.20';
+const APP_VERSION = 'v2026.06.24-test.21';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1593,7 +1604,8 @@ const GSI_OVERLAY_KEY = 'rys-mapbox-test-gsi-overlay-visible';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-test-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-test-addr-visible';
-const ADDR_DATA_KEY = 'rys-mapbox-test-addr-data-v1';
+const BANCHI_CATALOG_KEY = 'rys-mapbox-test-banchi-catalog-v1';
+const BANCHI_CITY_INDEX_PREFIX = 'rys-mapbox-test-banchi-city-v1:';
 const OPERATOR_NAME_KEY = 'rys-mapbox-test-operator-name';
 const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-test-pickup-last-reset-date';
 const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-test-pickup-selected-sheet';
@@ -1637,9 +1649,17 @@ const TEXT_SIZE_OPTIONS = {
   large: 1.15
 };
 
-const ADDR_PREF = '東京都';
-const ADDR_CITY = '中央区';
+const ADDR_PREF = '東京都';   // 手動住所入力(小舟町/浜町プロファイル)用
+const ADDR_CITY = '中央区';   // 〃
 const ADDR_API_BASE = 'https://japanese-addresses-v2.geoloniamaps.com/api/ja';
+const BANCHI_SOURCE_ID = 'rys-banchi';
+const BANCHI_LAYER_ID = 'rys-banchi-label';
+const BANCHI_DISPLAY_MIN_ZOOM = 17;   // ラベルを表示する最小ズーム
+const BANCHI_PREFETCH_MIN_ZOOM = 16;  // データ先読みを始めるズーム
+const BANCHI_NEARBY_CITY_COUNT = 4;   // 地図中心から近い順に読む市区町村数
+const BANCHI_CITY_MAX_DEG = 0.4;      // 市区町村代表点までの許容距離(度)
+const BANCHI_MACHIAZA_FETCH_LIMIT = 150; // 1回の更新で取得する町字数の上限
+const BANCHI_RENDER_LIMIT = 1600;     // 一度に描画する番地ポイント上限
 
 const LABEL_MODES = [
   { key: 'num',  label: '番号のみ' },
@@ -1773,10 +1793,26 @@ let optimizedRouteOrderedIds = [];
 let recognition = null;
 let mapStyleLoaded = false;
 
-let addrVisible = false;
-let addrData = null;
-let addrLoading = false;
-let pendingAddrData = null;
+let addrVisible = localStorage.getItem(ADDR_VISIBLE_KEY) !== '0'; // 既定ON
+
+// --- 全国対応 番地表示の状態 ---
+let banchiCatalog = null;            // [{code,pref,name,lng,lat}] 全市区町村
+let banchiCatalogLoading = false;
+const banchiCityIndexes = new Map(); // cityKey -> { machiaza: [...], error }
+const banchiCityLoading = new Set();
+const banchiMachiData = new Map();   // machiKey -> features[] (取得済み町字の番地点)
+const banchiMachiLoading = new Set();
+let banchiUpdateTimer = null;
+let banchiUpdateRunning = false;
+const banchiStatus = {
+  catalog: '未取得',
+  cities: [],
+  machiLoaded: 0,
+  machiNearby: 0,
+  rendered: 0,
+  lastError: '',
+  lastUpdate: ''
+};
 
 const OCR_COST_PER_CALL = 0.00015;
 const GEOCODE_COST_PER_CALL = 0.005;
@@ -1814,8 +1850,8 @@ function runWhenIdle(fn, timeout = 1200) {
 function warmupAppCaches() {
   runWhenIdle(() => {
     try {
-      if (!addrData && localStorage.getItem(ADDR_DATA_KEY)) {
-        ensureAddressData({ showProgress: false }).catch(e => console.warn('address data warmup failed', e));
+      if (addrVisible) {
+        banchiLoadCatalog().catch(e => console.warn('banchi catalog warmup failed', e));
       }
       const selectedCourse = getSelectedPickupSheet();
       const spotSheet = selectedCourse ? spotSheetForPickupCourse(selectedCourse) : '';
@@ -2882,16 +2918,17 @@ function initMap() {
     );
   });
 
+  map.on('moveend', () => banchiScheduleUpdate());
+  map.on('zoomend', () => banchiScheduleUpdate());
+
   return new Promise((resolve) => {
     map.on('load', () => {
       mapStyleLoaded = true;
       try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
       addGeoshapeNeighborhoodLayers();
       addGsiOverlayLayer();
-      if (pendingAddrData) {
-        addAddressLayer(pendingAddrData);
-        pendingAddrData = null;
-      }
+      addBanchiLayer();
+      banchiScheduleUpdate(0);
       resolve();
     });
   });
@@ -3098,59 +3135,154 @@ function updateGsiOverlayButton() {
   btn.classList.toggle('on', gsiOverlayVisible);
 }
 
-async function fetchAddressData(onProgress) {
-  const prefEnc = encodeURIComponent(ADDR_PREF);
-  const cityEnc = encodeURIComponent(ADDR_CITY);
-  const baseUrl = `${ADDR_API_BASE}/${prefEnc}/${cityEnc}`;
+// ============================================================
+// 全国対応 番地表示エンジン
+// 依存は Geolonia japanese-addresses-v2 API のみ。
+//  1. ja.json (全市区町村 + 代表座標) を1回取得してキャッシュ
+//  2. 地図中心に近い市区町村の町字索引 (csv_ranges) を取得
+//  3. 画面近傍の町字だけ Range リクエストで番地点を取得
+// 市区町村名は API 自身のリストから使うため名前の不一致が起きない。
+// ============================================================
 
-  const cityRes = await fetch(`${baseUrl}.json`);
-  if (!cityRes.ok) {
-    throw new Error(`市区町村データ取得失敗 (HTTP ${cityRes.status})`);
-  }
-  const cityJson = await cityRes.json();
+function banchiSetError(step, e) {
+  const msg = `${step}: ${(e && e.message) || e}`;
+  banchiStatus.lastError = msg;
+  console.warn('[banchi]', msg);
+}
 
-  const ranges = (cityJson.data || [])
-    .filter(m => m.rsdt && m.csv_ranges && m.csv_ranges['住居表示'])
-    .map(m => ({
-      machiazaName: (m.oaza_cho || '') + (m.chome || ''),
-      start: m.csv_ranges['住居表示'].start,
-      length: m.csv_ranges['住居表示'].length
-    }));
-
-  if (ranges.length === 0) {
-    return { type: 'FeatureCollection', features: [] };
-  }
-
-  const txtUrl = `${baseUrl}-住居表示.txt`;
-  const features = [];
-  let completed = 0;
-  const total = ranges.length;
-  const CONCURRENCY = 6;
-  let nextIdx = 0;
-
-  async function worker() {
-    while (nextIdx < ranges.length) {
-      const r = ranges[nextIdx++];
-      try {
-        const res = await fetch(txtUrl, {
-          headers: { 'Range': `bytes=${r.start}-${r.start + r.length - 1}` }
-        });
-        if (res.ok || res.status === 206) {
-          const text = await res.text();
-          parseAddrSection(text, r.machiazaName, features);
+async function banchiLoadCatalog() {
+  if (banchiCatalog) return banchiCatalog;
+  if (banchiCatalogLoading) return null;
+  banchiCatalogLoading = true;
+  try {
+    try {
+      const cached = localStorage.getItem(BANCHI_CATALOG_KEY);
+      if (cached) {
+        const list = JSON.parse(cached);
+        if (Array.isArray(list) && list.length > 500) {
+          banchiCatalog = list;
+          banchiStatus.catalog = `OK (キャッシュ, ${list.length}市区町村)`;
+          return list;
         }
-      } catch (e) {
-        console.warn(`fetch failed for ${r.machiazaName}:`, e);
       }
-      completed++;
-      if (onProgress) onProgress(completed, total);
-    }
+    } catch (e) {}
+
+    const res = await fetch(`${ADDR_API_BASE}.json`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const list = [];
+    (json.data || []).forEach(prefEntry => {
+      const pref = prefEntry.pref;
+      (prefEntry.cities || []).forEach(c => {
+        const point = c.point || [];
+        const lng = Number(point[0]);
+        const lat = Number(point[1]);
+        if (!pref || !c.city || !Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        list.push({
+          code: c.code,
+          pref,
+          name: `${c.county || ''}${c.city}${c.ward || ''}`,
+          lng, lat
+        });
+      });
+    });
+    if (!list.length) throw new Error('市区町村リストが空です');
+    banchiCatalog = list;
+    banchiStatus.catalog = `OK (${list.length}市区町村)`;
+    try { localStorage.setItem(BANCHI_CATALOG_KEY, JSON.stringify(list)); } catch (e) {}
+    return list;
+  } catch (e) {
+    banchiStatus.catalog = `取得失敗 (${(e && e.message) || e})`;
+    banchiSetError('市区町村リスト', e);
+    return null;
+  } finally {
+    banchiCatalogLoading = false;
   }
+}
 
-  const workerCount = Math.min(CONCURRENCY, ranges.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+function banchiCityKey(city) { return `${city.pref}/${city.name}`; }
 
-  return { type: 'FeatureCollection', features };
+function banchiNearbyCities(lng, lat) {
+  if (!banchiCatalog) return [];
+  return banchiCatalog
+    .map(c => ({ c, d2: (c.lng - lng) * (c.lng - lng) + (c.lat - lat) * (c.lat - lat) }))
+    .filter(x => x.d2 < BANCHI_CITY_MAX_DEG * BANCHI_CITY_MAX_DEG)
+    .sort((a, b) => a.d2 - b.d2)
+    .slice(0, BANCHI_NEARBY_CITY_COUNT)
+    .map(x => x.c);
+}
+
+async function banchiEnsureCityIndex(city) {
+  const key = banchiCityKey(city);
+  if (banchiCityIndexes.has(key)) return banchiCityIndexes.get(key);
+  if (banchiCityLoading.has(key)) return null;
+  banchiCityLoading.add(key);
+  try {
+    try {
+      const cached = localStorage.getItem(BANCHI_CITY_INDEX_PREFIX + key);
+      if (cached) {
+        const idx = JSON.parse(cached);
+        if (idx && Array.isArray(idx.machiaza)) {
+          banchiCityIndexes.set(key, idx);
+          return idx;
+        }
+      }
+    } catch (e) {}
+
+    const url = `${ADDR_API_BASE}/${encodeURIComponent(city.pref)}/${encodeURIComponent(city.name)}.json`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const machiaza = (json.data || [])
+      .map(m => {
+        const point = m.point || [];
+        const lng = Number(point[0]);
+        const lat = Number(point[1]);
+        const ranges = m.csv_ranges || {};
+        const kind = (m.rsdt && ranges['住居表示']) ? '住居表示'
+                   : (ranges['地番'] ? '地番' : (ranges['住居表示'] ? '住居表示' : ''));
+        if (!kind || !Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+        return {
+          id: String(m.machiaza_id || `${m.oaza_cho || ''}${m.chome || ''}`),
+          name: `${m.oaza_cho || ''}${m.chome || ''}`,
+          lng, lat, kind,
+          start: ranges[kind].start,
+          length: ranges[kind].length
+        };
+      })
+      .filter(Boolean);
+    const idx = { machiaza };
+    banchiCityIndexes.set(key, idx);
+    try { localStorage.setItem(BANCHI_CITY_INDEX_PREFIX + key, JSON.stringify(idx)); } catch (e) {}
+    return idx;
+  } catch (e) {
+    const idx = { machiaza: [], error: `${(e && e.message) || e}` };
+    banchiCityIndexes.set(key, idx);
+    banchiSetError(`町字索引(${key})`, e);
+    return idx;
+  } finally {
+    banchiCityLoading.delete(key);
+  }
+}
+
+async function banchiFetchMachiaza(city, m) {
+  const machiKey = `${banchiCityKey(city)}|${m.id}|${m.kind}`;
+  if (banchiMachiData.has(machiKey) || banchiMachiLoading.has(machiKey)) return;
+  banchiMachiLoading.add(machiKey);
+  try {
+    const url = `${ADDR_API_BASE}/${encodeURIComponent(city.pref)}/${encodeURIComponent(city.name)}-${m.kind}.txt`;
+    const res = await fetch(url, { headers: { 'Range': `bytes=${m.start}-${m.start + m.length - 1}` } });
+    if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const features = [];
+    parseAddrSection(text, m.name, features);
+    banchiMachiData.set(machiKey, features);
+  } catch (e) {
+    banchiMachiData.set(machiKey, []); // 失敗した町字は空扱い（「番地データを再取得」でやり直し）
+    banchiSetError(`番地取得(${m.name})`, e);
+  } finally {
+    banchiMachiLoading.delete(machiKey);
+  }
 }
 
 function parseAddrSection(text, machiazaName, features) {
@@ -3200,75 +3332,130 @@ function parseAddrSection(text, machiazaName, features) {
   }
 }
 
-async function ensureAddressData(options = {}) {
-  if (addrData) return addrData;
-  if (addrLoading) return null;
-
-  const showProgress = options.showProgress !== false;
-  addrLoading = true;
-  try {
-    try {
-      const cached = localStorage.getItem(ADDR_DATA_KEY);
-      if (cached) {
-        const data = JSON.parse(cached);
-        if (data && data.type === 'FeatureCollection' && Array.isArray(data.features)) {
-          addrData = data;
-          return data;
-        }
-      }
-    } catch (e) {}
-
-    if (showProgress) showLoading('番地データを取得中...');
-    const data = await fetchAddressData((c, t) => {
-      if (showProgress) $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;
-    });
-    addrData = data;
-    try {
-      localStorage.setItem(ADDR_DATA_KEY, JSON.stringify(data));
-    } catch (e) {
-      console.warn('番地データのキャッシュ保存失敗 (容量超過の可能性)', e);
-    }
-    return data;
-  } catch (e) {
-    showToast('番地データ取得失敗: ' + e.message, true);
-    return null;
-  } finally {
-    addrLoading = false;
-    if (showProgress) hideLoading();
+function addBanchiLayer() {
+  if (!map) return;
+  if (!map.getSource(BANCHI_SOURCE_ID)) {
+    map.addSource(BANCHI_SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   }
-}
-
-
-
-function addAddressLayer(data) {
-  if (!map || map.getSource('addr-points')) return;
-  map.addSource('addr-points', { type: 'geojson', data });
-  map.addLayer({
-    id: 'addr-points-label',
+  if (map.getLayer(BANCHI_LAYER_ID)) return;
+  const layerDef = {
+    id: BANCHI_LAYER_ID,
     type: 'symbol',
-    source: 'addr-points',
-    minzoom: 17,
-    maxzoom: 22,
+    source: BANCHI_SOURCE_ID,
+    slot: 'top',
+    minzoom: BANCHI_DISPLAY_MIN_ZOOM,
     layout: {
+      'visibility': addrVisible ? 'visible' : 'none',
       'text-field': ['get', 'label'],
       'text-size': [
         'interpolate', ['linear'], ['zoom'],
-        17, 11,
-        18, 14,
-        19, 17,
-        20.5, 19
+        17, 13,
+        18, 17,
+        19, 21,
+        20, 25,
+        22, 28
       ],
       'text-allow-overlap': false,
-      'text-padding': 1,
+      'text-padding': 2,
       'text-anchor': 'center',
       'symbol-sort-key': ['length', ['get', 'label']]
     },
     paint: {
       'text-color': '#0f172a',
       'text-halo-color': 'rgba(255,255,255,0.98)',
-      'text-halo-width': 2.2
+      'text-halo-width': 2.6
     }
-  });
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {
+      banchiSetError('レイヤー追加', e2);
+    }
+  }
+}
+
+function banchiRender() {
+  if (!map || !mapStyleLoaded) return;
+  addBanchiLayer();
+  const source = map.getSource(BANCHI_SOURCE_ID);
+  if (!source) return;
+  const features = [];
+  if (addrVisible && map.getZoom() >= BANCHI_PREFETCH_MIN_ZOOM) {
+    const bounds = map.getBounds();
+    outer:
+    for (const list of banchiMachiData.values()) {
+      for (const f of list) {
+        const c = f.geometry.coordinates;
+        if (!bounds.contains(c)) continue;
+        features.push(f);
+        if (features.length >= BANCHI_RENDER_LIMIT) break outer;
+      }
+    }
+  }
+  source.setData({ type: 'FeatureCollection', features });
+  banchiStatus.rendered = features.length;
+  banchiStatus.lastUpdate = new Date().toLocaleTimeString();
+}
+
+async function banchiUpdate() {
+  if (!map || !mapStyleLoaded) return;
+  if (!addrVisible || map.getZoom() < BANCHI_PREFETCH_MIN_ZOOM) { banchiRender(); return; }
+  if (banchiUpdateRunning) { banchiScheduleUpdate(500); return; }
+  banchiUpdateRunning = true;
+  try {
+    const catalog = await banchiLoadCatalog();
+    if (!catalog) { banchiRender(); return; }
+
+    const center = map.getCenter();
+    const cities = banchiNearbyCities(center.lng, center.lat);
+    banchiStatus.cities = cities.map(banchiCityKey);
+    const indexes = await Promise.all(cities.map(c => banchiEnsureCityIndex(c)));
+
+    // 画面(+60%の余白)内にある未取得の町字を集める
+    const bounds = map.getBounds();
+    const padLng = Math.abs(bounds.getEast() - bounds.getWest()) * 0.6;
+    const padLat = Math.abs(bounds.getNorth() - bounds.getSouth()) * 0.6;
+    const west = bounds.getWest() - padLng, east = bounds.getEast() + padLng;
+    const south = bounds.getSouth() - padLat, north = bounds.getNorth() + padLat;
+
+    const targets = [];
+    cities.forEach((city, i) => {
+      const idx = indexes[i] || banchiCityIndexes.get(banchiCityKey(city));
+      if (!idx || !Array.isArray(idx.machiaza)) return;
+      idx.machiaza.forEach(m => {
+        if (m.lng < west || m.lng > east || m.lat < south || m.lat > north) return;
+        const machiKey = `${banchiCityKey(city)}|${m.id}|${m.kind}`;
+        if (banchiMachiData.has(machiKey)) return;
+        targets.push({ city, m });
+      });
+    });
+    banchiStatus.machiNearby = targets.length;
+
+    const limited = targets.slice(0, BANCHI_MACHIAZA_FETCH_LIMIT);
+    let next = 0;
+    async function worker() {
+      while (next < limited.length) {
+        const t = limited[next++];
+        await banchiFetchMachiaza(t.city, t.m);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(6, limited.length) }, () => worker()));
+    banchiStatus.machiLoaded = banchiMachiData.size;
+    banchiRender();
+  } catch (e) {
+    banchiSetError('更新処理', e);
+  } finally {
+    banchiUpdateRunning = false;
+  }
+}
+
+function banchiScheduleUpdate(delay = 200) {
+  if (banchiUpdateTimer) clearTimeout(banchiUpdateTimer);
+  banchiUpdateTimer = setTimeout(() => {
+    banchiUpdateTimer = null;
+    banchiUpdate();
+  }, delay);
 }
 
 function addOptimizedRouteLayer() {
@@ -3395,14 +3582,6 @@ async function updateNextSegmentHighlight() {
   }
 }
 
-function removeAddressLayer() {
-  if (!map) return;
-  if (map.getLayer('addr-points-label-dense')) map.removeLayer('addr-points-label-dense');
-  if (map.getLayer('addr-points-dot')) map.removeLayer('addr-points-dot');
-  if (map.getLayer('addr-points-label')) map.removeLayer('addr-points-label');
-  if (map.getSource('addr-points')) map.removeSource('addr-points');
-}
-
 function updateAddrButton() {
   const btn = $('menu-toggle-addr');
   if (!btn) return;
@@ -3410,50 +3589,69 @@ function updateAddrButton() {
   btn.classList.toggle('on', addrVisible);
 }
 
-async function toggleAddressBlocks() {
+function toggleAddressBlocks() {
   closeModal('modal-menu');
-  if (addrVisible) {
-    addrVisible = false;
-    removeAddressLayer();
-    localStorage.setItem(ADDR_VISIBLE_KEY, '0');
-    updateAddrButton();
-    showToast('番地表示OFF');
-    return;
+  addrVisible = !addrVisible;
+  localStorage.setItem(ADDR_VISIBLE_KEY, addrVisible ? '1' : '0');
+  if (map && map.getLayer(BANCHI_LAYER_ID)) {
+    try { map.setLayoutProperty(BANCHI_LAYER_ID, 'visibility', addrVisible ? 'visible' : 'none'); } catch (e) {}
   }
-  if (!addrData) {
-    const data = await ensureAddressData();
-    if (!data) return;
-  }
-  addrVisible = true;
-  if (mapStyleLoaded) {
-    addAddressLayer(addrData);
-  } else {
-    pendingAddrData = addrData;
-  }
-  localStorage.setItem(ADDR_VISIBLE_KEY, '1');
   updateAddrButton();
-  showToast(`番地表示ON (${addrData.features.length.toLocaleString()}件) — ズーム17以上で表示`);
+  if (addrVisible) {
+    banchiScheduleUpdate(0);
+    showToast('番地表示ON — ズーム17以上で表示');
+  } else {
+    showToast('番地表示OFF');
+  }
 }
 
-async function refreshAddressData() {
+function refreshAddressData() {
   closeModal('modal-menu');
   showConfirm(
     '番地データ再取得',
     'キャッシュを破棄して最新データを取り直しますか？\n通信が発生します(数百KB〜)。',
-    async () => {
-      addrData = null;
-      localStorage.removeItem(ADDR_DATA_KEY);
-      removeAddressLayer();
-      const data = await ensureAddressData();
-      if (!data) return;
-      if (addrVisible) {
-        addAddressLayer(data);
-        showToast(`番地データ再取得完了 (${data.features.length.toLocaleString()}件)`);
-      } else {
-        showToast(`番地データ再取得完了 (${data.features.length.toLocaleString()}件) — 「番地表示: ON」で表示`);
-      }
+    () => {
+      banchiCatalog = null;
+      banchiCityIndexes.clear();
+      banchiMachiData.clear();
+      banchiStatus.lastError = '';
+      try {
+        const toRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k === BANCHI_CATALOG_KEY || k.startsWith(BANCHI_CITY_INDEX_PREFIX))) toRemove.push(k);
+        }
+        toRemove.forEach(k => localStorage.removeItem(k));
+      } catch (e) {}
+      banchiScheduleUpdate(0);
+      showToast('番地データを再取得しています...');
     }
   );
+}
+
+function openBanchiDebug() {
+  closeModal('modal-menu');
+  const lines = [];
+  lines.push(`アプリ: ${APP_VERSION}`);
+  if (map) {
+    const c = map.getCenter();
+    lines.push(`中心: ${c.lng.toFixed(5)}, ${c.lat.toFixed(5)} / ズーム: ${map.getZoom().toFixed(1)}`);
+  }
+  lines.push(`表示設定: ${addrVisible ? 'ON' : 'OFF'} (表示はズーム${BANCHI_DISPLAY_MIN_ZOOM}以上)`);
+  lines.push(`市区町村リスト: ${banchiStatus.catalog}`);
+  lines.push(`対象市区町村: ${banchiStatus.cities.length ? banchiStatus.cities.join(', ') : '(未判定)'}`);
+  banchiStatus.cities.forEach(key => {
+    const idx = banchiCityIndexes.get(key);
+    if (!idx) { lines.push(`  ${key}: 索引 未取得`); return; }
+    if (idx.error) { lines.push(`  ${key}: 索引エラー (${idx.error})`); return; }
+    lines.push(`  ${key}: 町字 ${idx.machiaza.length}件`);
+  });
+  lines.push(`取得済み町字: ${banchiMachiData.size}件 (画面近傍の未取得: ${banchiStatus.machiNearby}件)`);
+  lines.push(`描画中の番地点: ${banchiStatus.rendered}件 (最終更新 ${banchiStatus.lastUpdate || '-'})`);
+  lines.push(`最終エラー: ${banchiStatus.lastError || 'なし'}`);
+  const el = $('banchi-debug-text');
+  if (el) el.textContent = lines.join('\n');
+  openModal('modal-banchi-debug');
 }
 
 function clearAllMarkers() {
@@ -7352,6 +7550,7 @@ $('menu-toggle-gsi').addEventListener('click', () => {
   toggleGsiOverlay();
 });
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
+$('menu-banchi-debug').addEventListener('click', openBanchiDebug);
 $('menu-text-size').addEventListener('click', openTextSizeSettings);
 $('menu-notifications').addEventListener('click', openNotificationSettings);
 $('menu-reload-app').addEventListener('click', reloadLatestApp);
@@ -7486,14 +7685,8 @@ document.addEventListener('visibilitychange', () => {
       });
     }
 
-    if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {
-      ensureAddressData({ showProgress: false }).then(data => {
-        if (!data) return;
-        addrVisible = true;
-        addAddressLayer(data);
-        updateAddrButton();
-      });
-    }
+    updateAddrButton();
+    if (addrVisible) banchiScheduleUpdate(0);
   } catch (e) {
     hideLoading();
     showToast('初期化エラー: ' + e.message, true);
