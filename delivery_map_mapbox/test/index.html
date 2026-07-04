@@ -1610,7 +1610,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.35';
+const APP_VERSION = 'v2026.06.24-test.36';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1805,6 +1805,8 @@ let pickupLastSpotTouchAt = 0;
 let pendingPhotoFile = null;
 let pendingPhotoUrl = '';
 let pendingPhotoRotation = 0;
+let pendingOcrJob = null;      // { rotation, controller, promise } — プレビュー表示中に先行実行するOCR
+let pendingOcrRestartTimer = null;
 
 let gpsWatchId = null;
 let gpsActive = false;
@@ -5858,25 +5860,75 @@ function updatePhotoPreviewRotation() {
   if (img) img.style.transform = `rotate(${pendingPhotoRotation}deg)`;
 }
 
+// プレビュー表示と並行してOCRを裏で開始する。
+// ユーザーが向きを確認して「読み取り」を押す頃には結果が届いていることが多い。
+function startPendingPhotoOcr() {
+  if (!pendingPhotoFile) return null;
+  const rotation = pendingPhotoRotation;
+  if (pendingOcrJob && pendingOcrJob.rotation === rotation) return pendingOcrJob;
+  cancelPendingPhotoOcr();
+  const controller = ('AbortController' in window) ? new AbortController() : null;
+  const job = { rotation, controller, promise: null };
+  job.promise = (async () => {
+    const compressed = await compressImage(pendingPhotoFile, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, rotation);
+    const base64 = await blobToBase64(compressed);
+    bumpUsage('ocr');
+    const res = await fetch('../api/extract_address.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' }),
+      signal: controller ? controller.signal : undefined
+    });
+    const data = await res.json();
+    if (!res.ok || !data.address) {
+      throw new Error((data && data.error) || '住所が読み取れませんでした');
+    }
+    return data;
+  })();
+  job.promise.catch(() => {}); // 裏実行中の未処理エラー通知を抑止 (await側で処理する)
+  pendingOcrJob = job;
+  return job;
+}
+
+function cancelPendingPhotoOcr() {
+  if (pendingOcrRestartTimer) {
+    clearTimeout(pendingOcrRestartTimer);
+    pendingOcrRestartTimer = null;
+  }
+  if (pendingOcrJob && pendingOcrJob.controller) {
+    try { pendingOcrJob.controller.abort(); } catch (e) {}
+  }
+  pendingOcrJob = null;
+}
+
 function openPhotoPreview(file) {
   if (!file) return;
   resetPhotoPreviewState();
+  cancelPendingPhotoOcr();
   pendingPhotoFile = file;
   pendingPhotoUrl = URL.createObjectURL(file);
   pendingPhotoRotation = 0;
   $('photo-preview-img').src = pendingPhotoUrl;
   updatePhotoPreviewRotation();
   openModal('modal-photo-preview');
+  startPendingPhotoOcr(); // プレビューを見ている間に裏で読み取り開始
 }
 
 function rotatePendingPhoto(delta) {
   if (!pendingPhotoFile) return;
   pendingPhotoRotation = (pendingPhotoRotation + delta + 360) % 360;
   updatePhotoPreviewRotation();
+  // 回転が確定するのを少し待ってから新しい向きで読み取り直す
+  cancelPendingPhotoOcr();
+  pendingOcrRestartTimer = setTimeout(() => {
+    pendingOcrRestartTimer = null;
+    startPendingPhotoOcr();
+  }, 700);
 }
 
 function closePhotoPreview() {
   closeModal('modal-photo-preview');
+  cancelPendingPhotoOcr();
   resetPhotoPreviewState();
 }
 
@@ -5939,37 +5991,39 @@ function splitOcrAddressFields(data) {
 
 async function readPendingPhoto() {
   if (!pendingPhotoFile) return;
-  const file = pendingPhotoFile;
-  const rotation = pendingPhotoRotation;
+  if (pendingOcrRestartTimer) {
+    clearTimeout(pendingOcrRestartTimer);
+    pendingOcrRestartTimer = null;
+  }
+  const job = startPendingPhotoOcr(); // 先行実行済みならそれを再利用
   closeModal('modal-photo-preview');
-  showLoading('画像を圧縮中...');
+  showLoading('AI で住所を読み取り中...');
   try {
-    const compressed = await compressImage(file, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, rotation);
-    showLoading('画像を変換中...');
-    const base64 = await blobToBase64(compressed);
-    showLoading('AI で住所を読み取り中...');
-    const res = await fetch('../api/extract_address.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' })
-    });
-    const data = await res.json();
-    bumpUsage('ocr');
+    const data = await job.promise;
     hideLoading();
-    if (!res.ok || !data.address) {
-      showToast(data.error || '住所が読み取れませんでした', true);
-      return;
-    }
+
     const ocrFields = splitOcrAddressFields(data);
+    const recipient = normalizeOcrField(data.recipient || '');
+    let note = ocrFields.note || data.note || data.building || '';
+    if (recipient && !note.includes(recipient)) {
+      note = note ? `${note}\n宛名: ${recipient}` : `宛名: ${recipient}`;
+    }
     $('add-address').value = ocrFields.address || data.address || '';
-    $('add-note').value = ocrFields.note || data.note || data.building || '';
+    $('add-note').value = note;
     openModal('modal-add');
+    if (String(data.confidence || '').toLowerCase() === 'low') {
+      showToast('⚠ 読み取りの自信度が低めです。住所をよく確認してください', true);
+    }
     prefetchGeocodeAddress(ocrFields.address || data.address || '');
+    cancelPendingPhotoOcr();
+    resetPhotoPreviewState();
   } catch (e) {
     hideLoading();
-    showToast('画像処理に失敗しました: ' + e.message, true);
-  } finally {
-    resetPhotoPreviewState();
+    // 写真を保持したままプレビューに戻す — 撮り直し不要で回転や再試行ができる
+    pendingOcrJob = null;
+    showToast('読み取り失敗: ' + e.message, true);
+    updatePhotoPreviewRotation();
+    openModal('modal-photo-preview');
   }
 }
 
