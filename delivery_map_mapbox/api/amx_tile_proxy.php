@@ -164,6 +164,49 @@ function amx_tileid($z, $x, $y) {
     return $acc + $d;
 }
 
+// MVTタイル内のレイヤー名と地物数を取得 (デバッグ用)
+function amx_mvt_layers($tile) {
+    $layers = [];
+    $len = strlen($tile);
+    $pos = 0;
+    while ($pos < $len) {
+        $tag = amx_varint($tile, $pos, $len);
+        $field = $tag >> 3;
+        $wire = $tag & 7;
+        if ($field === 3 && $wire === 2) {
+            $l = amx_varint($tile, $pos, $len);
+            $end = min($pos + $l, $len);
+            $name = '';
+            $count = 0;
+            while ($pos < $end) {
+                $t2 = amx_varint($tile, $pos, $end);
+                $f2 = $t2 >> 3;
+                $w2 = $t2 & 7;
+                if ($w2 === 0) { amx_varint($tile, $pos, $end); continue; }
+                if ($w2 === 5) { $pos += 4; continue; }
+                if ($w2 === 1) { $pos += 8; continue; }
+                if ($w2 === 2) {
+                    $l2 = amx_varint($tile, $pos, $end);
+                    if ($f2 === 1) { $name = substr($tile, $pos, $l2); }
+                    if ($f2 === 2) { $count++; }
+                    $pos += $l2;
+                    continue;
+                }
+                $pos = $end;
+            }
+            $pos = $end;
+            $layers[] = ['name' => $name, 'features' => $count];
+        } else {
+            if ($wire === 0) { amx_varint($tile, $pos, $len); }
+            elseif ($wire === 2) { $l = amx_varint($tile, $pos, $len); $pos += $l; }
+            elseif ($wire === 5) { $pos += 4; }
+            elseif ($wire === 1) { $pos += 8; }
+            else { break; }
+        }
+    }
+    return $layers;
+}
+
 function amx_decompress($data, $compression) {
     if ($compression === 2) { $out = @gzdecode($data); return $out === false ? null : $out; }
     if ($compression === 1 || $compression === 0) return $data;
@@ -279,7 +322,12 @@ if ($cacheOk) { @file_put_contents($tileCacheFile, $tile); }
 
 if ($debug) {
     header('Content-Type: application/json');
-    echo json_encode(['result' => 'ok', 'decompressedBytes' => strlen($tile), 'dbg' => $dbg]);
+    echo json_encode([
+        'result' => 'ok',
+        'decompressedBytes' => strlen($tile),
+        'layers' => amx_mvt_layers($tile),
+        'dbg' => $dbg,
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
