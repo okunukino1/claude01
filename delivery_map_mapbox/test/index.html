@@ -1611,7 +1611,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.38';
+const APP_VERSION = 'v2026.06.24-test.39';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -5877,6 +5877,53 @@ function updatePhotoPreviewRotation() {
   if (img) img.style.transform = `rotate(${pendingPhotoRotation}deg)`;
 }
 
+// 1回分のOCR呼び出し (回転角度つき・バイナリ送信)
+async function ocrExtractAddress(file, rotation, signal) {
+  const compressed = await compressImage(file, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, rotation);
+  bumpUsage('ocr');
+  const res = await fetch('../api/extract_address.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: compressed,
+    signal
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  return { ok: res.ok, data: data || {} };
+}
+
+// 向き自動リカバリー付きOCR。
+// 失敗時はAIの rotation_hint (時計回りの角度) を優先し、
+// ヒントがなければ 180 → 90 → 270 の順に回転して再試行する (最大4回)。
+async function ocrWithRotationRetry(attempt, baseRotation, onRetry) {
+  const norm = r => ((r % 360) + 360) % 360;
+  const tried = new Set();
+  let rotation = norm(baseRotation);
+  let lastError = '';
+  for (let i = 0; i < 4; i++) {
+    tried.add(rotation);
+    const { ok, data } = await attempt(rotation);
+    if (ok && data.address) {
+      if (i > 0) data.autoRotated = norm(rotation - baseRotation);
+      return data;
+    }
+    lastError = (data && data.error) || '住所が読み取れませんでした';
+    const hint = Number(data && data.rotation_hint);
+    let next = null;
+    if (hint === 90 || hint === 180 || hint === 270) {
+      const hinted = norm(rotation + hint);
+      if (!tried.has(hinted)) next = hinted;
+    }
+    if (next === null) {
+      next = [180, 90, 270].map(d => norm(baseRotation + d)).find(r => !tried.has(r));
+    }
+    if (next === undefined || next === null) break;
+    if (onRetry) onRetry(next);
+    rotation = next;
+  }
+  throw new Error(lastError);
+}
+
 // プレビュー表示と並行してOCRを裏で開始する。
 // ユーザーが向きを確認して「読み取り」を押す頃には結果が届いていることが多い。
 function startPendingPhotoOcr() {
@@ -5885,23 +5932,18 @@ function startPendingPhotoOcr() {
   if (pendingOcrJob && pendingOcrJob.rotation === rotation) return pendingOcrJob;
   cancelPendingPhotoOcr();
   const controller = ('AbortController' in window) ? new AbortController() : null;
+  const file = pendingPhotoFile;
   const job = { rotation, controller, promise: null };
-  job.promise = (async () => {
-    const compressed = await compressImage(pendingPhotoFile, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, rotation);
-    bumpUsage('ocr');
-    // バイナリのまま送信 (base64より約25%小さい)
-    const res = await fetch('../api/extract_address.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'image/jpeg' },
-      body: compressed,
-      signal: controller ? controller.signal : undefined
-    });
-    const data = await res.json();
-    if (!res.ok || !data.address) {
-      throw new Error((data && data.error) || '住所が読み取れませんでした');
+  job.promise = ocrWithRotationRetry(
+    (rot) => ocrExtractAddress(file, rot, controller ? controller.signal : undefined),
+    rotation,
+    () => {
+      const loadingEl = $('loading');
+      if (loadingEl && loadingEl.classList.contains('show')) {
+        $('loading-msg').textContent = '向きを変えて再試行中...';
+      }
     }
-    return data;
-  })();
+  );
   job.promise.catch(() => {}); // 裏実行中の未処理エラー通知を抑止 (await側で処理する)
   pendingOcrJob = job;
   return job;
@@ -6030,6 +6072,8 @@ async function readPendingPhoto() {
     openModal('modal-add');
     if (String(data.confidence || '').toLowerCase() === 'low') {
       showToast('⚠ 読み取りの自信度が低めです。住所をよく確認してください', true);
+    } else if (data.autoRotated) {
+      showToast('向きを自動補正して読み取りました');
     }
     prefetchGeocodeAddress(ocrFields.address || data.address || '');
     cancelPendingPhotoOcr();
@@ -6086,17 +6130,8 @@ async function processBatchPhoto(file) {
   batchStats.pending++;
   updateBatchPhotoUi();
   try {
-    const compressed = await compressImage(file, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, 0);
-    bumpUsage('ocr');
-    const res = await fetch('../api/extract_address.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'image/jpeg' },
-      body: compressed
-    });
-    const data = await res.json();
-    if (!res.ok || !data.address) {
-      throw new Error((data && data.error) || '住所が読み取れませんでした');
-    }
+    // 向きが変でも自動で回転して読み取り直す
+    const data = await ocrWithRotationRetry((rot) => ocrExtractAddress(file, rot), 0, null);
 
     const ocrFields = splitOcrAddressFields(data);
     const recipient = normalizeOcrField(data.recipient || '');
@@ -6135,7 +6170,7 @@ async function processBatchPhoto(file) {
     renderMarkers();
     renderList();
     batchStats.added++;
-    showToast(`✅ 追加: ${address}${result.approx ? ' (⚠概算位置)' : ''}${String(data.confidence || '').toLowerCase() === 'low' ? ' (⚠要確認)' : ''}`);
+    showToast(`✅ 追加: ${address}${result.approx ? ' (⚠概算位置)' : ''}${String(data.confidence || '').toLowerCase() === 'low' ? ' (⚠要確認)' : ''}${data.autoRotated ? ' (向き自動補正)' : ''}`);
   } catch (e) {
     batchStats.failed++;
     showToast(`❌ 読み取り失敗 — その伝票を撮り直してください (${e.message})`, true);
