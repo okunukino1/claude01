@@ -46,15 +46,29 @@ $cacheDir = __DIR__ . '/cache_amx';
 if (!is_dir($cacheDir)) { @mkdir($cacheDir, 0755, true); }
 $cacheOk = is_dir($cacheDir) && is_writable($cacheDir);
 
-$tileCacheFile = "{$cacheDir}/t{$z}_{$x}_{$y}.mvt";
-if (!$debug && $cacheOk && is_file($tileCacheFile) && (time() - filemtime($tileCacheFile)) < AMX_TILE_TTL) {
-    $body = file_get_contents($tileCacheFile);
-    if ($body !== false) {
-        if (strlen($body) === 0) { http_response_code(204); exit; } // 空タイルもキャッシュ
-        header('Content-Type: application/x-protobuf');
-        header('Cache-Control: public, max-age=604800, stale-while-revalidate=86400');
-        echo $body;
-        exit;
+// タイルを応答して終了。gzip圧縮のままなら Content-Encoding を付けて
+// ブラウザ側で解凍させる (サーバーCPUと転送量の節約)
+function amx_serve_tile($body, $gzip) {
+    if (strlen($body) === 0) { http_response_code(204); exit; }
+    @ini_set('zlib.output_compression', 'Off');
+    header('Content-Type: application/x-protobuf');
+    if ($gzip) { header('Content-Encoding: gzip'); }
+    header('Content-Length: ' . strlen($body));
+    header('Cache-Control: public, max-age=604800, stale-while-revalidate=86400');
+    echo $body;
+    exit;
+}
+
+$tileCacheFileGz = "{$cacheDir}/t{$z}_{$x}_{$y}.mvt.gz"; // gzipのまま保存
+$tileCacheFile   = "{$cacheDir}/t{$z}_{$x}_{$y}.mvt";    // 旧形式(生データ)
+if (!$debug && $cacheOk) {
+    if (is_file($tileCacheFileGz) && (time() - filemtime($tileCacheFileGz)) < AMX_TILE_TTL) {
+        $body = file_get_contents($tileCacheFileGz);
+        if ($body !== false) { amx_serve_tile($body, true); }
+    }
+    if (is_file($tileCacheFile) && (time() - filemtime($tileCacheFile)) < AMX_TILE_TTL) {
+        $body = file_get_contents($tileCacheFile);
+        if ($body !== false) { amx_serve_tile($body, false); }
     }
 }
 
@@ -339,7 +353,7 @@ $dbg['hops'] = $hops;
 
 if ($entry === null || $entry['leaf']) {
     // タイルが存在しない (海上・データ未整備地域など)
-    if ($cacheOk) { @file_put_contents($tileCacheFile, ''); }
+    if ($cacheOk) { @file_put_contents($tileCacheFileGz, ''); }
     if ($debug) { header('Content-Type: application/json'); echo json_encode(['result' => 'empty', 'dbg' => $dbg]); exit; }
     http_response_code(204);
     exit;
@@ -352,16 +366,14 @@ if ($raw === null) {
     if ($debug) { header('Content-Type: application/json'); echo json_encode(['error' => 'tiledata', 'dbg' => $dbg]); }
     exit;
 }
-$tile = amx_decompress($raw, $h['tileComp']);
-if ($tile === null) {
-    http_response_code(503);
-    if ($debug) { header('Content-Type: application/json'); echo json_encode(['error' => 'decompress', 'tileComp' => $h['tileComp'], 'dbg' => $dbg]); }
-    exit;
-}
-
-if ($cacheOk) { @file_put_contents($tileCacheFile, $tile); }
-
 if ($debug) {
+    $tile = amx_decompress($raw, $h['tileComp']);
+    if ($tile === null) {
+        http_response_code(503);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'decompress', 'tileComp' => $h['tileComp'], 'dbg' => $dbg]);
+        exit;
+    }
     header('Content-Type: application/json');
     echo json_encode([
         'result' => 'ok',
@@ -372,6 +384,16 @@ if ($debug) {
     exit;
 }
 
-header('Content-Type: application/x-protobuf');
-header('Cache-Control: public, max-age=604800, stale-while-revalidate=86400');
-echo $tile;
+// gzip圧縮タイルは解凍せずそのまま渡す (ブラウザが解凍する)
+if ($h['tileComp'] === 2) {
+    if ($cacheOk) { @file_put_contents($tileCacheFileGz, $raw); }
+    amx_serve_tile($raw, true);
+}
+
+$tile = amx_decompress($raw, $h['tileComp']);
+if ($tile === null) {
+    http_response_code(503);
+    exit;
+}
+if ($cacheOk) { @file_put_contents($tileCacheFile, $tile); }
+amx_serve_tile($tile, false);
