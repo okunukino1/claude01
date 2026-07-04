@@ -1307,6 +1307,8 @@
     <h3>番地表示の状態</h3>
     <pre id="banchi-debug-text" style="white-space:pre-wrap;font-size:12px;line-height:1.6;background:#f1f5f9;border-radius:8px;padding:10px;overflow-x:auto;margin:8px 0;max-height:50vh;overflow-y:auto;"></pre>
     <div class="modal-actions">
+      <button class="primary" type="button" id="banchi-debug-survey">🔍 筆界データ調査</button>
+      <button class="primary" type="button" id="banchi-debug-goto" style="display:none">📍 データ地点へ移動</button>
       <button class="primary" type="button" id="banchi-debug-copy">📋 コピー</button>
       <button class="cancel" type="button" data-close="modal-banchi-debug">閉じる</button>
     </div>
@@ -1604,7 +1606,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.29';
+const APP_VERSION = 'v2026.06.24-test.30';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -3851,6 +3853,68 @@ function openBanchiDebug() {
   const el = $('banchi-debug-text');
   if (el) el.textContent = lines.join('\n');
   openModal('modal-banchi-debug');
+}
+
+// 画面周辺のz16タイルをプロキシのdebugモードで調べ、筆界データの有無を一覧表示。
+// データのあるタイルが見つかれば「データ地点へ移動」ボタンを有効化する。
+let fudeSurveyTarget = null;
+
+async function surveyFudeTiles() {
+  if (!map) return;
+  const el = $('banchi-debug-text');
+  if (!el) return;
+  const base = new URL('../api/amx_tile_proxy.php', location.href).href;
+  const b = map.getBounds();
+  const z = 16;
+  const n = Math.pow(2, z);
+  const toXY = (lng, lat) => {
+    const r = lat * Math.PI / 180;
+    return [
+      Math.floor((lng + 180) / 360 * n),
+      Math.floor((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2 * n)
+    ];
+  };
+  const [x1, y1] = toXY(b.getWest(), b.getNorth());
+  const [x2, y2] = toXY(b.getEast(), b.getSouth());
+  const tiles = [];
+  for (let x = x1; x <= x2; x++) {
+    for (let y = y1; y <= y2; y++) tiles.push([x, y]);
+  }
+  if (!tiles.length || tiles.length > 24) {
+    el.textContent += `\n筆界調査: 範囲が広すぎます(${tiles.length}タイル)。ズーム16以上にして再実行してください`;
+    return;
+  }
+  el.textContent += `\n― 筆界データ調査 (z16 / ${tiles.length}タイル) ―`;
+  fudeSurveyTarget = null;
+  let best = 0;
+  for (const [x, y] of tiles) {
+    try {
+      const res = await fetch(`${base}?z=${z}&x=${x}&y=${y}&debug=1`);
+      const j = res.ok ? await res.json() : null;
+      const fude = j && Array.isArray(j.layers) ? j.layers.find(l => l.name === 'fude') : null;
+      const feats = fude ? (fude.features || 0) : 0;
+      el.textContent += `\n  (${x},${y}): ${j && j.result === 'ok' ? `${feats}筆` : '空'}`;
+      if (feats > best) {
+        best = feats;
+        const lng = (x + 0.5) / n * 360 - 180;
+        const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n))) * 180 / Math.PI;
+        fudeSurveyTarget = [lng, lat];
+      }
+    } catch (e) {
+      el.textContent += `\n  (${x},${y}): 取得失敗`;
+    }
+  }
+  el.textContent += best
+    ? `\n→ 最大${best}筆のタイルあり。「📍データ地点へ移動」で表示を確認できます`
+    : '\n→ この画面周辺に筆界データはありません(法務省地図が未整備の地域です)';
+  const gotoBtn = $('banchi-debug-goto');
+  if (gotoBtn) gotoBtn.style.display = fudeSurveyTarget ? '' : 'none';
+}
+
+function gotoFudeSurveyTarget() {
+  if (!fudeSurveyTarget || !map) return;
+  closeModal('modal-banchi-debug');
+  map.easeTo({ center: fudeSurveyTarget, zoom: 17.2, duration: 1200 });
 }
 
 function copyBanchiDebug() {
@@ -7774,6 +7838,8 @@ $('menu-toggle-gsi').addEventListener('click', () => {
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
 $('menu-banchi-debug').addEventListener('click', openBanchiDebug);
 $('banchi-debug-copy').addEventListener('click', copyBanchiDebug);
+$('banchi-debug-survey').addEventListener('click', surveyFudeTiles);
+$('banchi-debug-goto').addEventListener('click', gotoFudeSurveyTarget);
 $('menu-text-size').addEventListener('click', openTextSizeSettings);
 $('menu-notifications').addEventListener('click', openNotificationSettings);
 $('menu-reload-app').addEventListener('click', reloadLatestApp);
