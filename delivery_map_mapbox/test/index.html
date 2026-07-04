@@ -1610,7 +1610,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.36';
+const APP_VERSION = 'v2026.06.24-test.37';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -4953,6 +4953,22 @@ function setCachedGeocode(key, result) {
 
 async function addDelivery({ address, note, deliveryCourse }) {
   if (!address) { showToast('住所が空です', true); return; }
+
+  // 同じ伝票の二重撮影などによる重複登録を警告する
+  const canon = canonicalAddressForCache(address);
+  const dup = canon ? deliveries.find(d => canonicalAddressForCache(d.address || '') === canon) : null;
+  if (dup) {
+    showConfirm(
+      '同じ住所が登録済みです',
+      `「${dup.address}」${dup.completed ? '（完了済み）' : ''} が既にリストにあります。\nもう一度追加しますか？`,
+      () => { insertDelivery({ address, note, deliveryCourse }); }
+    );
+    return;
+  }
+  await insertDelivery({ address, note, deliveryCourse });
+}
+
+async function insertDelivery({ address, note, deliveryCourse }) {
   showLoading('住所を検索中...');
   const result = await geocodeAddress(address);
   hideLoading();
@@ -5871,12 +5887,12 @@ function startPendingPhotoOcr() {
   const job = { rotation, controller, promise: null };
   job.promise = (async () => {
     const compressed = await compressImage(pendingPhotoFile, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, rotation);
-    const base64 = await blobToBase64(compressed);
     bumpUsage('ocr');
+    // バイナリのまま送信 (base64より約25%小さい)
     const res = await fetch('../api/extract_address.php', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' }),
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: compressed,
       signal: controller ? controller.signal : undefined
     });
     const data = await res.json();
