@@ -1592,7 +1592,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.21';
+const APP_VERSION = 'v2026.06.24-test.22';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -3355,9 +3355,13 @@ function addBanchiLayer() {
         20, 25,
         22, 28
       ],
-      'text-allow-overlap': false,
-      'text-padding': 2,
-      'text-anchor': 'center',
+      // 建物名ラベル等と重なる場合は上下左右へずらして配置を試みる
+      'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'],
+      'text-radial-offset': 0.4,
+      // ズーム18以上では衝突判定を無効化して全番地を必ず表示する
+      'text-allow-overlap': ['step', ['zoom'], false, 18, true],
+      'text-ignore-placement': ['step', ['zoom'], false, 18, true],
+      'text-padding': 1,
       'symbol-sort-key': ['length', ['get', 'label']]
     },
     paint: {
@@ -3370,7 +3374,19 @@ function addBanchiLayer() {
     map.addLayer(layerDef);
   } catch (e) {
     try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {
-      banchiSetError('レイヤー追加', e2);
+      // ズーム式や可変アンカー未対応の環境向け: 静的設定で再試行
+      try {
+        const { slot, ...def } = layerDef;
+        def.layout = { ...def.layout,
+          'text-allow-overlap': false,
+          'text-ignore-placement': false
+        };
+        delete def.layout['text-variable-anchor'];
+        delete def.layout['text-radial-offset'];
+        map.addLayer(def);
+      } catch (e3) {
+        banchiSetError('レイヤー追加', e3);
+      }
     }
   }
 }
