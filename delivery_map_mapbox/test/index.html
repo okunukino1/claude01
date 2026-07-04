@@ -1606,7 +1606,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.31';
+const APP_VERSION = 'v2026.06.24-test.32';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1618,6 +1618,7 @@ const GSI_OVERLAY_KEY = 'rys-mapbox-test-gsi-overlay-visible';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-test-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-test-addr-visible';
+const LAST_VIEW_KEY = 'rys-mapbox-test-last-view-v1';
 const BANCHI_CATALOG_KEY = 'rys-mapbox-test-banchi-catalog-v1';
 const BANCHI_CITY_INDEX_PREFIX = 'rys-mapbox-test-banchi-city-v1:';
 const OPERATOR_NAME_KEY = 'rys-mapbox-test-operator-name';
@@ -2891,14 +2892,41 @@ async function loadMapboxConfig() {
   return cfg;
 }
 
+function savedLastView() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAST_VIEW_KEY) || 'null');
+    if (v && Number.isFinite(v.lng) && Number.isFinite(v.lat) && Number.isFinite(v.zoom) &&
+        v.lat >= 20 && v.lat <= 46 && v.lng >= 122 && v.lng <= 154) {
+      return v;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function saveLastView() {
+  if (!map) return;
+  try {
+    const c = map.getCenter();
+    localStorage.setItem(LAST_VIEW_KEY, JSON.stringify({
+      lng: Number(c.lng.toFixed(6)),
+      lat: Number(c.lat.toFixed(6)),
+      zoom: Number(map.getZoom().toFixed(2)),
+      ts: Date.now()
+    }));
+  } catch (e) {}
+}
+
 function initMap() {
   mapboxgl.accessToken = mapboxConfig.mapboxAccessToken;
+
+  // 前回終了時の位置・ズームがあればそこから開始 (GPS取得後は従来どおり現在地へ)
+  const lastView = savedLastView();
 
   map = new mapboxgl.Map({
     container: 'map',
     style: mapboxConfig.mapboxStyle || 'mapbox://styles/mapbox/standard',
-    center: [DEFAULT_CENTER_LNG, DEFAULT_CENTER_LAT],
-    zoom: DEFAULT_ZOOM,
+    center: lastView ? [lastView.lng, lastView.lat] : [DEFAULT_CENTER_LNG, DEFAULT_CENTER_LAT],
+    zoom: lastView ? lastView.zoom : DEFAULT_ZOOM,
     pitch: 0,
     bearing: 0,
     dragRotate: true,
@@ -2939,7 +2967,7 @@ function initMap() {
     );
   });
 
-  map.on('moveend', () => banchiScheduleUpdate());
+  map.on('moveend', () => { banchiScheduleUpdate(); saveLastView(); });
   map.on('zoomend', () => banchiScheduleUpdate());
   map.on('zoom', updateZoomBadge);
   // 筆界タイルの取得成功/失敗を記録 (診断パネルで確認できる)
