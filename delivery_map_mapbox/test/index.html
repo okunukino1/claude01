@@ -1606,7 +1606,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.33';
+const APP_VERSION = 'v2026.06.24-test.34';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -3007,6 +3007,28 @@ function initMap() {
     map.once('render', hideLoading);
   });
 
+  // 画面サイズの変化に描画領域を追従させる。
+  // 起動直後はブラウザのUI(アドレスバー等)でレイアウトが動くため、
+  // これが無いと「地図が上半分しか表示されない」症状が起きる。
+  const mapContainer = document.getElementById('map');
+  if (window.ResizeObserver && mapContainer) {
+    let resizeRaf = null;
+    new ResizeObserver(() => {
+      if (resizeRaf) return;
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = null;
+        try { map.resize(); } catch (e) {}
+      });
+    }).observe(mapContainer);
+  } else {
+    window.addEventListener('resize', () => { try { map.resize(); } catch (e) {} });
+  }
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => { try { map.resize(); } catch (e) {} }, 300);
+  });
+  // 保険: 起動直後のレイアウト確定後にもう一度合わせる
+  setTimeout(() => { try { map.resize(); } catch (e) {} }, 600);
+
   return new Promise((resolve) => {
     map.on('load', () => {
       mapStyleLoaded = true;
@@ -3369,25 +3391,131 @@ async function banchiEnsureCityIndex(city) {
   }
 }
 
+// ---- 番地データの端末内保存 (IndexedDB) ----
+// localStorage より大容量で、通信なしで番地を即表示できるようにする。
+const BANCHI_IDB_NAME = 'rys-mapbox-test-banchi';
+const BANCHI_IDB_STORE = 'machi';
+const BANCHI_IDB_TTL_MS = 30 * 24 * 3600 * 1000; // 30日で取り直し
+let banchiIdbPromise = null;
+
+function banchiIdb() {
+  if (banchiIdbPromise) return banchiIdbPromise;
+  banchiIdbPromise = new Promise((resolve) => {
+    if (!('indexedDB' in window)) { resolve(null); return; }
+    try {
+      const req = indexedDB.open(BANCHI_IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(BANCHI_IDB_STORE)) db.createObjectStore(BANCHI_IDB_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+  return banchiIdbPromise;
+}
+
+async function banchiIdbGet(key) {
+  const db = await banchiIdb();
+  if (!db) return null;
+  return new Promise(resolve => {
+    try {
+      const rq = db.transaction(BANCHI_IDB_STORE, 'readonly').objectStore(BANCHI_IDB_STORE).get(key);
+      rq.onsuccess = () => resolve(rq.result || null);
+      rq.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+
+async function banchiIdbPut(key, value) {
+  const db = await banchiIdb();
+  if (!db) return;
+  try {
+    db.transaction(BANCHI_IDB_STORE, 'readwrite').objectStore(BANCHI_IDB_STORE).put(value, key);
+  } catch (e) {}
+}
+
+async function banchiIdbClear() {
+  const db = await banchiIdb();
+  if (!db) return;
+  try {
+    db.transaction(BANCHI_IDB_STORE, 'readwrite').objectStore(BANCHI_IDB_STORE).clear();
+  } catch (e) {}
+}
+
 async function banchiFetchMachiaza(city, m) {
   const machiKey = `${banchiCityKey(city)}|${m.id}|${m.kind}`;
   if (banchiMachiData.has(machiKey) || banchiMachiLoading.has(machiKey)) return;
   banchiMachiLoading.add(machiKey);
   try {
+    // まず端末内保存を確認 — あれば通信せず即利用
+    const stored = await banchiIdbGet(machiKey);
+    if (stored && Array.isArray(stored.features) && (Date.now() - (stored.ts || 0)) < BANCHI_IDB_TTL_MS) {
+      banchiMachiData.set(machiKey, stored.features);
+      if (stored.meta) banchiMachiMeta.set(machiKey, stored.meta);
+      return;
+    }
+
     const url = `${ADDR_API_BASE}/${encodeURIComponent(city.pref)}/${encodeURIComponent(city.name)}-${m.kind}.txt`;
     const res = await fetch(url, { headers: { 'Range': `bytes=${m.start}-${m.start + m.length - 1}` } });
     if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
     const features = [];
     parseAddrSection(text, m.name, features);
+    const meta = { rows: Math.max(0, text.split('\n').filter(l => l.trim()).length - 2) };
     banchiMachiData.set(machiKey, features);
-    banchiMachiMeta.set(machiKey, { rows: Math.max(0, text.split('\n').filter(l => l.trim()).length - 2) });
+    banchiMachiMeta.set(machiKey, meta);
+    banchiIdbPut(machiKey, { features, meta, ts: Date.now() });
   } catch (e) {
-    banchiMachiData.set(machiKey, []); // 失敗した町字は空扱い（「番地データを再取得」でやり直し）
+    banchiMachiData.set(machiKey, []); // 失敗した町字は空扱い（「番地データを再取得」でやり直し。端末保存はしない）
     banchiSetError(`番地取得(${m.name})`, e);
   } finally {
     banchiMachiLoading.delete(machiKey);
   }
+}
+
+// ---- ④ バックグラウンド先読み ----
+// GPS現在地の周辺の番地データを、アプリが暇なときに裏で取得しておく。
+let banchiLastPrefetch = null;
+
+function banchiSchedulePrefetch(lng, lat) {
+  if (!addrVisible) return;
+  if (banchiLastPrefetch &&
+      Math.abs(lng - banchiLastPrefetch.lng) < 0.02 &&
+      Math.abs(lat - banchiLastPrefetch.lat) < 0.02) return; // 約2km動くまで再実行しない
+  banchiLastPrefetch = { lng, lat };
+  runWhenIdle(() => {
+    banchiPrefetchAround(lng, lat).catch(e => console.warn('banchi prefetch failed', e));
+  }, 4000);
+}
+
+async function banchiPrefetchAround(lng, lat) {
+  const catalog = await banchiLoadCatalog();
+  if (!catalog) return;
+  const cities = banchiNearbyCities(lng, lat);
+  const indexes = await Promise.all(cities.map(c => banchiEnsureCityIndex(c)));
+  const r = BANCHI_MIN_RADIUS_DEG * 1.5;
+  const targets = [];
+  cities.forEach((city, i) => {
+    const idx = indexes[i] || banchiCityIndexes.get(banchiCityKey(city));
+    if (!idx || !Array.isArray(idx.machiaza)) return;
+    idx.machiaza.forEach(m => {
+      if (Math.abs(m.lng - lng) > r || Math.abs(m.lat - lat) > r) return;
+      const machiKey = `${banchiCityKey(city)}|${m.id}|${m.kind}`;
+      if (banchiMachiData.has(machiKey)) return;
+      targets.push({ city, m });
+    });
+  });
+  const limited = targets.slice(0, 80);
+  let next = 0;
+  async function worker() {
+    while (next < limited.length) {
+      const t = limited[next++];
+      await banchiFetchMachiaza(t.city, t.m);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, limited.length) }, () => worker()));
+  if (map && mapStyleLoaded && map.getZoom() >= BANCHI_PREFETCH_MIN_ZOOM) banchiScheduleUpdate(0);
 }
 
 function parseAddrSection(text, machiazaName, features) {
@@ -3822,6 +3950,9 @@ function refreshAddressData() {
       banchiCatalog = null;
       banchiCityIndexes.clear();
       banchiMachiData.clear();
+      banchiMachiMeta.clear();
+      banchiIdbClear();
+      banchiLastPrefetch = null;
       banchiStatus.lastError = '';
       try {
         const toRemove = [];
@@ -7717,6 +7848,7 @@ function updateUserLocation(pos, moveMap = false) {
   }
 
   updateGpsStatus(pos);
+  banchiSchedulePrefetch(longitude, latitude);
 
   const startupCenterAllowed = gpsInitialCenterStartedAt &&
     Date.now() - gpsInitialCenterStartedAt <= 60000;
