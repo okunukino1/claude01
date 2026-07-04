@@ -1593,7 +1593,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.23';
+const APP_VERSION = 'v2026.06.24-test.24';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1655,6 +1655,11 @@ const ADDR_CITY = '中央区';   // 〃
 const ADDR_API_BASE = 'https://japanese-addresses-v2.geoloniamaps.com/api/ja';
 const BANCHI_SOURCE_ID = 'rys-banchi';
 const BANCHI_LAYER_ID = 'rys-banchi-label';
+// 地番エリア用: Geolonia(ABR)の地番データは自治体によって座標が無い。
+// Mapbox Streets v8 の housenum_label を自前ソースとして追加し、
+// 基盤地図と同じ番地を大きな文字で表示する。
+const STREETS_HOUSENUM_SOURCE_ID = 'rys-streets-v8';
+const STREETS_HOUSENUM_LAYER_ID = 'rys-housenum-streets';
 const BANCHI_DISPLAY_MIN_ZOOM = 16.5; // ラベルを表示する最小ズーム
 const BANCHI_PREFETCH_MIN_ZOOM = 15.8; // データ先読みを始めるズーム
 const BANCHI_MIN_RADIUS_DEG = 0.012;  // 町字検索の最低半径(度) ≒ 1.2km。高ズームでも維持
@@ -1803,6 +1808,7 @@ let banchiCatalogLoading = false;
 const banchiCityIndexes = new Map(); // cityKey -> { machiaza: [...], error }
 const banchiCityLoading = new Set();
 const banchiMachiData = new Map();   // machiKey -> features[] (取得済み町字の番地点)
+const banchiMachiMeta = new Map();   // machiKey -> { rows } 元データの行数(座標なし判定用)
 const banchiMachiLoading = new Set();
 let banchiUpdateTimer = null;
 let banchiUpdateRunning = false;
@@ -3279,6 +3285,7 @@ async function banchiFetchMachiaza(city, m) {
     const features = [];
     parseAddrSection(text, m.name, features);
     banchiMachiData.set(machiKey, features);
+    banchiMachiMeta.set(machiKey, { rows: Math.max(0, text.split('\n').filter(l => l.trim()).length - 2) });
   } catch (e) {
     banchiMachiData.set(machiKey, []); // 失敗した町字は空扱い（「番地データを再取得」でやり直し）
     banchiSetError(`番地取得(${m.name})`, e);
@@ -3334,8 +3341,72 @@ function parseAddrSection(text, machiazaName, features) {
   }
 }
 
+function addStreetsHousenumLayer() {
+  if (!map) return;
+  if (!map.getSource(STREETS_HOUSENUM_SOURCE_ID)) {
+    try {
+      map.addSource(STREETS_HOUSENUM_SOURCE_ID, { type: 'vector', url: 'mapbox://mapbox.mapbox-streets-v8' });
+    } catch (e) {
+      banchiSetError('streetsソース追加', e);
+      return;
+    }
+  }
+  if (map.getLayer(STREETS_HOUSENUM_LAYER_ID)) return;
+  const layerDef = {
+    id: STREETS_HOUSENUM_LAYER_ID,
+    type: 'symbol',
+    source: STREETS_HOUSENUM_SOURCE_ID,
+    'source-layer': 'housenum_label',
+    slot: 'top',
+    minzoom: BANCHI_DISPLAY_MIN_ZOOM,
+    layout: {
+      'visibility': addrVisible ? 'visible' : 'none',
+      'text-field': ['get', 'house_num'],
+      'text-size': [
+        'interpolate', ['linear'], ['zoom'],
+        16.5, 13,
+        17, 16,
+        18, 20,
+        19, 24,
+        20, 28,
+        22, 32
+      ],
+      'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'],
+      'text-radial-offset': 0.4,
+      'text-allow-overlap': ['step', ['zoom'], false, 18, true],
+      'text-ignore-placement': ['step', ['zoom'], false, 18, true],
+      'text-padding': 1
+    },
+    paint: {
+      'text-color': '#0f172a',
+      'text-halo-color': 'rgba(255,255,255,0.98)',
+      'text-halo-width': 2.6
+    }
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {
+      try {
+        const { slot, ...def } = layerDef;
+        def.layout = { ...def.layout,
+          'text-allow-overlap': false,
+          'text-ignore-placement': false
+        };
+        delete def.layout['text-variable-anchor'];
+        delete def.layout['text-radial-offset'];
+        map.addLayer(def);
+      } catch (e3) {
+        banchiSetError('streetsレイヤー追加', e3);
+      }
+    }
+  }
+}
+
 function addBanchiLayer() {
   if (!map) return;
+  // streets番地レイヤーを先に追加して、Geoloniaレイヤーを上に重ねる
+  addStreetsHousenumLayer();
   if (!map.getSource(BANCHI_SOURCE_ID)) {
     map.addSource(BANCHI_SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   }
@@ -3627,9 +3698,11 @@ function toggleAddressBlocks() {
   closeModal('modal-menu');
   addrVisible = !addrVisible;
   localStorage.setItem(ADDR_VISIBLE_KEY, addrVisible ? '1' : '0');
-  if (map && map.getLayer(BANCHI_LAYER_ID)) {
-    try { map.setLayoutProperty(BANCHI_LAYER_ID, 'visibility', addrVisible ? 'visible' : 'none'); } catch (e) {}
-  }
+  [BANCHI_LAYER_ID, STREETS_HOUSENUM_LAYER_ID].forEach(id => {
+    if (map && map.getLayer(id)) {
+      try { map.setLayoutProperty(id, 'visibility', addrVisible ? 'visible' : 'none'); } catch (e) {}
+    }
+  });
   updateAddrButton();
   if (addrVisible) {
     banchiScheduleUpdate(0);
@@ -3682,6 +3755,14 @@ function openBanchiDebug() {
   });
   lines.push(`取得済み町字: ${banchiMachiData.size}件 (画面近傍の未取得: ${banchiStatus.machiNearby}件)`);
   lines.push(`描画中の番地点: ${banchiStatus.rendered}件 (最終更新 ${banchiStatus.lastUpdate || '-'})`);
+  if (map && map.queryRenderedFeatures) {
+    try {
+      const streetsCount = map.queryRenderedFeatures({ layers: [STREETS_HOUSENUM_LAYER_ID] }).length;
+      lines.push(`Mapbox番地(streets): 画面内 ${streetsCount}件`);
+    } catch (e) {
+      lines.push('Mapbox番地(streets): レイヤーなし');
+    }
+  }
   lines.push(`最終エラー: ${banchiStatus.lastError || 'なし'}`);
 
   // 中心に近い町字ごとの取得状況 (どの町のデータが無い/空かを特定できる)
@@ -3703,8 +3784,12 @@ function openBanchiDebug() {
       all.slice(0, 12).forEach(({ key, m }) => {
         const machiKey = `${key}|${m.id}|${m.kind}`;
         const d = banchiMachiData.get(machiKey);
-        const state = banchiMachiLoading.has(machiKey) ? '取得中'
-          : (d ? `${d.length}件` : '未取得');
+        const meta = banchiMachiMeta.get(machiKey);
+        let state;
+        if (banchiMachiLoading.has(machiKey)) state = '取得中';
+        else if (!d) state = '未取得';
+        else if (d.length === 0 && meta && meta.rows > 0) state = `0件 (元データ${meta.rows}行・座標なし)`;
+        else state = `${d.length}件`;
         lines.push(`  ${m.name} [${m.kind}]: ${state}`);
       });
     }
