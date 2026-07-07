@@ -1653,7 +1653,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.46';
+const APP_VERSION = 'v2026.06.24-test.47';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -4602,6 +4602,7 @@ async function getSharedGeocodeCache(cacheKey) {
       lat: Number(data.lat),
       lng: Number(data.lng),
       approx: !!data.approx,
+      manual: !!data.manual,
       formatted: data.formatted || '',
       sharedCache: true,
       sharedCacheBackend: data.backend || 'unknown',
@@ -4617,6 +4618,8 @@ async function getSharedGeocodeCache(cacheKey) {
 function saveSharedGeocodeCache(cacheKey, rawAddress, result) {
   if (!cacheKey || !result) return;
   if (Date.now() < sharedGeocodeCacheDisabledUntil) return;
+  // 手動修正は「同一キーは1回だけ保存」の重複抑止を必ず通す (自動保存済みでも上書きさせる)
+  if (result.manual) sharedGeocodeSaveInFlight.delete(cacheKey);
   if (sharedGeocodeSaveInFlight.has(cacheKey)) return;
   sharedGeocodeSaveInFlight.add(cacheKey);
   fetch(SHARED_GEOCODE_CACHE_API, {
@@ -4629,6 +4632,7 @@ function saveSharedGeocodeCache(cacheKey, rawAddress, result) {
       lat: result.lat,
       lng: result.lng,
       approx: !!result.approx,
+      manual: !!result.manual,
       formatted: result.formatted || ''
     })
   })
@@ -4979,6 +4983,7 @@ function getCachedGeocode(key) {
     lat: Number(item.lat),
     lng: Number(item.lng),
     approx: !!item.approx,
+    manual: !!item.manual,
     formatted: item.formatted || ''
   };
 }
@@ -4986,10 +4991,14 @@ function getCachedGeocode(key) {
 function setCachedGeocode(key, result) {
   if (!key || !result) return;
   const cache = getGeocodeCacheObject();
+  // 手動修正済みの位置は、自動検索の結果で上書きしない
+  const existing = cache[key];
+  if (existing && existing.manual && !result.manual) return;
   cache[key] = {
     lat: Number(result.lat),
     lng: Number(result.lng),
     approx: !!result.approx,
+    manual: !!result.manual,
     formatted: result.formatted || '',
     savedAt: Date.now(),
     lastUsedAt: Date.now()
@@ -5399,7 +5408,30 @@ async function commitPlacement() {
     showToast('管理者確認に失敗したため、位置変更を取り消しました', true);
     return;
   }
-  showToast(locationSynced ? '位置を更新しました' : '位置は更新しましたが固定位置の共有保存に失敗しました', !locationSynced);
+
+  // 手動修正した位置を住所キャッシュに記憶する。
+  // 次回以降、同じ住所の読み込み・検索では検索前にこの位置が使われ、
+  // 自動検索の結果によって上書きされることもない (manualフラグで保護)。
+  const manualCacheKey = geocodeCacheKey(d.address);
+  if (manualCacheKey) {
+    const manualResult = {
+      lat: d.lat,
+      lng: d.lng,
+      approx: false,
+      manual: true,
+      formatted: d.formatted || d.address
+    };
+    setCachedGeocode(manualCacheKey, manualResult);
+    saveSharedGeocodeCache(manualCacheKey, d.address, manualResult);
+  }
+  d.needsReview = false; // 位置を手で確定した
+  d.reviewReasons = [];
+  d.updatedAt = Date.now();
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+
+  showToast(locationSynced ? '位置を更新し、この住所の正しい位置を記憶しました' : '位置は更新しましたが固定位置の共有保存に失敗しました', !locationSynced);
 }
 
 function cancelPlacement() {

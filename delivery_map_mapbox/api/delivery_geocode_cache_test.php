@@ -97,6 +97,7 @@ function ensure_mysql_cache_table($pdo, $table) {
       `lat` DECIMAL(10,7) NOT NULL,
       `lng` DECIMAL(10,7) NOT NULL,
       `approx` TINYINT(1) NOT NULL DEFAULT 0,
+      `manual` TINYINT(1) NOT NULL DEFAULT 0,
       `formatted` VARCHAR(300) NOT NULL DEFAULT '',
       `hit_count` INT UNSIGNED NOT NULL DEFAULT 0,
       `saved_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -108,6 +109,10 @@ function ensure_mysql_cache_table($pdo, $table) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   ";
   $pdo->exec($sql);
+  // 既存テーブルへの manual 列追加 (存在すれば失敗するが無視してよい)
+  try {
+    $pdo->exec("ALTER TABLE `{$table}` ADD COLUMN `manual` TINYINT(1) NOT NULL DEFAULT 0 AFTER `approx`");
+  } catch (Throwable $e) {}
 }
 
 function normalized_key($value) {
@@ -135,7 +140,7 @@ function prune_mysql_cache($pdo, $table) {
       SELECT `cache_key` FROM (
         SELECT `cache_key`
         FROM `{$table}`
-        ORDER BY COALESCE(`last_used_at`, `updated_at`, `saved_at`) ASC
+        ORDER BY `manual` ASC, COALESCE(`last_used_at`, `updated_at`, `saved_at`) ASC
         LIMIT {$deleteCount}
       ) AS old_rows
     )
@@ -165,7 +170,7 @@ try {
       exit;
     }
 
-    $stmt = $pdo->prepare("SELECT `lat`, `lng`, `approx`, `formatted`, `hit_count` FROM `{$table}` WHERE `cache_key` = ?");
+    $stmt = $pdo->prepare("SELECT `lat`, `lng`, `approx`, `manual`, `formatted`, `hit_count` FROM `{$table}` WHERE `cache_key` = ?");
     $stmt->execute([$key]);
     $item = $stmt->fetch();
     if (!$item) {
@@ -193,6 +198,7 @@ try {
       'lat' => $lat,
       'lng' => $lng,
       'approx' => !empty($item['approx']),
+      'manual' => !empty($item['manual']),
       'formatted' => (string)($item['formatted'] ?? ''),
       'hit_count' => $hitCount,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -222,18 +228,37 @@ try {
       exit;
     }
 
-    $sql = "
-      INSERT INTO `{$table}` (`cache_key`, `address`, `lat`, `lng`, `approx`, `formatted`, `hit_count`, `saved_at`, `updated_at`, `last_used_at`)
-      VALUES (?, ?, ?, ?, ?, ?, 0, NOW(), NOW(), NOW())
-      ON DUPLICATE KEY UPDATE
-        `address` = VALUES(`address`),
-        `lat` = VALUES(`lat`),
-        `lng` = VALUES(`lng`),
-        `approx` = VALUES(`approx`),
-        `formatted` = VALUES(`formatted`),
-        `updated_at` = NOW(),
-        `last_used_at` = NOW()
-    ";
+    $isManual = !empty($input['manual']);
+    if ($isManual) {
+      // 手動修正: 常に上書きして manual=1 を立てる
+      $sql = "
+        INSERT INTO `{$table}` (`cache_key`, `address`, `lat`, `lng`, `approx`, `manual`, `formatted`, `hit_count`, `saved_at`, `updated_at`, `last_used_at`)
+        VALUES (?, ?, ?, ?, ?, 1, ?, 0, NOW(), NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+          `address` = VALUES(`address`),
+          `lat` = VALUES(`lat`),
+          `lng` = VALUES(`lng`),
+          `approx` = VALUES(`approx`),
+          `manual` = 1,
+          `formatted` = VALUES(`formatted`),
+          `updated_at` = NOW(),
+          `last_used_at` = NOW()
+      ";
+    } else {
+      // 自動保存: 手動修正済み(manual=1)の行は位置を上書きしない
+      $sql = "
+        INSERT INTO `{$table}` (`cache_key`, `address`, `lat`, `lng`, `approx`, `manual`, `formatted`, `hit_count`, `saved_at`, `updated_at`, `last_used_at`)
+        VALUES (?, ?, ?, ?, ?, 0, ?, 0, NOW(), NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+          `address` = IF(`manual` = 1, `address`, VALUES(`address`)),
+          `lat` = IF(`manual` = 1, `lat`, VALUES(`lat`)),
+          `lng` = IF(`manual` = 1, `lng`, VALUES(`lng`)),
+          `approx` = IF(`manual` = 1, `approx`, VALUES(`approx`)),
+          `formatted` = IF(`manual` = 1, `formatted`, VALUES(`formatted`)),
+          `updated_at` = NOW(),
+          `last_used_at` = NOW()
+      ";
+    }
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$key, $address, $lat, $lng, !empty($input['approx']) ? 1 : 0, $formatted]);
 
@@ -351,14 +376,16 @@ try {
       exit;
     }
 
+    // 管理画面からの保存は手動確定として扱い、自動保存から保護する
     $sql = "
-      INSERT INTO `{$table}` (`cache_key`, `address`, `lat`, `lng`, `approx`, `formatted`, `hit_count`, `saved_at`, `updated_at`, `last_used_at`)
-      VALUES (?, ?, ?, ?, ?, ?, 0, NOW(), NOW(), NOW())
+      INSERT INTO `{$table}` (`cache_key`, `address`, `lat`, `lng`, `approx`, `manual`, `formatted`, `hit_count`, `saved_at`, `updated_at`, `last_used_at`)
+      VALUES (?, ?, ?, ?, ?, 1, ?, 0, NOW(), NOW(), NOW())
       ON DUPLICATE KEY UPDATE
         `address` = VALUES(`address`),
         `lat` = VALUES(`lat`),
         `lng` = VALUES(`lng`),
         `approx` = VALUES(`approx`),
+        `manual` = 1,
         `formatted` = VALUES(`formatted`),
         `updated_at` = NOW(),
         `last_used_at` = NOW()
