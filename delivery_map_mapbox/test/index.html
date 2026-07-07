@@ -164,72 +164,6 @@
     font-weight: 700;
     font-size: 11px;
   }
-  /* 連続撮影用アプリ内カメラ */
-  #batch-camera {
-    position: fixed;
-    inset: 0;
-    z-index: 4000;
-    background: #000;
-    display: none;
-    flex-direction: column;
-  }
-  #batch-camera video {
-    flex: 1;
-    width: 100%;
-    min-height: 0;
-    object-fit: cover;
-  }
-  .batch-camera-top {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    z-index: 2;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: calc(10px + env(safe-area-inset-top)) 12px 12px;
-    background: linear-gradient(rgba(0,0,0,0.6), transparent);
-  }
-  #batch-camera-stats {
-    color: #fff;
-    font-weight: 700;
-    font-size: 13px;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
-  }
-  #batch-camera-close {
-    background: rgba(255,255,255,0.92);
-    border: 0;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-weight: 700;
-    font-size: 14px;
-  }
-  .batch-camera-bottom {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    z-index: 2;
-    display: flex;
-    justify-content: center;
-    padding: 14px 0 calc(24px + env(safe-area-inset-bottom));
-    background: linear-gradient(transparent, rgba(0,0,0,0.6));
-  }
-  #batch-camera-shutter {
-    width: 78px;
-    height: 78px;
-    border-radius: 50%;
-    background: #fff;
-    border: 5px solid rgba(255,255,255,0.45);
-    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
-  }
-  #batch-camera-shutter:disabled { opacity: 0.4; }
-  #batch-camera-flash {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    background: #fff;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.18s;
-  }
   .delivery-pin .pin-num {
     position: absolute;
     left: 0; top: 8px;
@@ -1602,19 +1536,6 @@
   </div>
 </div>
 
-<!-- 連続撮影用のアプリ内カメラ (OSカメラ往復なしで連写できる) -->
-<div id="batch-camera">
-  <div class="batch-camera-top">
-    <div id="batch-camera-stats">📸 連続撮影</div>
-    <button id="batch-camera-close" type="button">✕ 終了</button>
-  </div>
-  <video id="batch-camera-video" autoplay playsinline muted></video>
-  <div id="batch-camera-flash"></div>
-  <div class="batch-camera-bottom">
-    <button id="batch-camera-shutter" type="button" aria-label="撮影"></button>
-  </div>
-</div>
-
 <div class="modal-bg" id="modal-add">
   <div class="modal">
     <h3>配送先を追加</h3>
@@ -1732,7 +1653,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.44';
+const APP_VERSION = 'v2026.06.24-test.45';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -6393,91 +6314,6 @@ function updateBatchPhotoUi() {
     menuBtn.textContent = batchPhotoMode ? '📸 連続撮影モード: ON' : '📸 連続撮影モード: OFF';
     menuBtn.classList.toggle('on', batchPhotoMode);
   }
-  const stats = $('batch-camera-stats');
-  if (stats) {
-    const parts = [];
-    if (batchStats.pending) parts.push(`処理中${batchStats.pending}`);
-    parts.push(`追加${batchStats.added}`);
-    if (batchStats.stacked) parts.push(`📦+${batchStats.stacked}`);
-    if (batchStats.review) parts.push(`❗${batchStats.review}`);
-    if (batchStats.failed) parts.push(`失敗${batchStats.failed}`);
-    stats.textContent = parts.join(' / ');
-  }
-}
-
-// ---- アプリ内カメラ (連写用) ----
-// OSのカメラアプリと違い、撮影後もカメラ画面のまま次を撮れる。
-let batchCameraStream = null;
-let batchImageCapture = null;
-
-async function openBatchCamera() {
-  try {
-    batchCameraStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 2560 },
-        height: { ideal: 1440 }
-      },
-      audio: false
-    });
-  } catch (e) {
-    // 権限拒否・非対応時は従来のOSカメラ方式にフォールバック
-    showToast('アプリ内カメラを起動できないため通常撮影に切り替えます', true);
-    $('file-photo').click();
-    return;
-  }
-  const video = $('batch-camera-video');
-  video.srcObject = batchCameraStream;
-  batchImageCapture = null;
-  try {
-    const track = batchCameraStream.getVideoTracks()[0];
-    if ('ImageCapture' in window && track) {
-      batchImageCapture = new ImageCapture(track); // 対応端末ではフル解像度で撮影できる
-    }
-  } catch (e) {}
-  $('batch-camera').style.display = 'flex';
-  updateBatchPhotoUi();
-}
-
-function closeBatchCamera() {
-  const el = $('batch-camera');
-  if (el) el.style.display = 'none';
-  if (batchCameraStream) {
-    batchCameraStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
-    batchCameraStream = null;
-  }
-  batchImageCapture = null;
-}
-
-async function captureBatchPhoto() {
-  if (!batchCameraStream) return;
-  const shutter = $('batch-camera-shutter');
-  shutter.disabled = true;
-  setTimeout(() => { shutter.disabled = false; }, 700); // 連打防止
-  const flash = $('batch-camera-flash');
-  if (flash) {
-    flash.style.opacity = '0.85';
-    setTimeout(() => { flash.style.opacity = '0'; }, 120);
-  }
-  try {
-    let blob = null;
-    if (batchImageCapture && batchImageCapture.takePhoto) {
-      try { blob = await batchImageCapture.takePhoto(); } catch (e) { blob = null; }
-    }
-    if (!blob) {
-      const video = $('batch-camera-video');
-      if (!video.videoWidth) throw new Error('カメラ映像がまだ準備できていません');
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext('2d').drawImage(video, 0, 0);
-      blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
-    }
-    if (!blob) throw new Error('撮影に失敗しました');
-    processBatchPhoto(blob); // awaitしない — カメラはそのまま次の撮影へ
-  } catch (e) {
-    showToast('撮影失敗: ' + e.message, true);
-  }
 }
 
 function toggleBatchPhotoMode() {
@@ -6492,7 +6328,6 @@ function toggleBatchPhotoMode() {
     batchStats.stacked = 0;
     showToast('連続撮影モードON — 「📸 連写」で伝票を次々撮影してください');
   } else {
-    closeBatchCamera();
     const parts = [`追加${batchStats.added}件`];
     if (batchStats.stacked) parts.push(`📦複数個口+${batchStats.stacked}`);
     if (batchStats.review) parts.push(`❗要確認${batchStats.review}件`);
@@ -8577,24 +8412,20 @@ $('btn-north').addEventListener('click', () => {
   showToast('🧭 北向き・水平に戻しました');
 });
 
-$('btn-add-photo').addEventListener('click', () => {
-  if (batchPhotoMode) {
-    openBatchCamera(); // 連写モードはアプリ内カメラ (撮影後もカメラのまま)
-  } else {
-    $('file-photo').click();
-  }
-});
-$('batch-camera-close').addEventListener('click', closeBatchCamera);
-$('batch-camera-shutter').addEventListener('click', captureBatchPhoto);
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) closeBatchCamera(); // バックグラウンドでカメラを掴み続けない
-});
+$('btn-add-photo').addEventListener('click', () => $('file-photo').click());
 $('file-photo').addEventListener('change', (e) => {
   const file = e.target.files && e.target.files[0];
   e.target.value = '';
   if (!file) return;
   if (batchPhotoMode) {
-    processBatchPhoto(file);
+    processBatchPhoto(file); // 裏で処理 (待たない)
+    // 続けて次の伝票を撮れるよう、すぐカメラを開き直す。
+    // 端末側がブロックした場合は「📸連写」を再タップすれば同じ。
+    setTimeout(() => {
+      if (batchPhotoMode) {
+        try { $('file-photo').click(); } catch (err) {}
+      }
+    }, 300);
   } else {
     openPhotoPreview(file);
   }
