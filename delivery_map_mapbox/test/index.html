@@ -142,6 +142,28 @@
     font-weight: 700;
     font-size: 11px;
   }
+  /* 複数個口バッジ: ピン右上の「×2」 */
+  .delivery-pin .package-badge {
+    position: absolute;
+    top: -9px;
+    right: -13px;
+    background: #7c3aed;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.4;
+    padding: 1px 5px;
+    border-radius: 9px;
+    border: 1.5px solid #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    z-index: 3;
+  }
+  .package-badge-list {
+    display: inline-block;
+    color: #7c3aed;
+    font-weight: 700;
+    font-size: 11px;
+  }
   .delivery-pin .pin-num {
     position: absolute;
     left: 0; top: 8px;
@@ -1583,6 +1605,8 @@
     <textarea id="edit-note"></textarea>
     <label>時間指定</label>
     <select id="edit-time-window"></select>
+    <label>荷物の個数 (複数個口)</label>
+    <input type="number" id="edit-package-count" min="1" step="1" inputmode="numeric">
     <div class="modal-actions">
       <button class="done" id="btn-edit-done" type="button">完了</button>
       <button class="go" id="btn-edit-navi" type="button">ナビ</button>
@@ -1626,7 +1650,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.42';
+const APP_VERSION = 'v2026.06.24-test.43';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -4307,7 +4331,8 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   const labelText = buildLabelText(d, num, modeKey);
   const overlapCount = overlap && overlap.index === 0 ? overlap.count : 0;
   const timeWindowSig = timeWindow ? `${timeWindow.id}:${timeWindow.color}` : '';
-  const contentSig = `${num}|${d.approx ? 1 : 0}|${d.needsReview && !d.completed ? 1 : 0}|${labelText}|${overlapCount}|${timeWindowSig}`;
+  const pkgCount = Number(d.packageCount) || 1;
+  const contentSig = `${num}|${d.approx ? 1 : 0}|${d.needsReview && !d.completed ? 1 : 0}|${pkgCount}|${labelText}|${overlapCount}|${timeWindowSig}`;
   if (wrapper.dataset.contentSig === contentSig) return;
   wrapper.dataset.contentSig = contentSig;
 
@@ -4322,6 +4347,12 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   const pin = document.createElement('div');
   pin.className = 'delivery-pin';
   pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${escapeHtml(num)}${d.approx ? '?' : ''}</div>`;
+  if (pkgCount > 1) {
+    const pkgBadge = document.createElement('div');
+    pkgBadge.className = 'package-badge';
+    pkgBadge.textContent = `×${pkgCount}`;
+    pin.appendChild(pkgBadge);
+  }
   if (overlapCount > 0) {
     const overlapLabel = document.createElement('div');
     overlapLabel.className = 'overlap-count-label';
@@ -5035,17 +5066,26 @@ function validateDeliveryPlacement(address, result) {
 async function addDelivery({ address, note, deliveryCourse }) {
   if (!address) { showToast('住所が空です', true); return; }
 
-  // 同じ伝票の二重撮影などによる重複登録を警告する
+  // 同じ住所 = 複数個口。未完了の既存ピンがあれば個数を増やす
   const canon = canonicalAddressForCache(address);
-  const dup = canon ? deliveries.find(d => canonicalAddressForCache(d.address || '') === canon) : null;
-  if (dup) {
+  const dupActive = canon ? deliveries.find(d => !d.completed && canonicalAddressForCache(d.address || '') === canon) : null;
+  if (dupActive) {
+    const current = Number(dupActive.packageCount) || 1;
     showConfirm(
-      '同じ住所が登録済みです',
-      `「${dup.address}」${dup.completed ? '（完了済み）' : ''} が既にリストにあります。\nもう一度追加しますか？`,
-      () => { insertDelivery({ address, note, deliveryCourse }); }
+      '複数個口の荷物',
+      `「${dupActive.address}」は既に登録済みです。\n荷物の個数を ${current} → ${current + 1} 個に増やしますか？`,
+      () => {
+        dupActive.packageCount = current + 1;
+        dupActive.updatedAt = Date.now();
+        saveDeliveries();
+        renderMarkers();
+        renderList();
+        showToast(`📦 ${dupActive.address} を${dupActive.packageCount}個口にしました`);
+      }
     );
     return;
   }
+  // 完了済みと同じ住所は新しい配達として別ピンを立てる
   await insertDelivery({ address, note, deliveryCourse });
 }
 
@@ -5066,6 +5106,7 @@ async function insertDelivery({ address, note, deliveryCourse }) {
     formatted: result.formatted,
     needsReview: reviewReasons.length > 0,
     reviewReasons,
+    packageCount: 1,
     completed: false,
     completedAt: null,
     deliveryCourse: deliveryCourse || (appMode === 'delivery' ? getSelectedDeliveryCourse() : ''),
@@ -5215,6 +5256,7 @@ function renderList() {
             : `<div class="addr">${escapeHtml(d.address)}</div>
                ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}`}
           ${timeWindowBadge}
+          ${(Number(d.packageCount) || 1) > 1 ? `<div><span class="package-badge-list">📦 ${Number(d.packageCount)}個口</span></div>` : ''}
           ${d.needsReview && !d.completed ? `<div><span class="review-badge">❗要確認: ${escapeHtml((d.reviewReasons || [])[0] || 'ピン位置を確認')}</span></div>` : ''}
         ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
           ${d.progressSyncFailed ? `<div class="note">未同期: 通信回復後に自動再送します</div>` : ''}
@@ -5386,6 +5428,7 @@ function openEdit(id) {
   }
   $('edit-address').value = d.address;
   $('edit-note').value = d.note || '';
+  $('edit-package-count').value = String(Number(d.packageCount) || 1);
   populateTimeWindowSelect($('edit-time-window'), d.timeWindowId || '');
   const doneBtn = $('btn-edit-done');
   doneBtn.textContent = d.completed ? '完了解除' : '完了';
@@ -5512,6 +5555,8 @@ async function saveEditedItem() {
   };
   d.note = newNote;
   d.timeWindowId = newTimeWindowId;
+  const newPkgCount = Math.max(1, parseInt($('edit-package-count').value, 10) || 1);
+  d.packageCount = newPkgCount;
   d.needsReview = false; // ユーザーが内容を確認して保存した
   d.reviewReasons = [];
   d.updatedAt = Date.now();
@@ -6252,7 +6297,7 @@ async function resolveDestinationAddress(ocrData, primaryAddress) {
 // プレビューも確認モーダルも省略し、撮影→裏でOCR+住所検索+ピン追加を自動実行。
 // 朝の積み込みで伝票を次々読み込む用途。処理は撮影と並行して進む。
 let batchPhotoMode = false;
-const batchStats = { pending: 0, added: 0, skipped: 0, failed: 0, review: 0 };
+const batchStats = { pending: 0, added: 0, skipped: 0, failed: 0, review: 0, stacked: 0 };
 
 function updateBatchPhotoUi() {
   const btn = $('btn-add-photo');
@@ -6277,9 +6322,11 @@ function toggleBatchPhotoMode() {
     batchStats.skipped = 0;
     batchStats.failed = 0;
     batchStats.review = 0;
+    batchStats.stacked = 0;
     showToast('連続撮影モードON — 「📸 連写」で伝票を次々撮影してください');
   } else {
     const parts = [`追加${batchStats.added}件`];
+    if (batchStats.stacked) parts.push(`📦複数個口+${batchStats.stacked}`);
     if (batchStats.review) parts.push(`❗要確認${batchStats.review}件`);
     if (batchStats.skipped) parts.push(`重複${batchStats.skipped}件`);
     if (batchStats.failed) parts.push(`失敗${batchStats.failed}件`);
@@ -6308,11 +6355,20 @@ async function processBatchPhoto(file) {
     const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address);
     const address = resolved.address;
 
-    // 重複は自動スキップ (連写中に確認ダイアログは出さない)
+    // 同じ住所 = 複数個口。未完了の既存ピンの個数を自動で増やす
+    // (連写中に確認ダイアログは出さない。完了済みしか無ければ新規ピン)
     const canon = canonicalAddressForCache(address);
-    if (canon && deliveries.some(d => canonicalAddressForCache(d.address || '') === canon)) {
-      batchStats.skipped++;
-      showToast(`重複スキップ: ${address}`);
+    const dupActive = canon
+      ? deliveries.find(d => !d.completed && canonicalAddressForCache(d.address || '') === canon)
+      : null;
+    if (dupActive) {
+      dupActive.packageCount = (Number(dupActive.packageCount) || 1) + 1;
+      dupActive.updatedAt = Date.now();
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      batchStats.stacked++;
+      showToast(`📦 複数個口: ${address} (${dupActive.packageCount}個)`);
       return;
     }
 
@@ -6332,6 +6388,7 @@ async function processBatchPhoto(file) {
       formatted: result.formatted,
       needsReview: reviewReasons.length > 0,
       reviewReasons,
+      packageCount: 1,
       completed: false,
       completedAt: null,
       deliveryCourse: appMode === 'delivery' ? getSelectedDeliveryCourse() : '',
@@ -6414,7 +6471,8 @@ function copyListToClipboard() {
   if (deliveries.length === 0) { showToast('配送先がありません', true); return; }
   const text = deliveries.map((d, i) => {
     const mark = d.completed ? '✓' : '○';
-    return `${mark} ${i + 1}. ${d.address}${d.note ? ' / ' + d.note : ''}`;
+    const pkg = (Number(d.packageCount) || 1) > 1 ? ` 📦${d.packageCount}個口` : '';
+    return `${mark} ${i + 1}. ${d.address}${pkg}${d.note ? ' / ' + d.note : ''}`;
   }).join('\n');
   navigator.clipboard.writeText(text).then(
     () => showToast('リストをコピーしました'),
