@@ -131,6 +131,17 @@
     border-color: var(--spot-done-border);
     opacity: 0.6;
   }
+  /* 要確認ピン: 位置が怪しい可能性 — 赤リングで目立たせる */
+  .delivery-marker.review .delivery-pin .pin-shape {
+    box-shadow: 0 0 0 3px #e11d48, 0 2px 6px rgba(0,0,0,0.35);
+  }
+  .delivery-item.review { border-left: 4px solid #e11d48; }
+  .review-badge {
+    display: inline-block;
+    color: #e11d48;
+    font-weight: 700;
+    font-size: 11px;
+  }
   .delivery-pin .pin-num {
     position: absolute;
     left: 0; top: 8px;
@@ -1561,6 +1572,10 @@
 <div class="modal-bg" id="modal-edit">
   <div class="modal">
     <h3>配送先を編集</h3>
+    <div id="edit-review-banner" style="display:none;background:#fef2f2;border:1px solid #e11d48;border-radius:8px;padding:8px 10px;margin:4px 0 8px;color:#be123c;font-size:12px;font-weight:700;"></div>
+    <div id="edit-photo-wrap" style="display:none;margin:4px 0 8px;">
+      <img id="edit-photo" alt="伝票写真" style="max-width:100%;max-height:200px;border-radius:8px;display:block;margin:0 auto;">
+    </div>
     <label>住所</label>
     <input type="text" id="edit-address">
     <button class="inline-action" id="btn-edit-geocode" type="button">住所再検索</button>
@@ -1611,7 +1626,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.39';
+const APP_VERSION = 'v2026.06.24-test.40';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1808,6 +1823,8 @@ let pendingPhotoUrl = '';
 let pendingPhotoRotation = 0;
 let pendingOcrJob = null;      // { rotation, controller, promise } — プレビュー表示中に先行実行するOCR
 let pendingOcrRestartTimer = null;
+let lastKnownGps = null;       // { lat, lng } — 要確認ピン判定に使う最新GPS
+const reviewPhotoUrls = new Map(); // 要確認ピンの伝票写真 (id -> objectURL, セッション中のみ)
 
 let gpsWatchId = null;
 let gpsActive = false;
@@ -4278,6 +4295,7 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   wrapper.classList.add('delivery-marker');
   wrapper.classList.toggle('done', !!d.completed);
   wrapper.classList.toggle('approx', !!d.approx);
+  wrapper.classList.toggle('review', !!d.needsReview && !d.completed);
   wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
   const timeWindow = timeWindowForDelivery(d);
   wrapper.classList.toggle('time-window', !!timeWindow);
@@ -4289,7 +4307,7 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   const labelText = buildLabelText(d, num, modeKey);
   const overlapCount = overlap && overlap.index === 0 ? overlap.count : 0;
   const timeWindowSig = timeWindow ? `${timeWindow.id}:${timeWindow.color}` : '';
-  const contentSig = `${num}|${d.approx ? 1 : 0}|${labelText}|${overlapCount}|${timeWindowSig}`;
+  const contentSig = `${num}|${d.approx ? 1 : 0}|${d.needsReview && !d.completed ? 1 : 0}|${labelText}|${overlapCount}|${timeWindowSig}`;
   if (wrapper.dataset.contentSig === contentSig) return;
   wrapper.dataset.contentSig = contentSig;
 
@@ -4952,6 +4970,54 @@ function setCachedGeocode(key, result) {
   persistGeocodeCache();
 }
 
+// ピン位置の自動検証。読み間違い住所をGoogleが「別の実在住所」として
+// 自信満々に解決してしまうケースを、登録直後に機械的に検出する。
+// 戻り値: 怪しい理由の配列 (空なら問題なし)
+function validateDeliveryPlacement(address, result) {
+  const reasons = [];
+  if (result.approx) reasons.push('概算位置');
+
+  // 現在地から極端に遠い (配達エリア外 = ほぼ確実に誤り)
+  if (lastKnownGps && Number.isFinite(result.lat) && Number.isFinite(result.lng)) {
+    const dKm = distanceMeters(lastKnownGps, result) / 1000;
+    if (dKm > 10) reasons.push(`現在地から約${Math.round(dKm)}km`);
+  }
+
+  // 既存ピン群の中心から極端に遠い
+  const others = deliveries.filter(d => Number.isFinite(d.lat) && Number.isFinite(d.lng));
+  if (others.length >= 3) {
+    const lats = others.map(d => d.lat).sort((a, b) => a - b);
+    const lngs = others.map(d => d.lng).sort((a, b) => a - b);
+    const median = { lat: lats[Math.floor(lats.length / 2)], lng: lngs[Math.floor(lngs.length / 2)] };
+    const dKm = distanceMeters(median, result) / 1000;
+    if (dKm > 10) reasons.push(`他のピン群から約${Math.round(dKm)}km`);
+  }
+
+  // 住所の往復照合: 入力の番地・町名が検索結果の正式住所に含まれるか
+  const fmt = String(result.formatted || '').normalize('NFKC').replace(/[‐‑‒–—―−ー]/g, '-');
+  if (fmt) {
+    const input = String(address || '').normalize('NFKC')
+      .replace(/[‐‑‒–—―−ー]/g, '-')
+      .replace(/〒?\s*\d{3}-?\d{4}/, '')
+      .trim();
+    const banchiMatch = input.match(/\d+(?:-\d+)*\s*$/);
+    if (banchiMatch) {
+      const inputNums = banchiMatch[0].trim().split('-');
+      const fmtNums = (fmt.match(/\d+/g) || []).map(n => String(Number(n)));
+      const missing = inputNums.filter(n => !fmtNums.includes(String(Number(n))));
+      if (missing.length) reasons.push(`番地「${banchiMatch[0].trim()}」が検索結果と不一致`);
+    }
+    const townMatch = input.match(/([一-鿿][一-鿿ぁ-ゖァ-ヺ]{1,5})\s*\d/);
+    if (townMatch) {
+      const town = townMatch[1].slice(-3);
+      if (town.length >= 2 && !fmt.includes(town) && !fmt.includes(townMatch[1])) {
+        reasons.push(`町名「${townMatch[1]}」が検索結果と不一致`);
+      }
+    }
+  }
+  return reasons;
+}
+
 async function addDelivery({ address, note, deliveryCourse }) {
   if (!address) { showToast('住所が空です', true); return; }
 
@@ -4975,6 +5041,7 @@ async function insertDelivery({ address, note, deliveryCourse }) {
   hideLoading();
   if (!result) { showToast('住所が見つかりませんでした', true); return; }
 
+  const reviewReasons = validateDeliveryPlacement(address, result);
   const d = {
     id: uid(),
     address,
@@ -4983,6 +5050,8 @@ async function insertDelivery({ address, note, deliveryCourse }) {
     lng: result.lng,
     approx: result.approx,
     formatted: result.formatted,
+    needsReview: reviewReasons.length > 0,
+    reviewReasons,
     completed: false,
     completedAt: null,
     deliveryCourse: deliveryCourse || (appMode === 'delivery' ? getSelectedDeliveryCourse() : ''),
@@ -4995,7 +5064,11 @@ async function insertDelivery({ address, note, deliveryCourse }) {
   renderMarkers();
   renderList();
   map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
-  showToast(result.sharedCache ? '保存済み位置から追加しました' : (result.approx ? '⚠ 概算位置で追加しました' : '配送先を追加しました'));
+  if (d.needsReview) {
+    showToast(`❗要確認: ${reviewReasons.join(' / ')} — ピン位置を確認してください`, true);
+  } else {
+    showToast(result.sharedCache ? '保存済み位置から追加しました' : '配送先を追加しました');
+  }
 }
 
 function regularPickupDisplayAddress(address) {
@@ -5109,6 +5182,7 @@ function renderList() {
     const cls = 'delivery-item'
       + (d.completed ? ' done' : '')
       + (d.approx ? ' approx' : '')
+      + (d.needsReview && !d.completed ? ' review' : '')
       + (isSpotPickupDelivery(d) ? ' spot' : '')
       + (d.progressSyncFailed ? ' sync-pending' : '')
       + (d.id === activeDeliveryId ? ' selected' : '');
@@ -5127,6 +5201,7 @@ function renderList() {
             : `<div class="addr">${escapeHtml(d.address)}</div>
                ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}`}
           ${timeWindowBadge}
+          ${d.needsReview && !d.completed ? `<div><span class="review-badge">❗要確認: ${escapeHtml((d.reviewReasons || [])[0] || 'ピン位置を確認')}</span></div>` : ''}
         ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
           ${d.progressSyncFailed ? `<div class="note">未同期: 通信回復後に自動再送します</div>` : ''}
         </div>
@@ -5279,6 +5354,22 @@ function openEdit(id) {
   editingItemId = id;
   const d = deliveries.find(x => x.id === id);
   if (!d) return;
+  // 要確認バナーと伝票写真 (連写モードで要確認になったものは写真と見比べられる)
+  const banner = $('edit-review-banner');
+  if (banner) {
+    if (d.needsReview && !d.completed) {
+      banner.textContent = `❗要確認: ${(d.reviewReasons || []).join(' / ') || 'ピン位置を確認してください'}`;
+      banner.style.display = '';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+  const photoWrap = $('edit-photo-wrap');
+  const photoUrl = reviewPhotoUrls.get(id);
+  if (photoWrap) {
+    photoWrap.style.display = photoUrl ? '' : 'none';
+    if (photoUrl) $('edit-photo').src = photoUrl;
+  }
   $('edit-address').value = d.address;
   $('edit-note').value = d.note || '';
   populateTimeWindowSelect($('edit-time-window'), d.timeWindowId || '');
@@ -5356,6 +5447,9 @@ async function reGeocodeEditedItem() {
   d.lng = result.lng;
   d.approx = result.approx;
   d.formatted = result.formatted;
+  d.needsReview = false; // ユーザーが再検索して確認した
+  d.reviewReasons = [];
+  d.updatedAt = Date.now();
 
   saveDeliveries();
   renderMarkers();
@@ -5404,6 +5498,8 @@ async function saveEditedItem() {
   };
   d.note = newNote;
   d.timeWindowId = newTimeWindowId;
+  d.needsReview = false; // ユーザーが内容を確認して保存した
+  d.reviewReasons = [];
   d.updatedAt = Date.now();
 
   let locationChanged = false;
@@ -6092,7 +6188,7 @@ async function readPendingPhoto() {
 // プレビューも確認モーダルも省略し、撮影→裏でOCR+住所検索+ピン追加を自動実行。
 // 朝の積み込みで伝票を次々読み込む用途。処理は撮影と並行して進む。
 let batchPhotoMode = false;
-const batchStats = { pending: 0, added: 0, skipped: 0, failed: 0 };
+const batchStats = { pending: 0, added: 0, skipped: 0, failed: 0, review: 0 };
 
 function updateBatchPhotoUi() {
   const btn = $('btn-add-photo');
@@ -6116,12 +6212,17 @@ function toggleBatchPhotoMode() {
     batchStats.added = 0;
     batchStats.skipped = 0;
     batchStats.failed = 0;
+    batchStats.review = 0;
     showToast('連続撮影モードON — 「📸 連写」で伝票を次々撮影してください');
   } else {
     const parts = [`追加${batchStats.added}件`];
+    if (batchStats.review) parts.push(`❗要確認${batchStats.review}件`);
     if (batchStats.skipped) parts.push(`重複${batchStats.skipped}件`);
     if (batchStats.failed) parts.push(`失敗${batchStats.failed}件`);
-    showToast(`連続撮影終了: ${parts.join(' / ')}${batchStats.failed ? ' — 失敗分は通常モードで撮り直してください' : ''}`, batchStats.failed > 0);
+    const hints = [];
+    if (batchStats.review) hints.push('❗印のピンを編集画面で確認してください');
+    if (batchStats.failed) hints.push('失敗分は撮り直してください');
+    showToast(`連続撮影終了: ${parts.join(' / ')}${hints.length ? ' — ' + hints.join(' / ') : ''}`, (batchStats.failed + batchStats.review) > 0);
   }
   updateBatchPhotoUi();
 }
@@ -6152,14 +6253,19 @@ async function processBatchPhoto(file) {
     const result = await geocodeAddress(address);
     if (!result) throw new Error('住所が見つかりません: ' + address);
 
+    const reviewReasons = validateDeliveryPlacement(address, result);
+    if (String(data.confidence || '').toLowerCase() === 'low') reviewReasons.push('読み取り自信度低');
+    const newId = uid();
     deliveries.push({
-      id: uid(),
+      id: newId,
       address,
       note,
       lat: result.lat,
       lng: result.lng,
       approx: result.approx,
       formatted: result.formatted,
+      needsReview: reviewReasons.length > 0,
+      reviewReasons,
       completed: false,
       completedAt: null,
       deliveryCourse: appMode === 'delivery' ? getSelectedDeliveryCourse() : '',
@@ -6169,8 +6275,15 @@ async function processBatchPhoto(file) {
     saveDeliveries();
     renderMarkers();
     renderList();
-    batchStats.added++;
-    showToast(`✅ 追加: ${address}${result.approx ? ' (⚠概算位置)' : ''}${String(data.confidence || '').toLowerCase() === 'low' ? ' (⚠要確認)' : ''}${data.autoRotated ? ' (向き自動補正)' : ''}`);
+    if (reviewReasons.length > 0) {
+      // 要確認: 伝票写真を保持して、編集画面で見比べられるようにする
+      try { reviewPhotoUrls.set(newId, URL.createObjectURL(file)); } catch (e) {}
+      batchStats.review++;
+      showToast(`❗要確認: ${address} (${reviewReasons[0]})`, true);
+    } else {
+      batchStats.added++;
+      showToast(`✅ 追加: ${address}${data.autoRotated ? ' (向き自動補正)' : ''}`);
+    }
   } catch (e) {
     batchStats.failed++;
     showToast(`❌ 読み取り失敗 — その伝票を撮り直してください (${e.message})`, true);
@@ -8059,6 +8172,7 @@ function updateUserLocation(pos, moveMap = false) {
   }
 
   updateGpsStatus(pos);
+  lastKnownGps = { lat: latitude, lng: longitude };
   banchiSchedulePrefetch(longitude, latitude);
 
   const startupCenterAllowed = gpsInitialCenterStartedAt &&
