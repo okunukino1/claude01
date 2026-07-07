@@ -1456,7 +1456,7 @@
   <div class="modal">
     <h3>時間指定設定</h3>
     <div class="modal-help">
-      午前指定・14時〜16時など、荷物の備考や住所に含まれる文字から自動判定します。ここで時間帯名・判定キーワード・ピン色を変更できます。
+      時間帯の表示名とピン色を設定します。各配送先への時間指定は、詳細(編集)画面から手動で選択します。
     </div>
     <div id="time-window-settings-list" class="time-window-settings-list"></div>
     <button class="inline-action" id="btn-time-window-add" type="button">+ 時間帯を追加</button>
@@ -1653,7 +1653,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.47';
+const APP_VERSION = 'v2026.06.24-test.48';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2815,39 +2815,20 @@ function normalizeTimeWindowText(text) {
     .toLowerCase();
 }
 
-function timeWindowSearchText(d) {
-  const parts = [d && d.address, d && d.note, d && d.formatted, d && d.company, d && d.name, d && d.pickupTime, d && d.timeText];
-  if (isPickupBackedDelivery(d)) {
-    const display = pickupListDisplay(d);
-    if (display) parts.push(display.company, display.detail);
-  }
-  return parts.filter(Boolean).join(' ');
-}
-
-function timeWindowMatches(setting, text) {
-  const haystack = normalizeTimeWindowText(text);
-  return timeWindowKeywords(setting).some(keyword => {
-    const needle = normalizeTimeWindowText(keyword);
-    return needle && haystack.includes(needle);
-  });
-}
-
+// 時間指定は手動設定のみ (キーワードによる自動判定は誤作動が多く廃止した)
 function timeWindowForDelivery(d) {
   if (!d) return null;
-  const settings = loadTimeWindowSettings();
   const override = normalizeTimeWindowOverride(d.timeWindowId);
-  if (override === 'none') return null;
-  if (override) return settings.find(item => item.id === override) || null;
-  const searchText = timeWindowSearchText(d);
-  return settings.find(item => timeWindowMatches(item, searchText)) || null;
+  if (!override || override === 'none') return null;
+  const settings = loadTimeWindowSettings();
+  return settings.find(item => item.id === override) || null;
 }
 
 function timeWindowSelectOptions(selectedId) {
   const selected = normalizeTimeWindowOverride(selectedId);
   const settings = loadTimeWindowSettings();
   const options = [
-    `<option value=""${selected === '' ? ' selected' : ''}>自動判定</option>`,
-    `<option value="none"${selected === 'none' ? ' selected' : ''}>指定なし</option>`
+    `<option value=""${(selected === '' || selected === 'none') ? ' selected' : ''}>指定なし</option>`
   ];
   settings.forEach(item => {
     options.push(`<option value="${escapeHtml(item.id)}"${selected === item.id ? ' selected' : ''}>${escapeHtml(item.label)}</option>`);
@@ -2880,8 +2861,6 @@ function renderTimeWindowSettings() {
           <input type="color" data-field="color" value="${escapeHtml(sanitizeTimeWindowColor(item.color))}">
         </div>
       </div>
-      <label>判定キーワード（カンマ区切り）</label>
-      <textarea data-field="keywords" placeholder="例: 14時〜16時,14-16,14:00-16:00">${escapeHtml(item.keywords || '')}</textarea>
     </div>
   `).join('');
 }
