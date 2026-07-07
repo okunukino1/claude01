@@ -1626,7 +1626,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.41';
+const APP_VERSION = 'v2026.06.24-test.42';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1666,7 +1666,7 @@ const SPOT_COMPLETION_PUSH_API = '../api/push_spot_completed.php';
 const SPOT_PICKUP_PREFETCH_API = '../api/spot_pickups.php';
 const SHARED_GEOCODE_CACHE_RETRY_MS = 10 * 60 * 1000;
 const PICKUP_GEOCODE_CONCURRENCY = 3;
-const PHOTO_OCR_MAX_SIZE = 1120;
+const PHOTO_OCR_MAX_SIZE = 1280; // 文字欠け・かすれに強くするため少し高解像度に
 const PHOTO_OCR_QUALITY = 0.8;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
@@ -4996,8 +4996,22 @@ function validateDeliveryPlacement(address, result) {
   // 住所の往復照合: 入力の番地・町名が検索結果の正式住所に含まれるか
   const fmt = String(result.formatted || '').normalize('NFKC').replace(/[‐‑‒–—―−ー]/g, '-');
   if (fmt) {
-    const input = String(address || '').normalize('NFKC')
-      .replace(/[‐‑‒–—―−ー]/g, '-')
+    const inputRaw = String(address || '').normalize('NFKC').replace(/[‐‑‒–—―−ー]/g, '-');
+
+    // 郵便番号の照合 (〒マーカー付きのみ対象 — 番地との誤マッチを防ぐ)
+    // 東日本橋(〒103-0004)を日本橋(〒103-0027)と誤読するような
+    // 「近所の実在住所」型の誤りを確実に検出する
+    const zipIn = inputRaw.match(/〒\s*(\d{3})-?(\d{4})/);
+    const zipFmt = fmt.match(/〒\s*(\d{3})-?(\d{4})/);
+    if (zipIn && zipFmt) {
+      const zin = zipIn[1] + zipIn[2];
+      const zf = zipFmt[1] + zipFmt[2];
+      if (zin !== zf) {
+        reasons.push(`郵便番号不一致(伝票〒${zipIn[1]}-${zipIn[2]}/検索結果〒${zipFmt[1]}-${zipFmt[2]})`);
+      }
+    }
+
+    const input = inputRaw
       .replace(/〒?\s*\d{3}-?\d{4}/, '')
       .trim();
     const banchiMatch = input.match(/\d+(?:-\d+)*\s*$/);
@@ -6090,7 +6104,10 @@ function closePhotoPreview() {
 function normalizeOcrField(value) {
   return String(value || '')
     .normalize('NFKC')
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u30fc\uff70]/g, '-')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
+    // \u30ab\u30bf\u30ab\u30ca\u9577\u97f3\u300c\u30fc\u300d\u306f\u6570\u5b57\u306b\u96a3\u63a5\u3059\u308b\u5834\u5408\u306e\u307f\u30c0\u30c3\u30b7\u30e5\u6271\u3044
+    // (\u5efa\u7269\u540d\u300c\u30e9\u30b0\u30bc\u30b3\u30fc\u30c8\u300d\u7b49\u306e\u9577\u97f3\u3092\u58ca\u3055\u306a\u3044)
+    .replace(/(?<=\d)\u30fc|\u30fc(?=\d)/g, '-')
     .replace(/[\t\r\n]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -6114,7 +6131,13 @@ function splitOcrAddressFields(data) {
   const sourceNote = normalizeOcrField(source.note || source.building || '');
   if (sourceNote) noteParts.push(sourceNote);
 
-  address = address.replace(/\u3012?\s*(\d{3})\s*-?\s*(\d{4})/, () => '').trim();
+  // \u90f5\u4fbf\u756a\u53f7\u306f\u6368\u3066\u305a\u306b\u4fdd\u6301\u3059\u308b\u3002\u6570\u5b57\u306f\u304b\u3059\u308c\u305f\u6f22\u5b57\u3088\u308a\u8aad\u307f\u53d6\u308a\u304c\u78ba\u5b9f\u3067\u3001
+  // \u300c\u6771\u65e5\u672c\u6a4b\u306e\u6771\u304c\u6b20\u3051\u3066\u65e5\u672c\u6a4b\u300d\u306e\u3088\u3046\u306a\u753a\u540d\u8aa4\u8aad\u3092\u3012\u3067\u88dc\u6b63\u30fb\u691c\u51fa\u3067\u304d\u308b\u3002
+  let postalCode = '';
+  address = address.replace(/\u3012?\s*(\d{3})\s*-?\s*(\d{4})/, (m, a, b) => {
+    postalCode = `${a}-${b}`;
+    return '';
+  }).trim();
   address = normalizeOcrAddressNumbering(address);
 
   const prefecture = '(?:\\u6771\\u4eac\\u90fd|\\u5317\\u6d77\\u9053|\\u5927\\u962a\\u5e9c|\\u4eac\\u90fd\\u5e9c|[\\u4e00-\\u9fff]{2,3}\\u770c)';
@@ -6139,8 +6162,10 @@ function splitOcrAddressFields(data) {
     .join('\n');
 
   return {
-    address: address.trim(),
-    note
+    // 〒付きで返す: 住所検索でGoogleが郵便番号を重視するため精度が上がる
+    address: (postalCode ? `〒${postalCode} ` : '') + address.trim(),
+    note,
+    postalCode
   };
 }
 
