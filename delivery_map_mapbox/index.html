@@ -7,9 +7,13 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#ff5722">
 <title>RYS配送マップ</title>
-<link rel="manifest" href="manifest.webmanifest?v=20260622-1">
-<link rel="icon" href="app-icon-192.png?v=20260622-1" type="image/png">
-<link rel="apple-touch-icon" href="app-icon-512.png?v=20260622-1">
+<link rel="manifest" href="manifest.webmanifest?v=20260707-1">
+<link rel="icon" href="app-icon-192.png?v=20260707-1" type="image/png">
+<link rel="apple-touch-icon" href="app-icon-512.png?v=20260707-1">
+<link rel="preconnect" href="https://api.mapbox.com">
+<link rel="preconnect" href="https://api.mapbox.com" crossorigin>
+<link rel="preconnect" href="https://japanese-addresses-v2.geoloniamaps.com" crossorigin>
+<link rel="preload" href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js" as="script">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
 <style>
   :root {
@@ -127,6 +131,39 @@
     border-color: var(--spot-done-border);
     opacity: 0.6;
   }
+  /* 要確認ピン: 位置が怪しい可能性 — 赤リングで目立たせる */
+  .delivery-marker.review .delivery-pin .pin-shape {
+    box-shadow: 0 0 0 3px #e11d48, 0 2px 6px rgba(0,0,0,0.35);
+  }
+  .delivery-item.review { border-left: 4px solid #e11d48; }
+  .review-badge {
+    display: inline-block;
+    color: #e11d48;
+    font-weight: 700;
+    font-size: 11px;
+  }
+  /* 複数個口バッジ: ピン右上の「×2」 */
+  .delivery-pin .package-badge {
+    position: absolute;
+    top: -9px;
+    right: -13px;
+    background: #7c3aed;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.4;
+    padding: 1px 5px;
+    border-radius: 9px;
+    border: 1.5px solid #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    z-index: 3;
+  }
+  .package-badge-list {
+    display: inline-block;
+    color: #7c3aed;
+    font-weight: 700;
+    font-size: 11px;
+  }
   .delivery-pin .pin-num {
     position: absolute;
     left: 0; top: 8px;
@@ -226,6 +263,16 @@
     line-height: 1.3;
   }
   .map-control .gps-status.show { display: block; }
+  .map-control .zoom-badge {
+    background: rgba(13,17,23,0.85);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 4px;
+    line-height: 1.3;
+    text-align: right;
+  }
 
   /* ===== Left-side map controls (display mode, neighborhood toggle) ===== */
   .map-control-left {
@@ -233,25 +280,57 @@
     left: calc(8px + env(safe-area-inset-left));
     top: calc(58px + env(safe-area-inset-top));
     z-index: 30;
-    display: flex; flex-direction: column; gap: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
     align-items: flex-start;
   }
-  .map-control-left button {
-    background: white;
+  .course-selector-row {
+    display: flex;
+  }
+  .course-selector-row button {
+    background: rgba(255,255,255,0.96);
     color: var(--ink);
     border: 2px solid var(--ink);
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 8px 12px;
-    font-size: 12px; font-weight: 700;
+    font-size: 12px;
+    font-weight: 800;
     cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     min-height: 36px;
+    min-width: 92px;
     white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
   }
-  .map-control-left button.on {
+  .course-selector-row button.on {
     background: var(--accent);
     color: white;
   }
+  .course-selector-row button::after {
+    content: " \25be";
+    font-size: 10px;
+  }
+  .course-choice-list {
+    display: grid;
+    gap: 8px;
+    margin: 8px 0 12px;
+  }
+  .course-choice-list button {
+    width: 100%;
+    min-height: 48px;
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    background: white;
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 800;
+    text-align: center;
+  }
+  .course-choice-list button.on {
+    background: var(--accent);
+    color: white;
+  }
+
 
   /* ===== Placement mode ===== */
   body.placing-mode #map {
@@ -848,7 +927,7 @@
     color: white;
   }
   .text-size-choice.size-small { font-size: calc(12px * var(--text-scale)); }
-  .text-size-choice.size-large { font-size: calc(17px * var(--text-scale)); }
+  .text-size-choice.size-large { font-size: calc(16px * var(--text-scale)); }
   .app-version-info {
     margin: 0 0 10px;
     padding: 8px 10px;
@@ -1085,13 +1164,99 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-overlay .msg { font-size: 14px; font-weight: 600; }
 
+  .manual-address-builder {
+    margin: 0 0 12px;
+    padding: 10px;
+    border: 1px solid #d8d0b7;
+    border-radius: 8px;
+    background: var(--paper-soft);
+  }
+  .manual-address-builder h4 {
+    margin: 0 0 8px;
+    font-size: calc(14px * var(--text-scale));
+  }
+  .manual-address-builder .builder-grid {
+    display: grid;
+    grid-template-columns: minmax(74px, 1.45fr) repeat(3, minmax(48px, 0.75fr));
+    gap: 6px;
+  }
+    .manual-address-builder.no-chome .builder-grid {
+    grid-template-columns: minmax(94px, 1.45fr) repeat(2, minmax(64px, 0.75fr));
+  }
+.manual-address-builder label { margin-top: 0; }
+  .manual-address-wheel-caption {
+    display: block;
+    margin: 0 0 4px;
+    font-size: calc(12px * var(--text-scale));
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .manual-address-wheel {
+    height: 132px;
+    padding: 44px 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-snap-type: y mandatory;
+    border: 1px solid #c9c2ad;
+    border-radius: 8px;
+    background: #fff;
+    -webkit-overflow-scrolling: touch;
+  }
+  .manual-address-wheel:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .manual-address-wheel-option {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    scroll-snap-align: center;
+    font-size: calc(14px * var(--text-scale));
+    font-weight: 700;
+    color: #6b7280;
+    opacity: 0.58;
+    text-align: center;
+    border-top: 1px solid #f2eee3;
+    user-select: none;
+  }
+  .manual-address-wheel-option.is-selected {
+    color: var(--ink);
+    background: #fff3e8;
+    font-size: calc(17px * var(--text-scale));
+    opacity: 1;
+  }
+  .manual-address-wheel-option:first-child { border-top: 0; }
+  .manual-address-wheel-guide {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: calc(12px * var(--text-scale));
+  }
+  .manual-address-direct-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .manual-address-direct-field input {
+    width: 100%;
+    height: 132px;
+    padding: 8px 6px;
+    border: 1px solid #c9c2ad;
+    border-radius: 8px;
+    font-size: calc(22px * var(--text-scale));
+    font-weight: 700;
+    text-align: center;
+    background: #fff;
+  }
   .hidden-input { display: none; }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="app-version" id="app-version-label">v2026.06.10-test.4</span></h1>
+  <h1>RYS配送マップ<span class="app-version" id="app-version-label">v2026.07.07-1</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1101,11 +1266,12 @@
   <button id="btn-gps" type="button">◎ 現在地</button>
   <button id="btn-north" type="button" style="display:none">🧭 北に戻す</button>
   <div class="gps-status" id="gps-status"></div>
+  <div class="zoom-badge" id="zoom-badge"></div>
 </div>
 
-<div class="map-control-left">
-  <button id="btn-app-mode" type="button">配送</button>
-  <button id="btn-label-mode" type="button">表示: 番地+建物</button>
+<div class="map-control-left" aria-label="コース選択">
+  <div class="course-selector-row" id="course-area-row" aria-label="エリア"></div>
+  <div class="course-selector-row" id="course-mode-row" aria-label="配送・集荷"></div>
 </div>
 
 <div class="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
@@ -1138,10 +1304,12 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.12-test.3</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.07.07-1</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
+      <button id="menu-label-mode" type="button">🏷 表示: 番地+建物</button>
+      <button id="menu-batch-photo" type="button">📸 連続撮影モード: OFF</button>
       <button id="menu-import-pickup" type="button">📦 集荷コースを選択</button>
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
@@ -1157,8 +1325,9 @@
       <button id="menu-cache-admin" type="button">🗄 DBキャッシュ管理</button>
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
-      <button id="menu-toggle-gsi" type="button">🗺 番地ライン(地理院) ON/OFF</button>
+      <button id="menu-toggle-gsi" type="button">📐 番地境界線(法務省) ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
+      <button id="menu-banchi-debug" type="button">🩺 番地表示の状態</button>
       <button id="menu-time-windows" type="button">⏰ 時間指定設定</button>
       <button id="menu-text-size" type="button">Aa 文字サイズ</button>
       <button id="menu-notifications" type="button">🔔 通知設定</button>
@@ -1167,6 +1336,19 @@
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-banchi-debug">
+  <div class="modal">
+    <h3>番地表示の状態</h3>
+    <pre id="banchi-debug-text" style="white-space:pre-wrap;font-size:12px;line-height:1.6;background:#f1f5f9;border-radius:8px;padding:10px;overflow-x:auto;margin:8px 0;max-height:50vh;overflow-y:auto;"></pre>
+    <div class="modal-actions">
+      <button class="primary" type="button" id="banchi-debug-survey">🔍 筆界データ調査</button>
+      <button class="primary" type="button" id="banchi-debug-goto" style="display:none">📍 データ地点へ移動</button>
+      <button class="primary" type="button" id="banchi-debug-copy">📋 コピー</button>
+      <button class="cancel" type="button" data-close="modal-banchi-debug">閉じる</button>
     </div>
   </div>
 </div>
@@ -1325,9 +1507,19 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-course-choice">
+  <div class="modal">
+    <h3 id="course-choice-title">コースを選択</h3>
+    <div class="course-choice-list" id="course-choice-list"></div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-course-choice">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-pickup-import">
   <div class="modal">
-    <h3>モード・集荷コースを選択</h3>
+    <h3>モード・コースを選択</h3>
     <label>モード / コース</label>
     <select id="pickup-sheet"></select>
     <label class="checkbox-line" style="display:none">
@@ -1335,7 +1527,7 @@
       現在の配送リストを置き換える
     </label>
     <div class="modal-help">
-      配送モード、または集荷コースを選んで開きます。集荷コースを選ぶと定期集荷とスポット集荷を読み込みます。
+      配送コース、または集荷コースを選んで開きます。小舟町店・浜町店の配送コースでは手入力の住所選択を使えます。
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-pickup-import">キャンセル</button>
@@ -1347,10 +1539,34 @@
 <div class="modal-bg" id="modal-add">
   <div class="modal">
     <h3>配送先を追加</h3>
+    <div class="manual-address-builder" id="manual-address-builder" hidden>
+      <h4 id="manual-address-builder-title">住所選択</h4>
+      <div class="builder-grid">
+        <div>
+          <span class="manual-address-wheel-caption">町名</span>
+          <div class="manual-address-wheel" id="manual-town-wheel" data-field="town" tabindex="0" role="listbox" aria-label="町名"></div>
+        </div>
+        <div id="manual-chome-wrap">
+          <span class="manual-address-wheel-caption">丁目</span>
+          <div class="manual-address-wheel" id="manual-chome-wheel" data-field="chome" tabindex="0" role="listbox" aria-label="丁目"></div>
+        </div>
+        <label class="manual-address-direct-field">
+          <span class="manual-address-wheel-caption">番地</span>
+          <input type="tel" inputmode="numeric" pattern="[0-9]*" id="manual-ban-input" autocomplete="off" enterkeyhint="next" aria-label="番地" title="番地">
+        </label>
+        <label class="manual-address-direct-field">
+          <span class="manual-address-wheel-caption">号</span>
+          <input type="tel" inputmode="numeric" pattern="[0-9]*" id="manual-go-input" autocomplete="off" enterkeyhint="done" aria-label="号" title="号" placeholder="なし">
+        </label>
+      </div>
+    </div>
     <label>住所 (必須)</label>
     <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
     <label>備考 (建物名・部屋番号など)</label>
     <textarea id="add-note" placeholder="○○ビル 5F"></textarea>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;">
+      <input type="checkbox" id="add-continuous" style="width:auto;margin:0;"> 連続入力（追加後も開いたまま）
+    </label>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-add">キャンセル</button>
       <button class="primary" id="btn-add-confirm" type="button">追加</button>
@@ -1381,6 +1597,10 @@
 <div class="modal-bg" id="modal-edit">
   <div class="modal">
     <h3>配送先を編集</h3>
+    <div id="edit-review-banner" style="display:none;background:#fef2f2;border:1px solid #e11d48;border-radius:8px;padding:8px 10px;margin:4px 0 8px;color:#be123c;font-size:12px;font-weight:700;"></div>
+    <div id="edit-photo-wrap" style="display:none;margin:4px 0 8px;">
+      <img id="edit-photo" alt="伝票写真" style="max-width:100%;max-height:200px;border-radius:8px;display:block;margin:0 auto;">
+    </div>
     <label>住所</label>
     <input type="text" id="edit-address">
     <button class="inline-action" id="btn-edit-geocode" type="button">住所再検索</button>
@@ -1388,6 +1608,8 @@
     <textarea id="edit-note"></textarea>
     <label>時間指定</label>
     <select id="edit-time-window"></select>
+    <label>荷物の個数 (複数個口)</label>
+    <input type="number" id="edit-package-count" min="1" step="1" inputmode="numeric">
     <div class="modal-actions">
       <button class="done" id="btn-edit-done" type="button">完了</button>
       <button class="go" id="btn-edit-navi" type="button">ナビ</button>
@@ -1431,8 +1653,9 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.22-2';
+const APP_VERSION = 'v2026.07.07-1';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
+const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-pickup-regular-cache-v1:';
 const APP_MODE_KEY = 'rys-mapbox-app-mode';
@@ -1442,13 +1665,16 @@ const GSI_OVERLAY_KEY = 'rys-mapbox-gsi-overlay-visible';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-addr-visible';
-const ADDR_DATA_KEY = 'rys-mapbox-addr-data-v1';
+const LAST_VIEW_KEY = 'rys-mapbox-last-view-v1';
+const BANCHI_CATALOG_KEY = 'rys-mapbox-banchi-catalog-v1';
+const BANCHI_CITY_INDEX_PREFIX = 'rys-mapbox-banchi-city-v1:';
 const OPERATOR_NAME_KEY = 'rys-mapbox-operator-name';
 const PICKUP_LAST_RESET_DATE_KEY = 'rys-mapbox-pickup-last-reset-date';
 const PICKUP_SELECTED_SHEET_KEY = 'rys-mapbox-pickup-selected-sheet';
 const PICKUP_PENDING_SYNC_KEY = 'rys-mapbox-pickup-pending-sync-v1';
 const PICKUP_LOCATION_ADMIN_PIN_KEY = 'rys-mapbox-pickup-location-admin-pin-v1';
 const PICKUP_LIST_TAB_KEY = 'rys-mapbox-pickup-list-tab-v1';
+const DELIVERY_COURSE_KEY = 'rys-mapbox-delivery-course-v1';
 const PUSH_SELECTED_COURSES_KEY = 'rys-mapbox-push-selected-courses-v1';
 const TEXT_SIZE_KEY = 'rys-mapbox-text-size-v1';
 const APP_VERSION_CHECK_KEY = 'rys-mapbox-version-check-v1';
@@ -1467,7 +1693,7 @@ const SPOT_COMPLETION_PUSH_API = 'api/push_spot_completed.php';
 const SPOT_PICKUP_PREFETCH_API = 'api/spot_pickups.php';
 const SHARED_GEOCODE_CACHE_RETRY_MS = 10 * 60 * 1000;
 const PICKUP_GEOCODE_CONCURRENCY = 3;
-const PHOTO_OCR_MAX_SIZE = 1120;
+const PHOTO_OCR_MAX_SIZE = 1280; // 文字欠け・かすれに強くするため少し高解像度に
 const PHOTO_OCR_QUALITY = 0.8;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
@@ -1485,9 +1711,23 @@ const TEXT_SIZE_OPTIONS = {
   large: 1.15
 };
 
-const ADDR_PREF = '東京都';
-const ADDR_CITY = '中央区';
+const ADDR_PREF = '東京都';   // 手動住所入力(小舟町/浜町プロファイル)用
+const ADDR_CITY = '中央区';   // 〃
 const ADDR_API_BASE = 'https://japanese-addresses-v2.geoloniamaps.com/api/ja';
+const BANCHI_SOURCE_ID = 'rys-banchi';
+const BANCHI_LAYER_ID = 'rys-banchi-label';
+// 地番エリア用: Geolonia(ABR)の地番データは自治体によって座標が無い。
+// Mapbox Streets v8 の housenum_label を自前ソースとして追加し、
+// 基盤地図と同じ番地を大きな文字で表示する。
+const STREETS_HOUSENUM_SOURCE_ID = 'rys-streets-v8';
+const STREETS_HOUSENUM_LAYER_ID = 'rys-housenum-streets';
+const BANCHI_DISPLAY_MIN_ZOOM = 16.5; // ラベルを表示する最小ズーム
+const BANCHI_PREFETCH_MIN_ZOOM = 15.8; // データ先読みを始めるズーム
+const BANCHI_MIN_RADIUS_DEG = 0.012;  // 町字検索の最低半径(度) ≒ 1.2km。高ズームでも維持
+const BANCHI_NEARBY_CITY_COUNT = 4;   // 地図中心から近い順に読む市区町村数
+const BANCHI_CITY_MAX_DEG = 0.4;      // 市区町村代表点までの許容距離(度)
+const BANCHI_MACHIAZA_FETCH_LIMIT = 150; // 1回の更新で取得する町字数の上限
+const BANCHI_RENDER_LIMIT = 1600;     // 一度に描画する番地ポイント上限
 
 const LABEL_MODES = [
   { key: 'num',  label: '番号のみ' },
@@ -1512,6 +1752,42 @@ const PICKUP_SPOT_SHEETS_BY_COURSE = {
   '浜町店 北': '浜町店 北スポット'
 };
 const PICKUP_DELIVERY_MODE_VALUE = '__delivery__';
+const DELIVERY_COURSES = ['小舟町店', '浜町店', 'その他'];
+const DELIVERY_COURSE_DEFAULT = '小舟町店';
+const COURSE_AREA_KEY = 'rys-mapbox-course-area-v1';
+const COURSE_AREAS = [
+  { key: 'kobunacho', label: '小舟町', deliveryCourse: '小舟町店', pickupModes: [{ key: 'pickup', label: '集荷', sheet: '小舟町店' }] },
+  { key: 'hamacho', label: '浜町', deliveryCourse: '浜町店', pickupModes: [{ key: 'pickup-north', label: '集荷北', sheet: '浜町店 北' }, { key: 'pickup-south', label: '集荷南', sheet: '浜町店 南' }] },
+  { key: 'other', label: 'その他', deliveryCourse: 'その他', pickupModes: [] }
+];
+const DELIVERY_COURSE_OPTION_PREFIX = '__delivery_course__:';
+const KOBUNACHO_DELIVERY_COURSE = '小舟町店';
+const HAMACHO_DELIVERY_COURSE = '浜町店';
+const MANUAL_ADDRESS_PROFILES = {
+  kobunacho: {
+    key: 'kobunacho',
+    title: '小舟町店向け 住所選択',
+    deliveryCourse: KOBUNACHO_DELIVERY_COURSE,
+    defaultTown: '日本橋本町',
+    towns: {
+      '日本橋本町': { chome: [1, 2, 3, 4] },
+      '日本橋室町': { chome: [1, 2, 3, 4] },
+      '日本橋小舟町': { chome: false },
+      '日本橋本石町': { chome: [1, 2, 3, 4] }
+    }
+  },
+  hamacho: {
+    key: 'hamacho',
+    title: '浜町店向け 住所選択',
+    deliveryCourse: HAMACHO_DELIVERY_COURSE,
+    defaultTown: '日本橋浜町',
+    towns: {
+      '日本橋浜町': { chome: [{ value: 1, banMax: 20, goMax: 40 }, { value: 2, banMax: 70, goMax: 60 }, { value: 3, banMax: 60, goMax: 60 }] },
+      '東日本橋': { chome: [{ value: 1, banMax: 15, goMax: 40 }, { value: 2, banMax: 35, goMax: 50 }] },
+      '日本橋中洲': { chome: false, banMax: 15, goMax: 40 }
+    }
+  }
+};
 const PICKUP_LIST_TAB_REGULAR = 'regular';
 const PICKUP_LIST_TAB_SPOT = 'spot';
 const PICKUP_SYNC_INTERVAL_MS = 20000;
@@ -1536,6 +1812,8 @@ function detectInitialAppMode() {
 let map = null;
 let mapboxConfig = null;
 let appMode = detectInitialAppMode();
+let selectedDeliveryCourse = normalizeDeliveryCourse(localStorage.getItem(DELIVERY_COURSE_KEY));
+let selectedCourseArea = localStorage.getItem(COURSE_AREA_KEY) || '';
 let deliveries = [];
 let lastVisibleDeliveries = [];
 let markers = new Map();
@@ -1570,6 +1848,10 @@ let pickupLastSpotTouchAt = 0;
 let pendingPhotoFile = null;
 let pendingPhotoUrl = '';
 let pendingPhotoRotation = 0;
+let pendingOcrJob = null;      // { rotation, controller, promise } — プレビュー表示中に先行実行するOCR
+let pendingOcrRestartTimer = null;
+let lastKnownGps = null;       // { lat, lng } — 要確認ピン判定に使う最新GPS
+const reviewPhotoUrls = new Map(); // 要確認ピンの伝票写真 (id -> objectURL, セッション中のみ)
 
 let gpsWatchId = null;
 let gpsActive = false;
@@ -1583,10 +1865,27 @@ let optimizedRouteOrderedIds = [];
 let recognition = null;
 let mapStyleLoaded = false;
 
-let addrVisible = false;
-let addrData = null;
-let addrLoading = false;
-let pendingAddrData = null;
+let addrVisible = localStorage.getItem(ADDR_VISIBLE_KEY) !== '0'; // 既定ON
+
+// --- 全国対応 番地表示の状態 ---
+let banchiCatalog = null;            // [{code,pref,name,lng,lat}] 全市区町村
+let banchiCatalogLoading = false;
+const banchiCityIndexes = new Map(); // cityKey -> { machiaza: [...], error }
+const banchiCityLoading = new Set();
+const banchiMachiData = new Map();   // machiKey -> features[] (取得済み町字の番地点)
+const banchiMachiMeta = new Map();   // machiKey -> { rows } 元データの行数(座標なし判定用)
+const banchiMachiLoading = new Set();
+let banchiUpdateTimer = null;
+let banchiUpdateRunning = false;
+const banchiStatus = {
+  catalog: '未取得',
+  cities: [],
+  machiLoaded: 0,
+  machiNearby: 0,
+  rendered: 0,
+  lastError: '',
+  lastUpdate: ''
+};
 
 const OCR_COST_PER_CALL = 0.00015;
 const GEOCODE_COST_PER_CALL = 0.005;
@@ -1624,8 +1923,8 @@ function runWhenIdle(fn, timeout = 1200) {
 function warmupAppCaches() {
   runWhenIdle(() => {
     try {
-      if (!addrData && localStorage.getItem(ADDR_DATA_KEY)) {
-        ensureAddressData({ showProgress: false }).catch(e => console.warn('address data warmup failed', e));
+      if (addrVisible) {
+        banchiLoadCatalog().catch(e => console.warn('banchi catalog warmup failed', e));
       }
       const selectedCourse = getSelectedPickupSheet();
       const spotSheet = selectedCourse ? spotSheetForPickupCourse(selectedCourse) : '';
@@ -2185,6 +2484,146 @@ function modeLabel() {
   return appMode === 'pickup' ? '集荷' : '配送';
 }
 
+function normalizeDeliveryCourse(course) {
+  return DELIVERY_COURSES.includes(course) ? course : DELIVERY_COURSE_DEFAULT;
+}
+
+function getSelectedDeliveryCourse() {
+  selectedDeliveryCourse = normalizeDeliveryCourse(selectedDeliveryCourse);
+  return selectedDeliveryCourse;
+}
+
+function setSelectedDeliveryCourse(course) {
+  selectedDeliveryCourse = normalizeDeliveryCourse(course);
+  localStorage.setItem(DELIVERY_COURSE_KEY, selectedDeliveryCourse);
+}
+
+function deliveryCourseOptionValue(course) {
+  return `${DELIVERY_COURSE_OPTION_PREFIX}${course}`;
+}
+
+function deliveryCourseFromOptionValue(value) {
+  const s = String(value || '');
+  if (!s.startsWith(DELIVERY_COURSE_OPTION_PREFIX)) return '';
+  return normalizeDeliveryCourse(s.slice(DELIVERY_COURSE_OPTION_PREFIX.length));
+}
+
+function courseAreaByKey(key) {
+  return COURSE_AREAS.find(area => area.key === key) || COURSE_AREAS[0];
+}
+
+function courseAreaForDeliveryCourse(course) {
+  const normalized = normalizeDeliveryCourse(course);
+  return COURSE_AREAS.find(area => area.deliveryCourse === normalized) || COURSE_AREAS[0];
+}
+
+function courseAreaForPickupSheet(sheetName) {
+  const sheet = String(sheetName || '');
+  return COURSE_AREAS.find(area => area.pickupModes.some(mode => mode.sheet === sheet)) || COURSE_AREAS[0];
+}
+
+function currentCourseArea() {
+  if (appMode === 'pickup') return courseAreaForPickupSheet(getSelectedPickupSheet());
+  return courseAreaForDeliveryCourse(getSelectedDeliveryCourse());
+}
+
+function setSelectedCourseArea(areaKey) {
+  selectedCourseArea = courseAreaByKey(areaKey).key;
+  localStorage.setItem(COURSE_AREA_KEY, selectedCourseArea);
+}
+
+function ensureSelectedCourseArea() {
+  if (!COURSE_AREAS.some(area => area.key === selectedCourseArea)) {
+    setSelectedCourseArea(currentCourseArea().key);
+  }
+  return courseAreaByKey(selectedCourseArea);
+}
+
+function activeCourseModeKey(area) {
+  if (appMode === 'delivery' && getSelectedDeliveryCourse() === area.deliveryCourse) return 'delivery';
+  if (appMode === 'pickup') {
+    const selectedSheet = getSelectedPickupSheet();
+    const pickupMode = area.pickupModes.find(mode => mode.sheet === selectedSheet);
+    if (pickupMode) return pickupMode.key;
+  }
+  return '';
+}
+
+function courseModeOptions(area) {
+  return [
+    { key: 'delivery', label: '配送', type: 'delivery', deliveryCourse: area.deliveryCourse },
+    ...area.pickupModes.map(mode => ({ ...mode, type: 'pickup' }))
+  ];
+}
+
+function courseModeLabelForDisplay(area) {
+  const activeMode = activeCourseModeKey(area);
+  const active = courseModeOptions(area).find(item => item.key === activeMode);
+  return active || courseModeOptions(area)[0];
+}
+
+function renderCourseSelectorUi() {
+  const areaRow = $('course-area-row');
+  const modeRow = $('course-mode-row');
+  if (!areaRow || !modeRow) return;
+  const area = ensureSelectedCourseArea();
+  const mode = courseModeLabelForDisplay(area);
+  const modeIsActive = mode && mode.key === activeCourseModeKey(area);
+  areaRow.innerHTML = `<button type="button" data-open-course-choice="area" class="on">${escapeHtml(area.label)}</button>`;
+  modeRow.innerHTML = `<button type="button" data-open-course-choice="mode" class="${modeIsActive ? 'on' : ''}">${escapeHtml(mode.label)}</button>`;
+}
+
+function renderCourseChoiceModal(kind) {
+  const title = $('course-choice-title');
+  const list = $('course-choice-list');
+  if (!title || !list) return;
+  const area = ensureSelectedCourseArea();
+  if (kind === 'area') {
+    title.textContent = 'エリアを選択';
+    list.innerHTML = COURSE_AREAS.map(item => `
+      <button type="button" data-course-choice-area="${escapeHtml(item.key)}" class="${item.key === area.key ? 'on' : ''}">${escapeHtml(item.label)}</button>
+    `).join('');
+    return;
+  }
+  title.textContent = `${area.label} のコースを選択`;
+  const activeMode = activeCourseModeKey(area);
+  list.innerHTML = courseModeOptions(area).map(item => `
+    <button type="button" data-course-choice-mode="${escapeHtml(item.key)}" class="${item.key === activeMode ? 'on' : ''}">${escapeHtml(item.label)}</button>
+  `).join('');
+}
+
+function openCourseChoiceModal(kind) {
+  renderCourseChoiceModal(kind);
+  openModal('modal-course-choice');
+}
+
+async function selectCourseMode(modeKey) {
+  const area = ensureSelectedCourseArea();
+  const option = courseModeOptions(area).find(item => item.key === modeKey);
+  if (!option) return;
+  if (option.type === 'delivery') {
+    setSelectedCourseArea(area.key);
+    setSelectedDeliveryCourse(option.deliveryCourse);
+    if (appMode !== 'delivery') {
+      await switchAppMode('delivery', false, { openCourseModal: false });
+    } else {
+      updateModeUi();
+      renderMarkers();
+      renderList();
+    }
+    showToast(`配送 (${option.deliveryCourse})`);
+    return;
+  }
+  setSelectedCourseArea(area.key);
+  setupPickupSheetOptions();
+  $('pickup-sheet').value = option.sheet;
+  await importPickupSheet();
+}
+
+function isKobunachoDeliveryCourse() {
+  return appMode === 'delivery' && getSelectedDeliveryCourse() === KOBUNACHO_DELIVERY_COURSE;
+}
+
 function getSelectedPickupSheet() {
   const saved = localStorage.getItem(PICKUP_SELECTED_SHEET_KEY) || '';
   return PICKUP_SHEETS.includes(saved) ? saved : '';
@@ -2246,12 +2685,7 @@ function updatePickupListTabs() {
 }
 
 function updateModeUi() {
-  const modeBtn = $('btn-app-mode');
-  if (modeBtn) {
-    const course = appMode === 'pickup' ? getSelectedPickupSheet() : '';
-    modeBtn.textContent = appMode === 'pickup' && course ? `モード: 集荷 (${course})` : `モード: ${modeLabel()}`;
-    modeBtn.classList.toggle('on', appMode === 'pickup');
-  }
+  renderCourseSelectorUi();
   const menuBtn = $('menu-toggle-mode');
   if (menuBtn) {
     menuBtn.textContent = '🔁 モード・コースを選択';
@@ -2499,24 +2933,70 @@ function resetTimeWindowSettings() {
   });
 }
 
+const MAPS_CONFIG_CACHE_KEY = 'rys-mapbox-maps-config-v1';
+
 async function loadMapboxConfig() {
-  const res = await fetch('api/maps_config.php');
-  if (!res.ok) throw new Error('地図設定の取得に失敗しました');
-  const cfg = await res.json();
-  if (!cfg.mapboxAccessToken) {
-    throw new Error('Mapboxアクセストークンが設定されていません。api/config.php を確認してください。');
+  // 設定は滅多に変わらないため、キャッシュがあれば即使用して地図の準備を
+  // 先に始め、最新の設定は裏で取得して次回起動に備える。
+  let cached = null;
+  try {
+    const raw = JSON.parse(localStorage.getItem(MAPS_CONFIG_CACHE_KEY) || 'null');
+    if (raw && raw.cfg && raw.cfg.mapboxAccessToken) cached = raw.cfg;
+  } catch (e) {}
+
+  const fetchFresh = async () => {
+    const res = await fetch('api/maps_config.php');
+    if (!res.ok) throw new Error('地図設定の取得に失敗しました');
+    const cfg = await res.json();
+    if (!cfg.mapboxAccessToken) {
+      throw new Error('Mapboxアクセストークンが設定されていません。api/config.php を確認してください。');
+    }
+    try { localStorage.setItem(MAPS_CONFIG_CACHE_KEY, JSON.stringify({ cfg, ts: Date.now() })); } catch (e) {}
+    return cfg;
+  };
+
+  if (cached) {
+    fetchFresh().catch(e => console.warn('maps config background refresh failed', e));
+    return cached;
   }
-  return cfg;
+  return fetchFresh();
+}
+
+function savedLastView() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAST_VIEW_KEY) || 'null');
+    if (v && Number.isFinite(v.lng) && Number.isFinite(v.lat) && Number.isFinite(v.zoom) &&
+        v.lat >= 20 && v.lat <= 46 && v.lng >= 122 && v.lng <= 154) {
+      return v;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function saveLastView() {
+  if (!map) return;
+  try {
+    const c = map.getCenter();
+    localStorage.setItem(LAST_VIEW_KEY, JSON.stringify({
+      lng: Number(c.lng.toFixed(6)),
+      lat: Number(c.lat.toFixed(6)),
+      zoom: Number(map.getZoom().toFixed(2)),
+      ts: Date.now()
+    }));
+  } catch (e) {}
 }
 
 function initMap() {
   mapboxgl.accessToken = mapboxConfig.mapboxAccessToken;
 
+  // 前回終了時の位置・ズームがあればそこから開始 (GPS取得後は従来どおり現在地へ)
+  const lastView = savedLastView();
+
   map = new mapboxgl.Map({
     container: 'map',
     style: mapboxConfig.mapboxStyle || 'mapbox://styles/mapbox/standard',
-    center: [DEFAULT_CENTER_LNG, DEFAULT_CENTER_LAT],
-    zoom: DEFAULT_ZOOM,
+    center: lastView ? [lastView.lng, lastView.lat] : [DEFAULT_CENTER_LNG, DEFAULT_CENTER_LAT],
+    zoom: lastView ? lastView.zoom : DEFAULT_ZOOM,
     pitch: 0,
     bearing: 0,
     dragRotate: true,
@@ -2557,16 +3037,58 @@ function initMap() {
     );
   });
 
+  map.on('moveend', () => { banchiScheduleUpdate(); saveLastView(); });
+  map.on('zoomend', () => banchiScheduleUpdate());
+  map.on('zoom', updateZoomBadge);
+  // 筆界タイルの取得成功/失敗を記録 (診断パネルで確認できる)
+  map.on('sourcedata', (e) => {
+    if (e.sourceId === GSI_OVERLAY_SOURCE_ID && e.tile) fudeTileStats.loaded++;
+  });
+  map.on('error', (e) => {
+    if (e.sourceId === GSI_OVERLAY_SOURCE_ID) {
+      fudeTileStats.errors++;
+      fudeTileStats.lastError = (e.error && e.error.message) || String(e.error || '不明');
+      console.warn('[fude tile]', fudeTileStats.lastError);
+    }
+  });
+
+  // タイルが全部揃うのを待たず、最初の描画が始まった時点で
+  // 「地図を読み込み中...」の覆いを外す (地図は徐々に表示される)
+  map.once('style.load', () => {
+    map.once('render', hideLoading);
+  });
+
+  // 画面サイズの変化に描画領域を追従させる。
+  // 起動直後はブラウザのUI(アドレスバー等)でレイアウトが動くため、
+  // これが無いと「地図が上半分しか表示されない」症状が起きる。
+  const mapContainer = document.getElementById('map');
+  if (window.ResizeObserver && mapContainer) {
+    let resizeRaf = null;
+    new ResizeObserver(() => {
+      if (resizeRaf) return;
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = null;
+        try { map.resize(); } catch (e) {}
+      });
+    }).observe(mapContainer);
+  } else {
+    window.addEventListener('resize', () => { try { map.resize(); } catch (e) {} });
+  }
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => { try { map.resize(); } catch (e) {} }, 300);
+  });
+  // 保険: 起動直後のレイアウト確定後にもう一度合わせる
+  setTimeout(() => { try { map.resize(); } catch (e) {} }, 600);
+
   return new Promise((resolve) => {
     map.on('load', () => {
       mapStyleLoaded = true;
       try { map.setConfigProperty('basemap', 'language', 'ja'); } catch (e) {}
       addGeoshapeNeighborhoodLayers();
       addGsiOverlayLayer();
-      if (pendingAddrData) {
-        addAddressLayer(pendingAddrData);
-        pendingAddrData = null;
-      }
+      addBanchiLayer();
+      banchiScheduleUpdate(0);
+      updateZoomBadge();
       resolve();
     });
   });
@@ -2723,36 +3245,53 @@ function updateNeighborhoodButton() {
   btn.classList.toggle('on', neighborhoodVisible);
 }
 
-// 地理院標準地図の半透明オーバーレイ。ズーム16以上で街区の輪郭線と
-// 街区番号(○番)が見える。ラスター画像のため文字の重なりは許容する。
-const GSI_OVERLAY_SOURCE_ID = 'gsi-std';
-const GSI_OVERLAY_LAYER_ID = 'gsi-std-overlay';
+// 番地境界線オーバーレイ。
+// 法務省の登記所備付地図(筆ポリゴン)を amx-project がタイル化したものを、
+// api/amx_tile_proxy.php (PMTiles→z/x/y変換) 経由で読み込み、
+// 土地の区画(筆)の境界線を描く。fude レイヤーは z14-16、z17以上はオーバーズーム。
+const GSI_OVERLAY_SOURCE_ID = 'amx-fude';
+const GSI_OVERLAY_LAYER_ID = 'amx-fude-line';
+// 筆界タイルの取得状況 (診断パネル表示用)
+const fudeTileStats = { loaded: 0, errors: 0, lastError: '' };
 
 function addGsiOverlayLayer() {
   if (!map || map.getSource(GSI_OVERLAY_SOURCE_ID)) return;
-  map.addSource(GSI_OVERLAY_SOURCE_ID, {
-    type: 'raster',
-    tiles: ['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'],
-    tileSize: 256,
-    minzoom: 5,
-    maxzoom: 18,
-    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>'
-  });
+  try {
+    map.addSource(GSI_OVERLAY_SOURCE_ID, {
+      type: 'vector',
+      tiles: [new URL('api/amx_tile_proxy.php', location.href).href + '?z={z}&x={x}&y={y}'],
+      minzoom: 14,
+      maxzoom: 16,
+      attribution: '筆界: <a href="https://front.geospatial.jp/moj-chizu-xml-readme/" target="_blank">登記所備付地図(法務省)</a> / amx-project'
+    });
+  } catch (e) {
+    banchiSetError('筆界ソース追加', e);
+    return;
+  }
   const layerDef = {
     id: GSI_OVERLAY_LAYER_ID,
-    type: 'raster',
+    type: 'line',
     source: GSI_OVERLAY_SOURCE_ID,
-    minzoom: 16,
-    slot: 'middle',
-    layout: { 'visibility': gsiOverlayVisible ? 'visible' : 'none' },
+    'source-layer': 'fude',
+    minzoom: 15.5,
+    // top スロット必須: middle だと建物ポリゴンの下に隠れてほぼ見えない
+    slot: 'top',
+    layout: {
+      'visibility': gsiOverlayVisible ? 'visible' : 'none',
+      'line-join': 'round'
+    },
     paint: {
-      'raster-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.2, 17, 0.5]
+      'line-color': '#ea580c',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 16, 1.0, 18, 2.0, 20, 3.0],
+      'line-opacity': ['interpolate', ['linear'], ['zoom'], 15.5, 0.5, 17, 0.85]
     }
   };
   try {
     map.addLayer(layerDef);
   } catch (e) {
-    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {
+      banchiSetError('筆界レイヤー追加', e2);
+    }
   }
 }
 
@@ -2763,69 +3302,271 @@ function toggleGsiOverlay() {
     map.setLayoutProperty(GSI_OVERLAY_LAYER_ID, 'visibility', gsiOverlayVisible ? 'visible' : 'none');
   }
   updateGsiOverlayButton();
-  showToast(gsiOverlayVisible ? '番地ライン(地理院)をON（地図を拡大すると表示）' : '番地ライン(地理院)をOFF');
+  showToast(gsiOverlayVisible ? '番地境界線をON（ズーム16以上で表示）' : '番地境界線をOFF');
 }
 
 function updateGsiOverlayButton() {
   const btn = $('menu-toggle-gsi');
   if (!btn) return;
-  btn.textContent = gsiOverlayVisible ? '🗺 番地ライン(地理院): ON' : '🗺 番地ライン(地理院): OFF';
+  btn.textContent = gsiOverlayVisible ? '📐 番地境界線(法務省): ON' : '📐 番地境界線(法務省): OFF';
   btn.classList.toggle('on', gsiOverlayVisible);
 }
 
-async function fetchAddressData(onProgress) {
-  const prefEnc = encodeURIComponent(ADDR_PREF);
-  const cityEnc = encodeURIComponent(ADDR_CITY);
-  const baseUrl = `${ADDR_API_BASE}/${prefEnc}/${cityEnc}`;
+// ============================================================
+// 全国対応 番地表示エンジン
+// 依存は Geolonia japanese-addresses-v2 API のみ。
+//  1. ja.json (全市区町村 + 代表座標) を1回取得してキャッシュ
+//  2. 地図中心に近い市区町村の町字索引 (csv_ranges) を取得
+//  3. 画面近傍の町字だけ Range リクエストで番地点を取得
+// 市区町村名は API 自身のリストから使うため名前の不一致が起きない。
+// ============================================================
 
-  const cityRes = await fetch(`${baseUrl}.json`);
-  if (!cityRes.ok) {
-    throw new Error(`市区町村データ取得失敗 (HTTP ${cityRes.status})`);
-  }
-  const cityJson = await cityRes.json();
+function banchiSetError(step, e) {
+  const msg = `${step}: ${(e && e.message) || e}`;
+  banchiStatus.lastError = msg;
+  console.warn('[banchi]', msg);
+}
 
-  const ranges = (cityJson.data || [])
-    .filter(m => m.rsdt && m.csv_ranges && m.csv_ranges['住居表示'])
-    .map(m => ({
-      machiazaName: (m.oaza_cho || '') + (m.chome || ''),
-      start: m.csv_ranges['住居表示'].start,
-      length: m.csv_ranges['住居表示'].length
-    }));
-
-  if (ranges.length === 0) {
-    return { type: 'FeatureCollection', features: [] };
-  }
-
-  const txtUrl = `${baseUrl}-住居表示.txt`;
-  const features = [];
-  let completed = 0;
-  const total = ranges.length;
-  const CONCURRENCY = 6;
-  let nextIdx = 0;
-
-  async function worker() {
-    while (nextIdx < ranges.length) {
-      const r = ranges[nextIdx++];
-      try {
-        const res = await fetch(txtUrl, {
-          headers: { 'Range': `bytes=${r.start}-${r.start + r.length - 1}` }
-        });
-        if (res.ok || res.status === 206) {
-          const text = await res.text();
-          parseAddrSection(text, r.machiazaName, features);
+async function banchiLoadCatalog() {
+  if (banchiCatalog) return banchiCatalog;
+  if (banchiCatalogLoading) return null;
+  banchiCatalogLoading = true;
+  try {
+    try {
+      const cached = localStorage.getItem(BANCHI_CATALOG_KEY);
+      if (cached) {
+        const list = JSON.parse(cached);
+        if (Array.isArray(list) && list.length > 500) {
+          banchiCatalog = list;
+          banchiStatus.catalog = `OK (キャッシュ, ${list.length}市区町村)`;
+          return list;
         }
-      } catch (e) {
-        console.warn(`fetch failed for ${r.machiazaName}:`, e);
       }
-      completed++;
-      if (onProgress) onProgress(completed, total);
+    } catch (e) {}
+
+    const res = await fetch(`${ADDR_API_BASE}.json`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const list = [];
+    (json.data || []).forEach(prefEntry => {
+      const pref = prefEntry.pref;
+      (prefEntry.cities || []).forEach(c => {
+        const point = c.point || [];
+        const lng = Number(point[0]);
+        const lat = Number(point[1]);
+        if (!pref || !c.city || !Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        list.push({
+          code: c.code,
+          pref,
+          name: `${c.county || ''}${c.city}${c.ward || ''}`,
+          lng, lat
+        });
+      });
+    });
+    if (!list.length) throw new Error('市区町村リストが空です');
+    banchiCatalog = list;
+    banchiStatus.catalog = `OK (${list.length}市区町村)`;
+    try { localStorage.setItem(BANCHI_CATALOG_KEY, JSON.stringify(list)); } catch (e) {}
+    return list;
+  } catch (e) {
+    banchiStatus.catalog = `取得失敗 (${(e && e.message) || e})`;
+    banchiSetError('市区町村リスト', e);
+    return null;
+  } finally {
+    banchiCatalogLoading = false;
+  }
+}
+
+function banchiCityKey(city) { return `${city.pref}/${city.name}`; }
+
+function banchiNearbyCities(lng, lat) {
+  if (!banchiCatalog) return [];
+  return banchiCatalog
+    .map(c => ({ c, d2: (c.lng - lng) * (c.lng - lng) + (c.lat - lat) * (c.lat - lat) }))
+    .filter(x => x.d2 < BANCHI_CITY_MAX_DEG * BANCHI_CITY_MAX_DEG)
+    .sort((a, b) => a.d2 - b.d2)
+    .slice(0, BANCHI_NEARBY_CITY_COUNT)
+    .map(x => x.c);
+}
+
+async function banchiEnsureCityIndex(city) {
+  const key = banchiCityKey(city);
+  if (banchiCityIndexes.has(key)) return banchiCityIndexes.get(key);
+  if (banchiCityLoading.has(key)) return null;
+  banchiCityLoading.add(key);
+  try {
+    try {
+      const cached = localStorage.getItem(BANCHI_CITY_INDEX_PREFIX + key);
+      if (cached) {
+        const idx = JSON.parse(cached);
+        if (idx && Array.isArray(idx.machiaza)) {
+          banchiCityIndexes.set(key, idx);
+          return idx;
+        }
+      }
+    } catch (e) {}
+
+    const url = `${ADDR_API_BASE}/${encodeURIComponent(city.pref)}/${encodeURIComponent(city.name)}.json`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const machiaza = (json.data || [])
+      .map(m => {
+        const point = m.point || [];
+        const lng = Number(point[0]);
+        const lat = Number(point[1]);
+        const ranges = m.csv_ranges || {};
+        const kind = (m.rsdt && ranges['住居表示']) ? '住居表示'
+                   : (ranges['地番'] ? '地番' : (ranges['住居表示'] ? '住居表示' : ''));
+        if (!kind || !Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+        return {
+          id: String(m.machiaza_id || `${m.oaza_cho || ''}${m.chome || ''}`),
+          name: `${m.oaza_cho || ''}${m.chome || ''}`,
+          lng, lat, kind,
+          start: ranges[kind].start,
+          length: ranges[kind].length
+        };
+      })
+      .filter(Boolean);
+    const idx = { machiaza };
+    banchiCityIndexes.set(key, idx);
+    try { localStorage.setItem(BANCHI_CITY_INDEX_PREFIX + key, JSON.stringify(idx)); } catch (e) {}
+    return idx;
+  } catch (e) {
+    const idx = { machiaza: [], error: `${(e && e.message) || e}` };
+    banchiCityIndexes.set(key, idx);
+    banchiSetError(`町字索引(${key})`, e);
+    return idx;
+  } finally {
+    banchiCityLoading.delete(key);
+  }
+}
+
+// ---- 番地データの端末内保存 (IndexedDB) ----
+// localStorage より大容量で、通信なしで番地を即表示できるようにする。
+const BANCHI_IDB_NAME = 'rys-mapbox-banchi';
+const BANCHI_IDB_STORE = 'machi';
+const BANCHI_IDB_TTL_MS = 30 * 24 * 3600 * 1000; // 30日で取り直し
+let banchiIdbPromise = null;
+
+function banchiIdb() {
+  if (banchiIdbPromise) return banchiIdbPromise;
+  banchiIdbPromise = new Promise((resolve) => {
+    if (!('indexedDB' in window)) { resolve(null); return; }
+    try {
+      const req = indexedDB.open(BANCHI_IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(BANCHI_IDB_STORE)) db.createObjectStore(BANCHI_IDB_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+  return banchiIdbPromise;
+}
+
+async function banchiIdbGet(key) {
+  const db = await banchiIdb();
+  if (!db) return null;
+  return new Promise(resolve => {
+    try {
+      const rq = db.transaction(BANCHI_IDB_STORE, 'readonly').objectStore(BANCHI_IDB_STORE).get(key);
+      rq.onsuccess = () => resolve(rq.result || null);
+      rq.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+
+async function banchiIdbPut(key, value) {
+  const db = await banchiIdb();
+  if (!db) return;
+  try {
+    db.transaction(BANCHI_IDB_STORE, 'readwrite').objectStore(BANCHI_IDB_STORE).put(value, key);
+  } catch (e) {}
+}
+
+async function banchiIdbClear() {
+  const db = await banchiIdb();
+  if (!db) return;
+  try {
+    db.transaction(BANCHI_IDB_STORE, 'readwrite').objectStore(BANCHI_IDB_STORE).clear();
+  } catch (e) {}
+}
+
+async function banchiFetchMachiaza(city, m) {
+  const machiKey = `${banchiCityKey(city)}|${m.id}|${m.kind}`;
+  if (banchiMachiData.has(machiKey) || banchiMachiLoading.has(machiKey)) return;
+  banchiMachiLoading.add(machiKey);
+  try {
+    // まず端末内保存を確認 — あれば通信せず即利用
+    const stored = await banchiIdbGet(machiKey);
+    if (stored && Array.isArray(stored.features) && (Date.now() - (stored.ts || 0)) < BANCHI_IDB_TTL_MS) {
+      banchiMachiData.set(machiKey, stored.features);
+      if (stored.meta) banchiMachiMeta.set(machiKey, stored.meta);
+      return;
+    }
+
+    const url = `${ADDR_API_BASE}/${encodeURIComponent(city.pref)}/${encodeURIComponent(city.name)}-${m.kind}.txt`;
+    const res = await fetch(url, { headers: { 'Range': `bytes=${m.start}-${m.start + m.length - 1}` } });
+    if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const features = [];
+    parseAddrSection(text, m.name, features);
+    const meta = { rows: Math.max(0, text.split('\n').filter(l => l.trim()).length - 2) };
+    banchiMachiData.set(machiKey, features);
+    banchiMachiMeta.set(machiKey, meta);
+    banchiIdbPut(machiKey, { features, meta, ts: Date.now() });
+  } catch (e) {
+    banchiMachiData.set(machiKey, []); // 失敗した町字は空扱い（「番地データを再取得」でやり直し。端末保存はしない）
+    banchiSetError(`番地取得(${m.name})`, e);
+  } finally {
+    banchiMachiLoading.delete(machiKey);
+  }
+}
+
+// ---- ④ バックグラウンド先読み ----
+// GPS現在地の周辺の番地データを、アプリが暇なときに裏で取得しておく。
+let banchiLastPrefetch = null;
+
+function banchiSchedulePrefetch(lng, lat) {
+  if (!addrVisible) return;
+  if (banchiLastPrefetch &&
+      Math.abs(lng - banchiLastPrefetch.lng) < 0.02 &&
+      Math.abs(lat - banchiLastPrefetch.lat) < 0.02) return; // 約2km動くまで再実行しない
+  banchiLastPrefetch = { lng, lat };
+  runWhenIdle(() => {
+    banchiPrefetchAround(lng, lat).catch(e => console.warn('banchi prefetch failed', e));
+  }, 4000);
+}
+
+async function banchiPrefetchAround(lng, lat) {
+  const catalog = await banchiLoadCatalog();
+  if (!catalog) return;
+  const cities = banchiNearbyCities(lng, lat);
+  const indexes = await Promise.all(cities.map(c => banchiEnsureCityIndex(c)));
+  const r = BANCHI_MIN_RADIUS_DEG * 1.5;
+  const targets = [];
+  cities.forEach((city, i) => {
+    const idx = indexes[i] || banchiCityIndexes.get(banchiCityKey(city));
+    if (!idx || !Array.isArray(idx.machiaza)) return;
+    idx.machiaza.forEach(m => {
+      if (Math.abs(m.lng - lng) > r || Math.abs(m.lat - lat) > r) return;
+      const machiKey = `${banchiCityKey(city)}|${m.id}|${m.kind}`;
+      if (banchiMachiData.has(machiKey)) return;
+      targets.push({ city, m });
+    });
+  });
+  const limited = targets.slice(0, 80);
+  let next = 0;
+  async function worker() {
+    while (next < limited.length) {
+      const t = limited[next++];
+      await banchiFetchMachiaza(t.city, t.m);
     }
   }
-
-  const workerCount = Math.min(CONCURRENCY, ranges.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-
-  return { type: 'FeatureCollection', features };
+  await Promise.all(Array.from({ length: Math.min(4, limited.length) }, () => worker()));
+  if (map && mapStyleLoaded && map.getZoom() >= BANCHI_PREFETCH_MIN_ZOOM) banchiScheduleUpdate(0);
 }
 
 function parseAddrSection(text, machiazaName, features) {
@@ -2875,73 +3616,231 @@ function parseAddrSection(text, machiazaName, features) {
   }
 }
 
-async function ensureAddressData(options = {}) {
-  if (addrData) return addrData;
-  if (addrLoading) return null;
-
-  const showProgress = options.showProgress !== false;
-  addrLoading = true;
-  try {
+function addStreetsHousenumLayer() {
+  if (!map) return;
+  if (!map.getSource(STREETS_HOUSENUM_SOURCE_ID)) {
     try {
-      const cached = localStorage.getItem(ADDR_DATA_KEY);
-      if (cached) {
-        const data = JSON.parse(cached);
-        if (data && data.type === 'FeatureCollection' && Array.isArray(data.features)) {
-          addrData = data;
-          return data;
-        }
-      }
-    } catch (e) {}
-
-    if (showProgress) showLoading('番地データを取得中...');
-    const data = await fetchAddressData((c, t) => {
-      if (showProgress) $('loading-msg').textContent = `番地データを取得中... ${c}/${t} エリア`;
-    });
-    addrData = data;
-    try {
-      localStorage.setItem(ADDR_DATA_KEY, JSON.stringify(data));
+      map.addSource(STREETS_HOUSENUM_SOURCE_ID, { type: 'vector', url: 'mapbox://mapbox.mapbox-streets-v8' });
     } catch (e) {
-      console.warn('番地データのキャッシュ保存失敗 (容量超過の可能性)', e);
+      banchiSetError('streetsソース追加', e);
+      return;
     }
-    return data;
-  } catch (e) {
-    showToast('番地データ取得失敗: ' + e.message, true);
-    return null;
-  } finally {
-    addrLoading = false;
-    if (showProgress) hideLoading();
   }
-}
-
-function addAddressLayer(data) {
-  if (!map || map.getSource('addr-points')) return;
-  map.addSource('addr-points', { type: 'geojson', data });
-  map.addLayer({
-    id: 'addr-points-label',
+  if (map.getLayer(STREETS_HOUSENUM_LAYER_ID)) return;
+  const layerDef = {
+    id: STREETS_HOUSENUM_LAYER_ID,
     type: 'symbol',
-    source: 'addr-points',
-    minzoom: 17,
-    maxzoom: 22,
+    source: STREETS_HOUSENUM_SOURCE_ID,
+    'source-layer': 'housenum_label',
+    slot: 'top',
+    minzoom: BANCHI_DISPLAY_MIN_ZOOM,
     layout: {
-      'text-field': ['get', 'label'],
+      'visibility': addrVisible ? 'visible' : 'none',
+      'text-field': ['get', 'house_num'],
       'text-size': [
         'interpolate', ['linear'], ['zoom'],
-        17, 11,
-        18, 14,
-        19, 17,
-        20.5, 19
+        16.5, 13,
+        17, 16,
+        18, 20,
+        19, 24,
+        20, 28,
+        22, 32
       ],
-      'text-allow-overlap': false,
-      'text-padding': 1,
-      'text-anchor': 'center',
-      'symbol-sort-key': ['length', ['get', 'label']]
+      // 'top'を先頭に = まず「点の下」に置く。建物名は点の上に出るため重なりにくい。
+      // 'center'を外して番地が名前の真上に乗らないようにする。
+      'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+      'text-radial-offset': 0.5,
+      'text-allow-overlap': ['step', ['zoom'], false, 18, true],
+      'text-ignore-placement': ['step', ['zoom'], false, 18, true],
+      'text-padding': 1
     },
     paint: {
       'text-color': '#0f172a',
       'text-halo-color': 'rgba(255,255,255,0.98)',
-      'text-halo-width': 2.2
+      'text-halo-width': 2.6
     }
-  });
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {
+      try {
+        const { slot, ...def } = layerDef;
+        def.layout = { ...def.layout,
+          'text-allow-overlap': false,
+          'text-ignore-placement': false
+        };
+        delete def.layout['text-variable-anchor'];
+        delete def.layout['text-radial-offset'];
+        map.addLayer(def);
+      } catch (e3) {
+        banchiSetError('streetsレイヤー追加', e3);
+      }
+    }
+  }
+}
+
+function addBanchiLayer() {
+  if (!map) return;
+  // streets番地レイヤーを先に追加して、Geoloniaレイヤーを上に重ねる
+  addStreetsHousenumLayer();
+  if (!map.getSource(BANCHI_SOURCE_ID)) {
+    map.addSource(BANCHI_SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  }
+  if (map.getLayer(BANCHI_LAYER_ID)) return;
+  const layerDef = {
+    id: BANCHI_LAYER_ID,
+    type: 'symbol',
+    source: BANCHI_SOURCE_ID,
+    slot: 'top',
+    minzoom: BANCHI_DISPLAY_MIN_ZOOM,
+    layout: {
+      'visibility': addrVisible ? 'visible' : 'none',
+      'text-field': ['get', 'label'],
+      'text-size': [
+        'interpolate', ['linear'], ['zoom'],
+        16.5, 13,
+        17, 16,
+        18, 20,
+        19, 24,
+        20, 28,
+        22, 32
+      ],
+      // 建物名ラベル等と重なる場合は上下左右へずらして配置を試みる
+      // 'top'を先頭に = まず「点の下」に置く。建物名は点の上に出るため重なりにくい。
+      // 'center'を外して番地が名前の真上に乗らないようにする。
+      'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+      'text-radial-offset': 0.5,
+      // ズーム18以上では衝突判定を無効化して全番地を必ず表示する
+      'text-allow-overlap': ['step', ['zoom'], false, 18, true],
+      'text-ignore-placement': ['step', ['zoom'], false, 18, true],
+      'text-padding': 1,
+      'symbol-sort-key': ['length', ['get', 'label']]
+    },
+    paint: {
+      // 青 = 住居表示(国データ・入口点)。黒のMapbox番地(建物・区画)と見分ける
+      'text-color': '#1e40af',
+      'text-halo-color': 'rgba(255,255,255,0.98)',
+      'text-halo-width': 2.6
+    }
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {
+      // ズーム式や可変アンカー未対応の環境向け: 静的設定で再試行
+      try {
+        const { slot, ...def } = layerDef;
+        def.layout = { ...def.layout,
+          'text-allow-overlap': false,
+          'text-ignore-placement': false
+        };
+        delete def.layout['text-variable-anchor'];
+        delete def.layout['text-radial-offset'];
+        map.addLayer(def);
+      } catch (e3) {
+        banchiSetError('レイヤー追加', e3);
+      }
+    }
+  }
+}
+
+function banchiRender() {
+  if (!map || !mapStyleLoaded) return;
+  addBanchiLayer();
+  const source = map.getSource(BANCHI_SOURCE_ID);
+  if (!source) return;
+  const features = [];
+  if (addrVisible && map.getZoom() >= BANCHI_PREFETCH_MIN_ZOOM) {
+    const bounds = map.getBounds();
+    outer:
+    for (const list of banchiMachiData.values()) {
+      for (const f of list) {
+        const c = f.geometry.coordinates;
+        if (!bounds.contains(c)) continue;
+        features.push(f);
+        if (features.length >= BANCHI_RENDER_LIMIT) break outer;
+      }
+    }
+  }
+  source.setData({ type: 'FeatureCollection', features });
+  banchiStatus.rendered = features.length;
+  banchiStatus.lastUpdate = new Date().toLocaleTimeString();
+}
+
+async function banchiUpdate() {
+  if (!map || !mapStyleLoaded) return;
+  if (!addrVisible || map.getZoom() < BANCHI_PREFETCH_MIN_ZOOM) { banchiRender(); return; }
+  if (banchiUpdateRunning) { banchiScheduleUpdate(500); return; }
+  banchiUpdateRunning = true;
+  try {
+    const catalog = await banchiLoadCatalog();
+    if (!catalog) { banchiRender(); return; }
+
+    const center = map.getCenter();
+    const cities = banchiNearbyCities(center.lng, center.lat);
+    banchiStatus.cities = cities.map(banchiCityKey);
+    const indexes = await Promise.all(cities.map(c => banchiEnsureCityIndex(c)));
+
+    // 画面(+60%の余白)内にある未取得の町字を集める。
+    // 高ズームでは画面が数十mまで狭くなり、町字の代表点(町の中心)が
+    // 窓に入らず永遠に取得されなくなるため、最低半径を必ず確保する。
+    const bounds = map.getBounds();
+    const padLng = Math.max(Math.abs(bounds.getEast() - bounds.getWest()) * 0.6, BANCHI_MIN_RADIUS_DEG);
+    const padLat = Math.max(Math.abs(bounds.getNorth() - bounds.getSouth()) * 0.6, BANCHI_MIN_RADIUS_DEG);
+    const west = bounds.getWest() - padLng, east = bounds.getEast() + padLng;
+    const south = bounds.getSouth() - padLat, north = bounds.getNorth() + padLat;
+
+    const targets = [];
+    const allMachi = [];
+    cities.forEach((city, i) => {
+      const idx = indexes[i] || banchiCityIndexes.get(banchiCityKey(city));
+      if (!idx || !Array.isArray(idx.machiaza)) return;
+      idx.machiaza.forEach(m => {
+        allMachi.push({ city, m });
+        if (m.lng < west || m.lng > east || m.lat < south || m.lat > north) return;
+        const machiKey = `${banchiCityKey(city)}|${m.id}|${m.kind}`;
+        if (banchiMachiData.has(machiKey)) return;
+        targets.push({ city, m });
+      });
+    });
+
+    // 保険: 代表点が窓の外でも、中心に最も近い町字3件は必ず取得する
+    allMachi
+      .map(t => ({ t, d2: (t.m.lng - center.lng) * (t.m.lng - center.lng) + (t.m.lat - center.lat) * (t.m.lat - center.lat) }))
+      .sort((a, b) => a.d2 - b.d2)
+      .slice(0, 3)
+      .forEach(({ t }) => {
+        const machiKey = `${banchiCityKey(t.city)}|${t.m.id}|${t.m.kind}`;
+        if (banchiMachiData.has(machiKey)) return;
+        if (!targets.includes(t)) targets.push(t);
+      });
+    banchiStatus.machiNearby = targets.length;
+
+    const limited = targets.slice(0, BANCHI_MACHIAZA_FETCH_LIMIT);
+    let next = 0;
+    async function worker() {
+      while (next < limited.length) {
+        const t = limited[next++];
+        await banchiFetchMachiaza(t.city, t.m);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(6, limited.length) }, () => worker()));
+    banchiStatus.machiLoaded = banchiMachiData.size;
+    banchiRender();
+  } catch (e) {
+    banchiSetError('更新処理', e);
+  } finally {
+    banchiUpdateRunning = false;
+  }
+}
+
+function banchiScheduleUpdate(delay = 200) {
+  if (banchiUpdateTimer) clearTimeout(banchiUpdateTimer);
+  banchiUpdateTimer = setTimeout(() => {
+    banchiUpdateTimer = null;
+    banchiUpdate();
+  }, delay);
 }
 
 function addOptimizedRouteLayer() {
@@ -3068,14 +3967,6 @@ async function updateNextSegmentHighlight() {
   }
 }
 
-function removeAddressLayer() {
-  if (!map) return;
-  if (map.getLayer('addr-points-label-dense')) map.removeLayer('addr-points-label-dense');
-  if (map.getLayer('addr-points-dot')) map.removeLayer('addr-points-dot');
-  if (map.getLayer('addr-points-label')) map.removeLayer('addr-points-label');
-  if (map.getSource('addr-points')) map.removeSource('addr-points');
-}
-
 function updateAddrButton() {
   const btn = $('menu-toggle-addr');
   if (!btn) return;
@@ -3083,50 +3974,200 @@ function updateAddrButton() {
   btn.classList.toggle('on', addrVisible);
 }
 
-async function toggleAddressBlocks() {
+function toggleAddressBlocks() {
   closeModal('modal-menu');
-  if (addrVisible) {
-    addrVisible = false;
-    removeAddressLayer();
-    localStorage.setItem(ADDR_VISIBLE_KEY, '0');
-    updateAddrButton();
-    showToast('番地表示OFF');
-    return;
-  }
-  if (!addrData) {
-    const data = await ensureAddressData();
-    if (!data) return;
-  }
-  addrVisible = true;
-  if (mapStyleLoaded) {
-    addAddressLayer(addrData);
-  } else {
-    pendingAddrData = addrData;
-  }
-  localStorage.setItem(ADDR_VISIBLE_KEY, '1');
+  addrVisible = !addrVisible;
+  localStorage.setItem(ADDR_VISIBLE_KEY, addrVisible ? '1' : '0');
+  [BANCHI_LAYER_ID, STREETS_HOUSENUM_LAYER_ID].forEach(id => {
+    if (map && map.getLayer(id)) {
+      try { map.setLayoutProperty(id, 'visibility', addrVisible ? 'visible' : 'none'); } catch (e) {}
+    }
+  });
   updateAddrButton();
-  showToast(`番地表示ON (${addrData.features.length.toLocaleString()}件) — ズーム17以上で表示`);
+  if (addrVisible) {
+    banchiScheduleUpdate(0);
+    showToast(`番地表示ON — ズーム${BANCHI_DISPLAY_MIN_ZOOM}以上で表示`);
+  } else {
+    showToast('番地表示OFF');
+  }
 }
 
-async function refreshAddressData() {
+function refreshAddressData() {
   closeModal('modal-menu');
   showConfirm(
     '番地データ再取得',
     'キャッシュを破棄して最新データを取り直しますか？\n通信が発生します(数百KB〜)。',
-    async () => {
-      addrData = null;
-      localStorage.removeItem(ADDR_DATA_KEY);
-      removeAddressLayer();
-      const data = await ensureAddressData();
-      if (!data) return;
-      if (addrVisible) {
-        addAddressLayer(data);
-        showToast(`番地データ再取得完了 (${data.features.length.toLocaleString()}件)`);
-      } else {
-        showToast(`番地データ再取得完了 (${data.features.length.toLocaleString()}件) — 「番地表示: ON」で表示`);
-      }
+    () => {
+      banchiCatalog = null;
+      banchiCityIndexes.clear();
+      banchiMachiData.clear();
+      banchiMachiMeta.clear();
+      banchiIdbClear();
+      banchiLastPrefetch = null;
+      banchiStatus.lastError = '';
+      try {
+        const toRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k === BANCHI_CATALOG_KEY || k.startsWith(BANCHI_CITY_INDEX_PREFIX))) toRemove.push(k);
+        }
+        toRemove.forEach(k => localStorage.removeItem(k));
+      } catch (e) {}
+      banchiScheduleUpdate(0);
+      showToast('番地データを再取得しています...');
     }
   );
+}
+
+function openBanchiDebug() {
+  closeModal('modal-menu');
+  const lines = [];
+  lines.push(`アプリ: ${APP_VERSION}`);
+  if (map) {
+    const c = map.getCenter();
+    lines.push(`中心: ${c.lng.toFixed(5)}, ${c.lat.toFixed(5)} / ズーム: ${map.getZoom().toFixed(1)}`);
+  }
+  lines.push(`表示設定: ${addrVisible ? 'ON' : 'OFF'} (表示はズーム${BANCHI_DISPLAY_MIN_ZOOM}以上)`);
+  lines.push(`市区町村リスト: ${banchiStatus.catalog}`);
+  lines.push(`対象市区町村: ${banchiStatus.cities.length ? banchiStatus.cities.join(', ') : '(未判定)'}`);
+  banchiStatus.cities.forEach(key => {
+    const idx = banchiCityIndexes.get(key);
+    if (!idx) { lines.push(`  ${key}: 索引 未取得`); return; }
+    if (idx.error) { lines.push(`  ${key}: 索引エラー (${idx.error})`); return; }
+    lines.push(`  ${key}: 町字 ${idx.machiaza.length}件`);
+  });
+  lines.push(`取得済み町字: ${banchiMachiData.size}件 (画面近傍の未取得: ${banchiStatus.machiNearby}件)`);
+  lines.push(`描画中の番地点: ${banchiStatus.rendered}件 (最終更新 ${banchiStatus.lastUpdate || '-'})`);
+  if (map && map.queryRenderedFeatures) {
+    try {
+      const streetsCount = map.queryRenderedFeatures({ layers: [STREETS_HOUSENUM_LAYER_ID] }).length;
+      lines.push(`Mapbox番地(streets): 画面内 ${streetsCount}件`);
+    } catch (e) {
+      lines.push('Mapbox番地(streets): レイヤーなし');
+    }
+    try {
+      const fudeCount = map.queryRenderedFeatures({ layers: [GSI_OVERLAY_LAYER_ID] }).length;
+      const hasLayer = !!map.getLayer(GSI_OVERLAY_LAYER_ID);
+      lines.push(`番地境界線(法務省): ${gsiOverlayVisible ? 'ON' : 'OFF'} / レイヤー${hasLayer ? 'あり' : '無し!'} / 画面内 ${fudeCount}筆`);
+      lines.push(`  タイル取得: 成功${fudeTileStats.loaded}回 / 失敗${fudeTileStats.errors}回${fudeTileStats.lastError ? ` (直近: ${fudeTileStats.lastError})` : ''}`);
+    } catch (e) {
+      lines.push('番地境界線(法務省): 状態取得エラー');
+    }
+  }
+  lines.push(`最終エラー: ${banchiStatus.lastError || 'なし'}`);
+
+  // 中心に近い町字ごとの取得状況 (どの町のデータが無い/空かを特定できる)
+  if (map) {
+    const c = map.getCenter();
+    const all = [];
+    banchiStatus.cities.forEach(key => {
+      const idx = banchiCityIndexes.get(key);
+      if (!idx || !Array.isArray(idx.machiaza)) return;
+      idx.machiaza.forEach(m => all.push({ key, m }));
+    });
+    all.sort((a, b) => {
+      const da = (a.m.lng - c.lng) ** 2 + (a.m.lat - c.lat) ** 2;
+      const db = (b.m.lng - c.lng) ** 2 + (b.m.lat - c.lat) ** 2;
+      return da - db;
+    });
+    if (all.length) {
+      lines.push('― 中心に近い町字 (上位12件) ―');
+      all.slice(0, 12).forEach(({ key, m }) => {
+        const machiKey = `${key}|${m.id}|${m.kind}`;
+        const d = banchiMachiData.get(machiKey);
+        const meta = banchiMachiMeta.get(machiKey);
+        let state;
+        if (banchiMachiLoading.has(machiKey)) state = '取得中';
+        else if (!d) state = '未取得';
+        else if (d.length === 0 && meta && meta.rows > 0) state = `0件 (元データ${meta.rows}行・座標なし)`;
+        else state = `${d.length}件`;
+        lines.push(`  ${m.name} [${m.kind}]: ${state}`);
+      });
+    }
+  }
+
+  const el = $('banchi-debug-text');
+  if (el) el.textContent = lines.join('\n');
+  openModal('modal-banchi-debug');
+}
+
+// 画面周辺のz16タイルをプロキシのdebugモードで調べ、筆界データの有無を一覧表示。
+// データのあるタイルが見つかれば「データ地点へ移動」ボタンを有効化する。
+let fudeSurveyTarget = null;
+
+async function surveyFudeTiles() {
+  if (!map) return;
+  const el = $('banchi-debug-text');
+  if (!el) return;
+  const base = new URL('api/amx_tile_proxy.php', location.href).href;
+  const b = map.getBounds();
+  const z = 16;
+  const n = Math.pow(2, z);
+  const toXY = (lng, lat) => {
+    const r = lat * Math.PI / 180;
+    return [
+      Math.floor((lng + 180) / 360 * n),
+      Math.floor((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2 * n)
+    ];
+  };
+  const [x1, y1] = toXY(b.getWest(), b.getNorth());
+  const [x2, y2] = toXY(b.getEast(), b.getSouth());
+  const tiles = [];
+  for (let x = x1; x <= x2; x++) {
+    for (let y = y1; y <= y2; y++) tiles.push([x, y]);
+  }
+  if (!tiles.length || tiles.length > 24) {
+    el.textContent += `\n筆界調査: 範囲が広すぎます(${tiles.length}タイル)。ズーム16以上にして再実行してください`;
+    return;
+  }
+  el.textContent += `\n― 筆界データ調査 (z16 / ${tiles.length}タイル) ―`;
+  fudeSurveyTarget = null;
+  let best = 0;
+  for (const [x, y] of tiles) {
+    try {
+      const res = await fetch(`${base}?z=${z}&x=${x}&y=${y}&debug=1`);
+      const j = res.ok ? await res.json() : null;
+      const fude = j && Array.isArray(j.layers) ? j.layers.find(l => l.name === 'fude') : null;
+      const feats = fude ? (fude.features || 0) : 0;
+      el.textContent += `\n  (${x},${y}): ${j && j.result === 'ok' ? `${feats}筆` : '空'}`;
+      if (feats > best) {
+        best = feats;
+        const lng = (x + 0.5) / n * 360 - 180;
+        const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n))) * 180 / Math.PI;
+        fudeSurveyTarget = [lng, lat];
+      }
+    } catch (e) {
+      el.textContent += `\n  (${x},${y}): 取得失敗`;
+    }
+  }
+  el.textContent += best
+    ? `\n→ 最大${best}筆のタイルあり。「📍データ地点へ移動」で表示を確認できます`
+    : '\n→ この画面周辺に筆界データはありません(法務省地図が未整備の地域です)';
+  const gotoBtn = $('banchi-debug-goto');
+  if (gotoBtn) gotoBtn.style.display = fudeSurveyTarget ? '' : 'none';
+}
+
+function gotoFudeSurveyTarget() {
+  if (!fudeSurveyTarget || !map) return;
+  closeModal('modal-banchi-debug');
+  map.easeTo({ center: fudeSurveyTarget, zoom: 17.2, duration: 1200 });
+}
+
+function copyBanchiDebug() {
+  const el = $('banchi-debug-text');
+  const text = el ? el.textContent : '';
+  if (!text) return;
+  const done = () => showToast('診断情報をコピーしました');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => {});
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) {}
+    ta.remove();
+  }
 }
 
 function clearAllMarkers() {
@@ -3281,6 +4322,7 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   wrapper.classList.add('delivery-marker');
   wrapper.classList.toggle('done', !!d.completed);
   wrapper.classList.toggle('approx', !!d.approx);
+  wrapper.classList.toggle('review', !!d.needsReview && !d.completed);
   wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
   const timeWindow = timeWindowForDelivery(d);
   wrapper.classList.toggle('time-window', !!timeWindow);
@@ -3292,7 +4334,8 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   const labelText = buildLabelText(d, num, modeKey);
   const overlapCount = overlap && overlap.index === 0 ? overlap.count : 0;
   const timeWindowSig = timeWindow ? `${timeWindow.id}:${timeWindow.color}` : '';
-  const contentSig = `${num}|${d.approx ? 1 : 0}|${labelText}|${overlapCount}|${timeWindowSig}`;
+  const pkgCount = Number(d.packageCount) || 1;
+  const contentSig = `${num}|${d.approx ? 1 : 0}|${d.needsReview && !d.completed ? 1 : 0}|${pkgCount}|${labelText}|${overlapCount}|${timeWindowSig}`;
   if (wrapper.dataset.contentSig === contentSig) return;
   wrapper.dataset.contentSig = contentSig;
 
@@ -3307,6 +4350,12 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   const pin = document.createElement('div');
   pin.className = 'delivery-pin';
   pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${escapeHtml(num)}${d.approx ? '?' : ''}</div>`;
+  if (pkgCount > 1) {
+    const pkgBadge = document.createElement('div');
+    pkgBadge.className = 'package-badge';
+    pkgBadge.textContent = `×${pkgCount}`;
+    pin.appendChild(pkgBadge);
+  }
   if (overlapCount > 0) {
     const overlapLabel = document.createElement('div');
     overlapLabel.className = 'overlap-count-label';
@@ -3421,8 +4470,9 @@ function cycleLabelMode() {
 }
 
 function updateLabelModeButton() {
-  const btn = $('btn-label-mode');
-  if (btn) btn.textContent = `表示: ${LABEL_MODES[labelModeIndex].label}`;
+  const label = `🏷 表示: ${LABEL_MODES[labelModeIndex].label}`;
+  const btn = $('menu-label-mode');
+  if (btn) btn.textContent = label;
 }
 
 function loadLabelMode() {
@@ -3954,13 +5004,101 @@ function setCachedGeocode(key, result) {
   persistGeocodeCache();
 }
 
-async function addDelivery({ address, note }) {
+// ピン位置の自動検証。読み間違い住所をGoogleが「別の実在住所」として
+// 自信満々に解決してしまうケースを、登録直後に機械的に検出する。
+// 戻り値: 怪しい理由の配列 (空なら問題なし)
+function validateDeliveryPlacement(address, result) {
+  const reasons = [];
+  if (result.approx) reasons.push('概算位置');
+
+  // 現在地から極端に遠い (配達エリア外 = ほぼ確実に誤り)
+  if (lastKnownGps && Number.isFinite(result.lat) && Number.isFinite(result.lng)) {
+    const dKm = distanceMeters(lastKnownGps, result) / 1000;
+    if (dKm > 10) reasons.push(`現在地から約${Math.round(dKm)}km`);
+  }
+
+  // 既存ピン群の中心から極端に遠い
+  const others = deliveries.filter(d => Number.isFinite(d.lat) && Number.isFinite(d.lng));
+  if (others.length >= 3) {
+    const lats = others.map(d => d.lat).sort((a, b) => a - b);
+    const lngs = others.map(d => d.lng).sort((a, b) => a - b);
+    const median = { lat: lats[Math.floor(lats.length / 2)], lng: lngs[Math.floor(lngs.length / 2)] };
+    const dKm = distanceMeters(median, result) / 1000;
+    if (dKm > 10) reasons.push(`他のピン群から約${Math.round(dKm)}km`);
+  }
+
+  // 住所の往復照合: 入力の番地・町名が検索結果の正式住所に含まれるか
+  const fmt = String(result.formatted || '').normalize('NFKC').replace(/[‐‑‒–—―−ー]/g, '-');
+  if (fmt) {
+    const inputRaw = String(address || '').normalize('NFKC').replace(/[‐‑‒–—―−ー]/g, '-');
+
+    // 郵便番号の照合 (〒マーカー付きのみ対象 — 番地との誤マッチを防ぐ)
+    // 東日本橋(〒103-0004)を日本橋(〒103-0027)と誤読するような
+    // 「近所の実在住所」型の誤りを確実に検出する
+    const zipIn = inputRaw.match(/〒\s*(\d{3})-?(\d{4})/);
+    const zipFmt = fmt.match(/〒\s*(\d{3})-?(\d{4})/);
+    if (zipIn && zipFmt) {
+      const zin = zipIn[1] + zipIn[2];
+      const zf = zipFmt[1] + zipFmt[2];
+      if (zin !== zf) {
+        reasons.push(`郵便番号不一致(伝票〒${zipIn[1]}-${zipIn[2]}/検索結果〒${zipFmt[1]}-${zipFmt[2]})`);
+      }
+    }
+
+    const input = inputRaw
+      .replace(/〒?\s*\d{3}-?\d{4}/, '')
+      .trim();
+    const banchiMatch = input.match(/\d+(?:-\d+)*\s*$/);
+    if (banchiMatch) {
+      const inputNums = banchiMatch[0].trim().split('-');
+      const fmtNums = (fmt.match(/\d+/g) || []).map(n => String(Number(n)));
+      const missing = inputNums.filter(n => !fmtNums.includes(String(Number(n))));
+      if (missing.length) reasons.push(`番地「${banchiMatch[0].trim()}」が検索結果と不一致`);
+    }
+    const townMatch = input.match(/([一-鿿][一-鿿ぁ-ゖァ-ヺ]{1,5})\s*\d/);
+    if (townMatch) {
+      const town = townMatch[1].slice(-3);
+      if (town.length >= 2 && !fmt.includes(town) && !fmt.includes(townMatch[1])) {
+        reasons.push(`町名「${townMatch[1]}」が検索結果と不一致`);
+      }
+    }
+  }
+  return reasons;
+}
+
+async function addDelivery({ address, note, deliveryCourse }) {
   if (!address) { showToast('住所が空です', true); return; }
+
+  // 同じ住所 = 複数個口。未完了の既存ピンがあれば個数を増やす
+  const canon = canonicalAddressForCache(address);
+  const dupActive = canon ? deliveries.find(d => !d.completed && canonicalAddressForCache(d.address || '') === canon) : null;
+  if (dupActive) {
+    const current = Number(dupActive.packageCount) || 1;
+    showConfirm(
+      '複数個口の荷物',
+      `「${dupActive.address}」は既に登録済みです。\n荷物の個数を ${current} → ${current + 1} 個に増やしますか？`,
+      () => {
+        dupActive.packageCount = current + 1;
+        dupActive.updatedAt = Date.now();
+        saveDeliveries();
+        renderMarkers();
+        renderList();
+        showToast(`📦 ${dupActive.address} を${dupActive.packageCount}個口にしました`);
+      }
+    );
+    return;
+  }
+  // 完了済みと同じ住所は新しい配達として別ピンを立てる
+  await insertDelivery({ address, note, deliveryCourse });
+}
+
+async function insertDelivery({ address, note, deliveryCourse }) {
   showLoading('住所を検索中...');
   const result = await geocodeAddress(address);
   hideLoading();
   if (!result) { showToast('住所が見つかりませんでした', true); return; }
 
+  const reviewReasons = validateDeliveryPlacement(address, result);
   const d = {
     id: uid(),
     address,
@@ -3969,8 +5107,12 @@ async function addDelivery({ address, note }) {
     lng: result.lng,
     approx: result.approx,
     formatted: result.formatted,
+    needsReview: reviewReasons.length > 0,
+    reviewReasons,
+    packageCount: 1,
     completed: false,
     completedAt: null,
+    deliveryCourse: deliveryCourse || (appMode === 'delivery' ? getSelectedDeliveryCourse() : ''),
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -3980,7 +5122,11 @@ async function addDelivery({ address, note }) {
   renderMarkers();
   renderList();
   map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
-  showToast(result.sharedCache ? '保存済み位置から追加しました' : (result.approx ? '⚠ 概算位置で追加しました' : '配送先を追加しました'));
+  if (d.needsReview) {
+    showToast(`❗要確認: ${reviewReasons.join(' / ')} — ピン位置を確認してください`, true);
+  } else {
+    showToast(result.sharedCache ? '保存済み位置から追加しました' : '配送先を追加しました');
+  }
 }
 
 function regularPickupDisplayAddress(address) {
@@ -4094,6 +5240,7 @@ function renderList() {
     const cls = 'delivery-item'
       + (d.completed ? ' done' : '')
       + (d.approx ? ' approx' : '')
+      + (d.needsReview && !d.completed ? ' review' : '')
       + (isSpotPickupDelivery(d) ? ' spot' : '')
       + (d.progressSyncFailed ? ' sync-pending' : '')
       + (d.id === activeDeliveryId ? ' selected' : '');
@@ -4112,6 +5259,8 @@ function renderList() {
             : `<div class="addr">${escapeHtml(d.address)}</div>
                ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}`}
           ${timeWindowBadge}
+          ${(Number(d.packageCount) || 1) > 1 ? `<div><span class="package-badge-list">📦 ${Number(d.packageCount)}個口</span></div>` : ''}
+          ${d.needsReview && !d.completed ? `<div><span class="review-badge">❗要確認: ${escapeHtml((d.reviewReasons || [])[0] || 'ピン位置を確認')}</span></div>` : ''}
         ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
           ${d.progressSyncFailed ? `<div class="note">未同期: 通信回復後に自動再送します</div>` : ''}
         </div>
@@ -4264,8 +5413,25 @@ function openEdit(id) {
   editingItemId = id;
   const d = deliveries.find(x => x.id === id);
   if (!d) return;
+  // 要確認バナーと伝票写真 (連写モードで要確認になったものは写真と見比べられる)
+  const banner = $('edit-review-banner');
+  if (banner) {
+    if (d.needsReview && !d.completed) {
+      banner.textContent = `❗要確認: ${(d.reviewReasons || []).join(' / ') || 'ピン位置を確認してください'}`;
+      banner.style.display = '';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+  const photoWrap = $('edit-photo-wrap');
+  const photoUrl = reviewPhotoUrls.get(id);
+  if (photoWrap) {
+    photoWrap.style.display = photoUrl ? '' : 'none';
+    if (photoUrl) $('edit-photo').src = photoUrl;
+  }
   $('edit-address').value = d.address;
   $('edit-note').value = d.note || '';
+  $('edit-package-count').value = String(Number(d.packageCount) || 1);
   populateTimeWindowSelect($('edit-time-window'), d.timeWindowId || '');
   const doneBtn = $('btn-edit-done');
   doneBtn.textContent = d.completed ? '完了解除' : '完了';
@@ -4341,6 +5507,9 @@ async function reGeocodeEditedItem() {
   d.lng = result.lng;
   d.approx = result.approx;
   d.formatted = result.formatted;
+  d.needsReview = false; // ユーザーが再検索して確認した
+  d.reviewReasons = [];
+  d.updatedAt = Date.now();
 
   saveDeliveries();
   renderMarkers();
@@ -4389,6 +5558,10 @@ async function saveEditedItem() {
   };
   d.note = newNote;
   d.timeWindowId = newTimeWindowId;
+  const newPkgCount = Math.max(1, parseInt($('edit-package-count').value, 10) || 1);
+  d.packageCount = newPkgCount;
+  d.needsReview = false; // ユーザーが内容を確認して保存した
+  d.reviewReasons = [];
   d.updatedAt = Date.now();
 
   let locationChanged = false;
@@ -4492,6 +5665,335 @@ function splitAddressAndBuilding(text) {
   return { address, note };
 }
 
+// 番地・号は「新規入力時は常に空」— 前回値を初期値にしない
+const MANUAL_ADDRESS_DEFAULT_STATE = {
+  town: '',
+  chome: '1',
+  ban: '',
+  go: ''
+};
+const MANUAL_ADDRESS_STATE = { ...MANUAL_ADDRESS_DEFAULT_STATE };
+const MANUAL_WHEEL_OPTION_HEIGHT = 44;
+const manualWheelTimers = new Map();
+
+function currentManualAddressProfile() {
+  if (appMode !== 'delivery') return null;
+  const course = getSelectedDeliveryCourse();
+  return Object.values(MANUAL_ADDRESS_PROFILES).find(profile => profile.deliveryCourse === course) || null;
+}
+
+function manualAddressStorageKey(profile = currentManualAddressProfile()) {
+  return profile ? `${MANUAL_ADDRESS_STATE_KEY}:${profile.key}` : MANUAL_ADDRESS_STATE_KEY;
+}
+
+function manualAddressTowns() {
+  const profile = currentManualAddressProfile();
+  return profile ? profile.towns : MANUAL_ADDRESS_PROFILES.kobunacho.towns;
+}
+
+function manualAddressDefaultTown() {
+  const profile = currentManualAddressProfile();
+  const towns = manualAddressTowns();
+  return (profile && profile.defaultTown) || Object.keys(towns)[0] || '日本橋本町';
+}
+
+function manualAddressHasChome(config) {
+  return Array.isArray(config && config.chome) ? config.chome.length > 0 : !!(config && config.chome);
+}
+
+function manualAddressChomeValue(item) {
+  return (item && typeof item === 'object') ? item.value : item;
+}
+
+function manualAddressChomeValues(config) {
+  if (Array.isArray(config && config.chome)) return config.chome.map(manualAddressChomeValue);
+  return config && config.chome ? [1, 2, 3, 4] : [];
+}
+
+function manualAddressSelectedChomeConfig(config = manualAddressTownConfig()) {
+  if (!Array.isArray(config && config.chome)) return {};
+  const selected = String(MANUAL_ADDRESS_STATE.chome || '');
+  return config.chome.find(item => String(manualAddressChomeValue(item)) === selected && item && typeof item === 'object') || {};
+}
+
+function manualAddressBanMax(config = manualAddressTownConfig()) {
+  return Number(manualAddressSelectedChomeConfig(config).banMax || config.banMax || 15);
+}
+
+function manualAddressGoMax(config = manualAddressTownConfig()) {
+  return Number(manualAddressSelectedChomeConfig(config).goMax || config.goMax || 30);
+}
+
+function normalizeManualAddressStateForProfile() {
+  const towns = manualAddressTowns();
+  if (!towns[MANUAL_ADDRESS_STATE.town]) MANUAL_ADDRESS_STATE.town = manualAddressDefaultTown();
+  const config = manualAddressTownConfig();
+  const chomeValues = manualAddressChomeValues(config).map(value => String(value));
+  if (chomeValues.length) {
+    if (!chomeValues.includes(MANUAL_ADDRESS_STATE.chome)) MANUAL_ADDRESS_STATE.chome = chomeValues[0];
+  } else {
+    MANUAL_ADDRESS_STATE.chome = '';
+  }
+  if (MANUAL_ADDRESS_STATE.ban) {
+    const banMax = manualAddressBanMax(config);
+    const ban = Math.max(1, Math.min(banMax, Number(MANUAL_ADDRESS_STATE.ban) || 1));
+    MANUAL_ADDRESS_STATE.ban = String(ban);
+  } else {
+    MANUAL_ADDRESS_STATE.ban = '';
+  }
+  if (MANUAL_ADDRESS_STATE.go === undefined || MANUAL_ADDRESS_STATE.go === null) MANUAL_ADDRESS_STATE.go = '';
+  const goValue = Number(MANUAL_ADDRESS_STATE.go || 0);
+  if (goValue > manualAddressGoMax(config)) MANUAL_ADDRESS_STATE.go = String(manualAddressGoMax(config));
+}
+
+function loadManualAddressState() {
+  Object.assign(MANUAL_ADDRESS_STATE, MANUAL_ADDRESS_DEFAULT_STATE);
+  const profile = currentManualAddressProfile();
+  const keys = [manualAddressStorageKey(profile), MANUAL_ADDRESS_STATE_KEY].filter(Boolean);
+  for (const key of keys) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) || 'null');
+      if (!saved || typeof saved !== 'object') continue;
+      const towns = manualAddressTowns();
+      if (towns[saved.town]) MANUAL_ADDRESS_STATE.town = saved.town;
+      // 復元するのは町名・丁目のみ。番地・号は常に空から始める
+      if (saved.chome !== undefined && saved.chome !== null) MANUAL_ADDRESS_STATE.chome = String(saved.chome);
+      break;
+    } catch (e) {}
+  }
+  normalizeManualAddressStateForProfile();
+}
+
+function saveManualAddressState() {
+  try {
+    // 番地・号は保存しない (次回の新規入力を必ず空で始めるため)
+    localStorage.setItem(manualAddressStorageKey(), JSON.stringify({ ...MANUAL_ADDRESS_STATE, ban: '', go: '' }));
+  } catch (e) {}
+}
+
+function resetManualAddressDirectInputsForNewItem() {
+  MANUAL_ADDRESS_STATE.ban = '';
+  MANUAL_ADDRESS_STATE.go = '';
+  saveManualAddressState();
+}
+function manualAddressTownConfig() {
+  const towns = manualAddressTowns();
+  const town = MANUAL_ADDRESS_STATE.town || manualAddressDefaultTown();
+  return towns[town] || towns[manualAddressDefaultTown()] || {};
+}
+
+function rangeItems(start, end, suffix = '') {
+  const items = [];
+  for (let i = start; i <= end; i++) items.push({ value: String(i), label: `${i}${suffix}` });
+  return items;
+}
+
+function manualWheelItems(field) {
+  if (field === 'town') {
+    return Object.keys(manualAddressTowns()).map(town => ({ value: town, label: town.replace(/^日本橋/, '') }));
+  }
+  if (field === 'chome') return manualAddressChomeValues(manualAddressTownConfig()).map(value => ({ value: String(value), label: String(value) }));
+  if (field === 'ban') return rangeItems(1, manualAddressBanMax());
+  if (field === 'go') return [{ value: '', label: '-' }, ...rangeItems(1, manualAddressGoMax())];
+  return [];
+}
+
+function selectManualWheelValue(field, value, { render = true, apply = true, fromScroll = false } = {}) {
+  if (!field) return;
+  MANUAL_ADDRESS_STATE[field] = String(value ?? '');
+  if (field === 'town') {
+    const config = manualAddressTownConfig();
+    const chomeValues = manualAddressChomeValues(config).map(item => String(item));
+    MANUAL_ADDRESS_STATE.chome = chomeValues[0] || '';
+  }
+  normalizeManualAddressStateForProfile();
+  saveManualAddressState();
+  if (render) renderManualAddressWheels({ preserveScroll: fromScroll });
+  else syncManualAddressDirectInputs();
+  updateManualAddressPreview({ apply });
+}
+
+function renderManualWheel(wheel, field, selectedValue, { preserveScroll = false } = {}) {
+  if (!wheel) return;
+  const items = manualWheelItems(field);
+  if (!items.some(item => item.value === selectedValue)) selectedValue = items[0]?.value || '';
+  wheel.innerHTML = items.map(item => {
+    const selected = item.value === selectedValue;
+    return `<div class="manual-address-wheel-option${selected ? ' is-selected' : ''}" role="option" aria-selected="${selected ? 'true' : 'false'}" data-value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</div>`;
+  }).join('');
+  if (!wheel.dataset.manualWheelBound) {
+    wheel.dataset.manualWheelBound = '1';
+    wheel.addEventListener('click', (event) => {
+      const option = event.target.closest('.manual-address-wheel-option');
+      if (!option) return;
+      selectManualWheelValue(wheel.dataset.field, option.dataset.value || '', { render: true, apply: true });
+    });
+    wheel.addEventListener('scroll', () => {
+      const key = wheel.id || field;
+      clearTimeout(manualWheelTimers.get(key));
+      manualWheelTimers.set(key, setTimeout(() => {
+        const options = [...wheel.querySelectorAll('.manual-address-wheel-option')];
+        if (!options.length) return;
+        const index = Math.max(0, Math.min(options.length - 1, Math.round(wheel.scrollTop / MANUAL_WHEEL_OPTION_HEIGHT)));
+        const value = options[index].dataset.value || '';
+        selectManualWheelValue(wheel.dataset.field, value, { render: false, apply: true, fromScroll: true });
+        options.forEach((option, i) => {
+          const selected = i === index;
+          option.classList.toggle('is-selected', selected);
+          option.setAttribute('aria-selected', selected ? 'true' : 'false');
+        });
+        wheel.scrollTo({ top: index * MANUAL_WHEEL_OPTION_HEIGHT, behavior: 'smooth' });
+      }, 100));
+    }, { passive: true });
+  }
+  const selectedIndex = Math.max(0, items.findIndex(item => item.value === selectedValue));
+  if (!preserveScroll) {
+    requestAnimationFrame(() => {
+      wheel.scrollTop = selectedIndex * MANUAL_WHEEL_OPTION_HEIGHT;
+    });
+  }
+}
+function manualAddressNumericValue(value) {
+  return String(value || '').replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '');
+}
+
+function syncManualAddressDirectInputs() {
+  const config = manualAddressTownConfig();
+  const banInput = $('manual-ban-input');
+  const goInput = $('manual-go-input');
+  if (banInput) {
+    banInput.value = MANUAL_ADDRESS_STATE.ban || '';
+    banInput.min = '1';
+    banInput.max = String(manualAddressBanMax(config));
+  }
+  if (goInput) {
+    goInput.value = MANUAL_ADDRESS_STATE.go || '';
+    goInput.min = '1';
+    goInput.max = String(manualAddressGoMax(config));
+  }
+}
+
+function bindManualAddressDirectInputs() {
+  const fields = [
+    { id: 'manual-ban-input', field: 'ban', allowEmpty: false },
+    { id: 'manual-go-input', field: 'go', allowEmpty: true }
+  ];
+  fields.forEach(({ id, field, allowEmpty }) => {
+    const input = $(id);
+    if (!input || input.dataset.manualDirectBound) return;
+    input.dataset.manualDirectBound = '1';
+    const applyInput = () => {
+      const digits = manualAddressNumericValue(input.value);
+      if (input.value !== digits) input.value = digits;
+      if (!digits) {
+        MANUAL_ADDRESS_STATE[field] = '';
+        saveManualAddressState();
+        updateManualAddressPreview({ apply: true });
+        return;
+      }
+      selectManualWheelValue(field, digits, { render: true, apply: true });
+    };
+    const isGoInput = id === 'manual-go-input';
+    let goConfirmTimer = null;
+    let goConfirming = false;
+    const confirmFromGoInput = () => {
+      if (!isGoInput || goConfirming) return;
+      const modal = $('modal-add');
+      if (!modal || !modal.classList.contains('show')) return;
+      goConfirming = true;
+      applyInput();
+      $('btn-add-confirm').click();
+      setTimeout(() => { goConfirming = false; }, 500);
+    };
+    const scheduleGoDoneConfirm = () => {
+      if (!isGoInput) return;
+      clearTimeout(goConfirmTimer);
+      goConfirmTimer = setTimeout(() => {
+        const active = document.activeElement;
+        if (!active || active.id !== 'add-address') return;
+        confirmFromGoInput();
+      }, 160);
+    };
+    input.addEventListener('beforeinput', (event) => {
+      if (isGoInput && event.inputType === 'insertLineBreak') {
+        event.preventDefault();
+        confirmFromGoInput();
+        return;
+      }
+      if (event.inputType && event.inputType.startsWith('delete')) return;
+      if (event.data && !/^[0-9０-９]+$/.test(event.data)) event.preventDefault();
+    });
+    input.addEventListener('paste', (event) => {
+      const text = (event.clipboardData || window.clipboardData).getData('text') || '';
+      if (text && !/^[0-9０-９]+$/.test(text)) event.preventDefault();
+    });
+    input.addEventListener('input', applyInput);
+    input.addEventListener('change', applyInput);
+    if (isGoInput) {
+      ['keydown', 'keypress', 'keyup'].forEach(eventName => {
+        input.addEventListener(eventName, (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          confirmFromGoInput();
+        });
+      });
+      input.addEventListener('change', scheduleGoDoneConfirm);
+      input.addEventListener('blur', scheduleGoDoneConfirm);
+      input.addEventListener('focusout', scheduleGoDoneConfirm);
+    }
+  });
+}
+
+function renderManualAddressWheels(options = {}) {
+  const title = $('manual-address-builder-title');
+  const profile = currentManualAddressProfile();
+  if (title && profile) title.textContent = profile.title;
+  renderManualWheel($('manual-town-wheel'), 'town', MANUAL_ADDRESS_STATE.town, options);
+  renderManualWheel($('manual-chome-wheel'), 'chome', MANUAL_ADDRESS_STATE.chome, options);
+  const config = manualAddressTownConfig();
+  const hasChome = manualAddressHasChome(config);
+  const builder = $('manual-address-builder');
+  if (builder) builder.classList.toggle('no-chome', !hasChome);
+  const chomeWrap = $('manual-chome-wrap');
+  if (chomeWrap) chomeWrap.style.display = hasChome ? '' : 'none';
+  bindManualAddressDirectInputs();
+  syncManualAddressDirectInputs();
+}
+
+function buildManualSelectedAddress() {
+  const town = MANUAL_ADDRESS_STATE.town || manualAddressDefaultTown();
+  const config = manualAddressTownConfig();
+  const chome = MANUAL_ADDRESS_STATE.chome || '';
+  const ban = String(MANUAL_ADDRESS_STATE.ban || '').trim();
+  const go = String(MANUAL_ADDRESS_STATE.go || '').trim();
+  const parts = [];
+  if (manualAddressHasChome(config)) parts.push(chome);
+  if (ban) parts.push(ban);
+  if (go) parts.push(go);
+  return `${ADDR_PREF}${ADDR_CITY}${town}${parts.length ? parts.join('-') : ''}`;
+}
+
+function updateManualAddressPreview({ apply = false } = {}) {
+  if (apply) $('add-address').value = buildManualSelectedAddress();
+}
+function updateManualAddressBuilder({ apply = false } = {}) {
+  const builder = $('manual-address-builder');
+  if (!builder) return;
+  const profile = currentManualAddressProfile();
+  builder.hidden = !profile;
+  if (!profile) return;
+  loadManualAddressState();
+  resetManualAddressDirectInputsForNewItem();
+  renderManualAddressWheels();
+  updateManualAddressPreview({ apply });
+}
+
+function openManualAddModal() {
+  $('add-address').value = '';
+  $('add-note').value = '';
+  updateManualAddressBuilder({ apply: !!currentManualAddressProfile() });
+  openModal('modal-add');
+}
 function startVoiceInput() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { showToast('音声入力に対応していません', true); return; }
@@ -4534,32 +6036,127 @@ function updatePhotoPreviewRotation() {
   if (img) img.style.transform = `rotate(${pendingPhotoRotation}deg)`;
 }
 
+// 1回分のOCR呼び出し (回転角度つき・バイナリ送信)
+async function ocrExtractAddress(file, rotation, signal) {
+  const compressed = await compressImage(file, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, rotation);
+  bumpUsage('ocr');
+  const res = await fetch('api/extract_address.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: compressed,
+    signal
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  return { ok: res.ok, data: data || {} };
+}
+
+// 向き自動リカバリー付きOCR。
+// 失敗時はAIの rotation_hint (時計回りの角度) を優先し、
+// ヒントがなければ 180 → 90 → 270 の順に回転して再試行する (最大4回)。
+async function ocrWithRotationRetry(attempt, baseRotation, onRetry) {
+  const norm = r => ((r % 360) + 360) % 360;
+  const tried = new Set();
+  let rotation = norm(baseRotation);
+  let lastError = '';
+  for (let i = 0; i < 4; i++) {
+    tried.add(rotation);
+    const { ok, data } = await attempt(rotation);
+    if (ok && data.address) {
+      if (i > 0) data.autoRotated = norm(rotation - baseRotation);
+      return data;
+    }
+    lastError = (data && data.error) || '住所が読み取れませんでした';
+    const hint = Number(data && data.rotation_hint);
+    let next = null;
+    if (hint === 90 || hint === 180 || hint === 270) {
+      const hinted = norm(rotation + hint);
+      if (!tried.has(hinted)) next = hinted;
+    }
+    if (next === null) {
+      next = [180, 90, 270].map(d => norm(baseRotation + d)).find(r => !tried.has(r));
+    }
+    if (next === undefined || next === null) break;
+    if (onRetry) onRetry(next);
+    rotation = next;
+  }
+  throw new Error(lastError);
+}
+
+// プレビュー表示と並行してOCRを裏で開始する。
+// ユーザーが向きを確認して「読み取り」を押す頃には結果が届いていることが多い。
+function startPendingPhotoOcr() {
+  if (!pendingPhotoFile) return null;
+  const rotation = pendingPhotoRotation;
+  if (pendingOcrJob && pendingOcrJob.rotation === rotation) return pendingOcrJob;
+  cancelPendingPhotoOcr();
+  const controller = ('AbortController' in window) ? new AbortController() : null;
+  const file = pendingPhotoFile;
+  const job = { rotation, controller, promise: null };
+  job.promise = ocrWithRotationRetry(
+    (rot) => ocrExtractAddress(file, rot, controller ? controller.signal : undefined),
+    rotation,
+    () => {
+      const loadingEl = $('loading');
+      if (loadingEl && loadingEl.classList.contains('show')) {
+        $('loading-msg').textContent = '向きを変えて再試行中...';
+      }
+    }
+  );
+  job.promise.catch(() => {}); // 裏実行中の未処理エラー通知を抑止 (await側で処理する)
+  pendingOcrJob = job;
+  return job;
+}
+
+function cancelPendingPhotoOcr() {
+  if (pendingOcrRestartTimer) {
+    clearTimeout(pendingOcrRestartTimer);
+    pendingOcrRestartTimer = null;
+  }
+  if (pendingOcrJob && pendingOcrJob.controller) {
+    try { pendingOcrJob.controller.abort(); } catch (e) {}
+  }
+  pendingOcrJob = null;
+}
+
 function openPhotoPreview(file) {
   if (!file) return;
   resetPhotoPreviewState();
+  cancelPendingPhotoOcr();
   pendingPhotoFile = file;
   pendingPhotoUrl = URL.createObjectURL(file);
   pendingPhotoRotation = 0;
   $('photo-preview-img').src = pendingPhotoUrl;
   updatePhotoPreviewRotation();
   openModal('modal-photo-preview');
+  startPendingPhotoOcr(); // プレビューを見ている間に裏で読み取り開始
 }
 
 function rotatePendingPhoto(delta) {
   if (!pendingPhotoFile) return;
   pendingPhotoRotation = (pendingPhotoRotation + delta + 360) % 360;
   updatePhotoPreviewRotation();
+  // 回転が確定するのを少し待ってから新しい向きで読み取り直す
+  cancelPendingPhotoOcr();
+  pendingOcrRestartTimer = setTimeout(() => {
+    pendingOcrRestartTimer = null;
+    startPendingPhotoOcr();
+  }, 700);
 }
 
 function closePhotoPreview() {
   closeModal('modal-photo-preview');
+  cancelPendingPhotoOcr();
   resetPhotoPreviewState();
 }
 
 function normalizeOcrField(value) {
   return String(value || '')
     .normalize('NFKC')
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u30fc\uff70]/g, '-')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
+    // \u30ab\u30bf\u30ab\u30ca\u9577\u97f3\u300c\u30fc\u300d\u306f\u6570\u5b57\u306b\u96a3\u63a5\u3059\u308b\u5834\u5408\u306e\u307f\u30c0\u30c3\u30b7\u30e5\u6271\u3044
+    // (\u5efa\u7269\u540d\u300c\u30e9\u30b0\u30bc\u30b3\u30fc\u30c8\u300d\u7b49\u306e\u9577\u97f3\u3092\u58ca\u3055\u306a\u3044)
+    .replace(/(?<=\d)\u30fc|\u30fc(?=\d)/g, '-')
     .replace(/[\t\r\n]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -4583,7 +6180,13 @@ function splitOcrAddressFields(data) {
   const sourceNote = normalizeOcrField(source.note || source.building || '');
   if (sourceNote) noteParts.push(sourceNote);
 
-  address = address.replace(/\u3012?\s*(\d{3})\s*-?\s*(\d{4})/, () => '').trim();
+  // \u90f5\u4fbf\u756a\u53f7\u306f\u6368\u3066\u305a\u306b\u4fdd\u6301\u3059\u308b\u3002\u6570\u5b57\u306f\u304b\u3059\u308c\u305f\u6f22\u5b57\u3088\u308a\u8aad\u307f\u53d6\u308a\u304c\u78ba\u5b9f\u3067\u3001
+  // \u300c\u6771\u65e5\u672c\u6a4b\u306e\u6771\u304c\u6b20\u3051\u3066\u65e5\u672c\u6a4b\u300d\u306e\u3088\u3046\u306a\u753a\u540d\u8aa4\u8aad\u3092\u3012\u3067\u88dc\u6b63\u30fb\u691c\u51fa\u3067\u304d\u308b\u3002
+  let postalCode = '';
+  address = address.replace(/\u3012?\s*(\d{3})\s*-?\s*(\d{4})/, (m, a, b) => {
+    postalCode = `${a}-${b}`;
+    return '';
+  }).trim();
   address = normalizeOcrAddressNumbering(address);
 
   const prefecture = '(?:\\u6771\\u4eac\\u90fd|\\u5317\\u6d77\\u9053|\\u5927\\u962a\\u5e9c|\\u4eac\\u90fd\\u5e9c|[\\u4e00-\\u9fff]{2,3}\\u770c)';
@@ -4608,44 +6211,212 @@ function splitOcrAddressFields(data) {
     .join('\n');
 
   return {
-    address: address.trim(),
-    note
+    // 〒付きで返す: 住所検索でGoogleが郵便番号を重視するため精度が上がる
+    address: (postalCode ? `〒${postalCode} ` : '') + address.trim(),
+    note,
+    postalCode
   };
 }
 
 async function readPendingPhoto() {
   if (!pendingPhotoFile) return;
-  const file = pendingPhotoFile;
-  const rotation = pendingPhotoRotation;
+  if (pendingOcrRestartTimer) {
+    clearTimeout(pendingOcrRestartTimer);
+    pendingOcrRestartTimer = null;
+  }
+  const job = startPendingPhotoOcr(); // 先行実行済みならそれを再利用
   closeModal('modal-photo-preview');
-  showLoading('画像を圧縮中...');
+  showLoading('AI で住所を読み取り中...');
   try {
-    const compressed = await compressImage(file, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, rotation);
-    showLoading('画像を変換中...');
-    const base64 = await blobToBase64(compressed);
-    showLoading('AI で住所を読み取り中...');
-    const res = await fetch('api/extract_address.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' })
-    });
-    const data = await res.json();
-    bumpUsage('ocr');
-    hideLoading();
-    if (!res.ok || !data.address) {
-      showToast(data.error || '住所が読み取れませんでした', true);
-      return;
-    }
+    const data = await job.promise;
+
     const ocrFields = splitOcrAddressFields(data);
-    $('add-address').value = ocrFields.address || data.address || '';
-    $('add-note').value = ocrFields.note || data.note || data.building || '';
+    const recipient = normalizeOcrField(data.recipient || '');
+    let note = ocrFields.note || data.note || data.building || '';
+    if (recipient && !note.includes(recipient)) {
+      note = note ? `${note}\n宛名: ${recipient}` : `宛名: ${recipient}`;
+    }
+    // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
+    const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address || '');
+    hideLoading();
+    $('add-address').value = resolved.address;
+    $('add-note').value = note;
     openModal('modal-add');
-    prefetchGeocodeAddress(ocrFields.address || data.address || '');
+    if (resolved.swapped) {
+      showToast('現在地に近い方をお届け先として採用しました (発送元側を除外)');
+    } else if (String(data.confidence || '').toLowerCase() === 'low') {
+      showToast('⚠ 読み取りの自信度が低めです。住所をよく確認してください', true);
+    } else if (data.autoRotated) {
+      showToast('向きを自動補正して読み取りました');
+    }
+    prefetchGeocodeAddress(resolved.address);
+    cancelPendingPhotoOcr();
+    resetPhotoPreviewState();
   } catch (e) {
     hideLoading();
-    showToast('画像処理に失敗しました: ' + e.message, true);
+    // 写真を保持したままプレビューに戻す — 撮り直し不要で回転や再試行ができる
+    pendingOcrJob = null;
+    showToast('読み取り失敗: ' + e.message, true);
+    updatePhotoPreviewRotation();
+    openModal('modal-photo-preview');
+  }
+}
+
+// お届け先と発送元の両方が読めた場合の最終判定。
+// 発送元にはピンを立てない。ただしAIのラベル判定が逆のことがあるため、
+// 「発送元とされた住所の方が現在地に明確に近い」場合だけ入れ替える
+// (お届け先は現在地=配達エリアに近いはず、という運用前提)。
+async function resolveDestinationAddress(ocrData, primaryAddress) {
+  const senderRaw = normalizeOcrField(ocrData && ocrData.sender_address || '');
+  if (!senderRaw || !primaryAddress) {
+    return { address: primaryAddress, swapped: false };
+  }
+  const sender = splitOcrAddressFields({ address: senderRaw }).address || senderRaw;
+  if (!sender || canonicalAddressForCache(sender) === canonicalAddressForCache(primaryAddress)) {
+    return { address: primaryAddress, swapped: false };
+  }
+  if (!lastKnownGps) {
+    return { address: primaryAddress, swapped: false }; // GPSなしではAIのラベルを信じる
+  }
+  try {
+    const [destRes, senderRes] = await Promise.all([
+      geocodeAddress(primaryAddress).catch(() => null),
+      geocodeAddress(sender).catch(() => null)
+    ]);
+    if (destRes && senderRes) {
+      const dDest = distanceMeters(lastKnownGps, destRes);
+      const dSender = distanceMeters(lastKnownGps, senderRes);
+      // 発送元側が半分以下の距離かつ2km以上の差 → ラベルが逆と判断して入れ替え
+      if (dSender < dDest * 0.5 && (dDest - dSender) > 2000) {
+        return { address: sender, swapped: true };
+      }
+    }
+  } catch (e) {
+    console.warn('destination resolve failed', e);
+  }
+  return { address: primaryAddress, swapped: false };
+}
+
+// ===== 連続撮影モード =====
+// プレビューも確認モーダルも省略し、撮影→裏でOCR+住所検索+ピン追加を自動実行。
+// 朝の積み込みで伝票を次々読み込む用途。処理は撮影と並行して進む。
+let batchPhotoMode = false;
+const batchStats = { pending: 0, added: 0, skipped: 0, failed: 0, review: 0, stacked: 0 };
+
+function updateBatchPhotoUi() {
+  const btn = $('btn-add-photo');
+  if (btn) {
+    btn.textContent = batchPhotoMode
+      ? `📸 連写${batchStats.pending > 0 ? ` (処理中${batchStats.pending})` : ''}`
+      : '📷 伝票撮影';
+  }
+  const menuBtn = $('menu-batch-photo');
+  if (menuBtn) {
+    menuBtn.textContent = batchPhotoMode ? '📸 連続撮影モード: ON' : '📸 連続撮影モード: OFF';
+    menuBtn.classList.toggle('on', batchPhotoMode);
+  }
+}
+
+function toggleBatchPhotoMode() {
+  closeModal('modal-menu');
+  batchPhotoMode = !batchPhotoMode;
+  if (batchPhotoMode) {
+    batchStats.pending = 0;
+    batchStats.added = 0;
+    batchStats.skipped = 0;
+    batchStats.failed = 0;
+    batchStats.review = 0;
+    batchStats.stacked = 0;
+    showToast('連続撮影モードON — 「📸 連写」で伝票を次々撮影してください');
+  } else {
+    const parts = [`追加${batchStats.added}件`];
+    if (batchStats.stacked) parts.push(`📦複数個口+${batchStats.stacked}`);
+    if (batchStats.review) parts.push(`❗要確認${batchStats.review}件`);
+    if (batchStats.skipped) parts.push(`重複${batchStats.skipped}件`);
+    if (batchStats.failed) parts.push(`失敗${batchStats.failed}件`);
+    const hints = [];
+    if (batchStats.review) hints.push('❗印のピンを編集画面で確認してください');
+    if (batchStats.failed) hints.push('失敗分は撮り直してください');
+    showToast(`連続撮影終了: ${parts.join(' / ')}${hints.length ? ' — ' + hints.join(' / ') : ''}`, (batchStats.failed + batchStats.review) > 0);
+  }
+  updateBatchPhotoUi();
+}
+
+async function processBatchPhoto(file) {
+  batchStats.pending++;
+  updateBatchPhotoUi();
+  try {
+    // 向きが変でも自動で回転して読み取り直す
+    const data = await ocrWithRotationRetry((rot) => ocrExtractAddress(file, rot), 0, null);
+
+    const ocrFields = splitOcrAddressFields(data);
+    const recipient = normalizeOcrField(data.recipient || '');
+    let note = ocrFields.note || data.note || data.building || '';
+    if (recipient && !note.includes(recipient)) {
+      note = note ? `${note}\n宛名: ${recipient}` : `宛名: ${recipient}`;
+    }
+    // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
+    const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address);
+    const address = resolved.address;
+
+    // 同じ住所 = 複数個口。未完了の既存ピンの個数を自動で増やす
+    // (連写中に確認ダイアログは出さない。完了済みしか無ければ新規ピン)
+    const canon = canonicalAddressForCache(address);
+    const dupActive = canon
+      ? deliveries.find(d => !d.completed && canonicalAddressForCache(d.address || '') === canon)
+      : null;
+    if (dupActive) {
+      dupActive.packageCount = (Number(dupActive.packageCount) || 1) + 1;
+      dupActive.updatedAt = Date.now();
+      saveDeliveries();
+      renderMarkers();
+      renderList();
+      batchStats.stacked++;
+      showToast(`📦 複数個口: ${address} (${dupActive.packageCount}個)`);
+      return;
+    }
+
+    const result = await geocodeAddress(address);
+    if (!result) throw new Error('住所が見つかりません: ' + address);
+
+    const reviewReasons = validateDeliveryPlacement(address, result);
+    if (String(data.confidence || '').toLowerCase() === 'low') reviewReasons.push('読み取り自信度低');
+    const newId = uid();
+    deliveries.push({
+      id: newId,
+      address,
+      note,
+      lat: result.lat,
+      lng: result.lng,
+      approx: result.approx,
+      formatted: result.formatted,
+      needsReview: reviewReasons.length > 0,
+      reviewReasons,
+      packageCount: 1,
+      completed: false,
+      completedAt: null,
+      deliveryCourse: appMode === 'delivery' ? getSelectedDeliveryCourse() : '',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+    saveDeliveries();
+    renderMarkers();
+    renderList();
+    if (reviewReasons.length > 0) {
+      // 要確認: 伝票写真を保持して、編集画面で見比べられるようにする
+      try { reviewPhotoUrls.set(newId, URL.createObjectURL(file)); } catch (e) {}
+      batchStats.review++;
+      showToast(`❗要確認: ${address} (${reviewReasons[0]})`, true);
+    } else {
+      batchStats.added++;
+      showToast(`✅ 追加: ${address}${resolved.swapped ? ' (発送元側を除外)' : ''}${data.autoRotated ? ' (向き自動補正)' : ''}`);
+    }
+  } catch (e) {
+    batchStats.failed++;
+    showToast(`❌ 読み取り失敗 — その伝票を撮り直してください (${e.message})`, true);
   } finally {
-    resetPhotoPreviewState();
+    batchStats.pending--;
+    updateBatchPhotoUi();
   }
 }
 
@@ -4704,7 +6475,8 @@ function copyListToClipboard() {
   if (deliveries.length === 0) { showToast('配送先がありません', true); return; }
   const text = deliveries.map((d, i) => {
     const mark = d.completed ? '✓' : '○';
-    return `${mark} ${i + 1}. ${d.address}${d.note ? ' / ' + d.note : ''}`;
+    const pkg = (Number(d.packageCount) || 1) > 1 ? ` 📦${d.packageCount}個口` : '';
+    return `${mark} ${i + 1}. ${d.address}${pkg}${d.note ? ' / ' + d.note : ''}`;
   }).join('\n');
   navigator.clipboard.writeText(text).then(
     () => showToast('リストをコピーしました'),
@@ -4859,12 +6631,14 @@ function setupPickupSheetOptions() {
   if (!select) return;
   if (select.options.length === 0) {
     select.innerHTML = [
-      `<option value="${PICKUP_DELIVERY_MODE_VALUE}">配送</option>`,
+      ...DELIVERY_COURSES.map(course => `<option value="${escapeHtml(deliveryCourseOptionValue(course))}">配送 (${escapeHtml(course)})</option>`),
       ...PICKUP_SHEETS.map(name => `<option value="${escapeHtml(name)}">集荷 (${escapeHtml(name)})</option>`)
     ].join('');
   }
   const saved = getSelectedPickupSheet();
-  select.value = appMode === 'pickup' ? (saved || PICKUP_SHEETS[0]) : PICKUP_DELIVERY_MODE_VALUE;
+  select.value = appMode === 'pickup'
+    ? (saved || PICKUP_SHEETS[0])
+    : deliveryCourseOptionValue(getSelectedDeliveryCourse());
 }
 
 function openPickupCourseModal() {
@@ -6107,14 +7881,21 @@ async function refreshSelectedPickupCourseInBackground() {
 
 async function importPickupSheet() {
   const sheetName = $('pickup-sheet').value;
-  if (sheetName === PICKUP_DELIVERY_MODE_VALUE) {
+  const deliveryCourse = deliveryCourseFromOptionValue(sheetName);
+  if (sheetName === PICKUP_DELIVERY_MODE_VALUE || deliveryCourse) {
+    if (deliveryCourse) {
+      setSelectedDeliveryCourse(deliveryCourse);
+      setSelectedCourseArea(courseAreaForDeliveryCourse(deliveryCourse).key);
+    }
     closeModal('modal-pickup-import');
     if (appMode !== 'delivery') await switchAppMode('delivery');
+    updateModeUi();
     return;
   }
   const replaceList = true;
   if (appMode !== 'pickup') await switchAppMode('pickup', false, { openCourseModal: false });
   setSelectedPickupSheet(sheetName);
+  setSelectedCourseArea(courseAreaForPickupSheet(sheetName).key);
   updateModeUi();
   closeModal('modal-pickup-import');
   const cacheVisible = showCachedRegularPickupCourse(sheetName);
@@ -6474,6 +8255,12 @@ function exportDeliveriesAsJSON() {
   );
 }
 
+function updateZoomBadge() {
+  const el = $('zoom-badge');
+  if (!el || !map) return;
+  el.textContent = `ズーム: ${map.getZoom().toFixed(1)}`;
+}
+
 function updateGpsButton() {
   const btn = $('btn-gps');
   if (!btn) return;
@@ -6513,6 +8300,8 @@ function updateUserLocation(pos, moveMap = false) {
   }
 
   updateGpsStatus(pos);
+  lastKnownGps = { lat: latitude, lng: longitude };
+  banchiSchedulePrefetch(longitude, latitude);
 
   const startupCenterAllowed = gpsInitialCenterStartedAt &&
     Date.now() - gpsInitialCenterStartedAt <= 60000;
@@ -6592,9 +8381,21 @@ function centerOnUser() {
 
 $('btn-menu').addEventListener('click', () => openModal('modal-menu'));
 $('btn-gps').addEventListener('click', toggleGpsTracking);
-$('btn-app-mode').addEventListener('click', openPickupCourseModal);
-$('btn-label-mode').addEventListener('click', cycleLabelMode);
-
+$('course-area-row').addEventListener('click', () => openCourseChoiceModal('area'));
+$('course-mode-row').addEventListener('click', () => openCourseChoiceModal('mode'));
+$('course-choice-list').addEventListener('click', (event) => {
+  const areaButton = event.target.closest('[data-course-choice-area]');
+  if (areaButton) {
+    setSelectedCourseArea(areaButton.dataset.courseChoiceArea);
+    renderCourseSelectorUi();
+    renderCourseChoiceModal('mode');
+    return;
+  }
+  const modeButton = event.target.closest('[data-course-choice-mode]');
+  if (!modeButton) return;
+  closeModal('modal-course-choice');
+  selectCourseMode(modeButton.dataset.courseChoiceMode).catch(e => showToast(e.message || 'コース切替に失敗しました', true));
+});
 function toggleListCollapse(forceState) {
   const willCollapse = (typeof forceState === 'boolean')
     ? forceState
@@ -6614,28 +8415,68 @@ $('btn-north').addEventListener('click', () => {
 
 $('btn-add-photo').addEventListener('click', () => $('file-photo').click());
 $('file-photo').addEventListener('change', (e) => {
-  if (e.target.files && e.target.files[0]) {
-    openPhotoPreview(e.target.files[0]);
-    e.target.value = '';
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (batchPhotoMode) {
+    processBatchPhoto(file); // 裏で処理 (待たない)
+    // 続けて次の伝票を撮れるよう、すぐカメラを開き直す。
+    // 端末側がブロックした場合は「📸連写」を再タップすれば同じ。
+    setTimeout(() => {
+      if (batchPhotoMode) {
+        try { $('file-photo').click(); } catch (err) {}
+      }
+    }, 300);
+  } else {
+    openPhotoPreview(file);
   }
 });
+$('menu-batch-photo').addEventListener('click', toggleBatchPhotoMode);
 $('btn-photo-rotate-left').addEventListener('click', () => rotatePendingPhoto(-90));
 $('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(90));
 $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
 $('btn-photo-read').addEventListener('click', readPendingPhoto);
 $('btn-add-voice').addEventListener('click', startVoiceInput);
-$('btn-add-manual').addEventListener('click', () => {
-  $('add-address').value = '';
-  $('add-note').value = '';
-  openModal('modal-add');
-});
-
+$('btn-add-manual').addEventListener('click', openManualAddModal);
 $('btn-add-confirm').addEventListener('click', () => {
+  const builder = $('manual-address-builder');
+  if (builder && !builder.hidden) {
+    const banInput = $('manual-ban-input');
+    if (!manualAddressNumericValue(banInput ? banInput.value : '')) {
+      showToast('番地を入力してください', true);
+      if (banInput) banInput.focus();
+      return;
+    }
+  }
   const address = $('add-address').value.trim();
   const note = $('add-note').value.trim();
   if (!address) { showToast('住所を入力してください', true); return; }
-  closeModal('modal-add');
-  addDelivery({ address, note });
+  const continuous = $('add-continuous') && $('add-continuous').checked;
+  if (continuous) {
+    // 連続入力: モーダルを開いたまま次の入力に備える
+    const builderVisible = builder && !builder.hidden;
+    if (builderVisible) {
+      // 住所ホイールは維持し、番地・号は内部状態ごとクリア
+      // (見た目だけ消すとホイール操作時の同期で前回値が復活してしまう)
+      resetManualAddressDirectInputsForNewItem();
+      syncManualAddressDirectInputs();
+      $('add-note').value = '';
+      const banInput = $('manual-ban-input');
+      if (banInput) banInput.focus();
+    } else {
+      $('add-address').value = '';
+      $('add-note').value = '';
+      $('add-address').focus();
+    }
+  } else {
+    closeModal('modal-add');
+  }
+  addDelivery({ address, note, deliveryCourse: appMode === 'delivery' ? getSelectedDeliveryCourse() : '' });
+});
+// 連続入力の設定を記憶する
+$('add-continuous').checked = localStorage.getItem('rys-mapbox-continuous-add') === '1';
+$('add-continuous').addEventListener('change', (e) => {
+  localStorage.setItem('rys-mapbox-continuous-add', e.target.checked ? '1' : '0');
 });
 
 $('btn-edit-save').addEventListener('click', saveEditedItem);
@@ -6646,6 +8487,7 @@ $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 
 $('menu-center-user').addEventListener('click', centerOnUser);
 $('menu-toggle-mode').addEventListener('click', toggleAppMode);
+$('menu-label-mode').addEventListener('click', cycleLabelMode);
 $('menu-import-pickup').addEventListener('click', openPickupImportModal);
 $('menu-reset-pickup').addEventListener('click', resetPickupCompletionsManually);
 $('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
@@ -6669,6 +8511,10 @@ $('menu-toggle-gsi').addEventListener('click', () => {
   toggleGsiOverlay();
 });
 $('menu-refresh-banchi').addEventListener('click', refreshAddressData);
+$('menu-banchi-debug').addEventListener('click', openBanchiDebug);
+$('banchi-debug-copy').addEventListener('click', copyBanchiDebug);
+$('banchi-debug-survey').addEventListener('click', surveyFudeTiles);
+$('banchi-debug-goto').addEventListener('click', gotoFudeSurveyTarget);
 $('menu-text-size').addEventListener('click', openTextSizeSettings);
 $('menu-notifications').addEventListener('click', openNotificationSettings);
 $('menu-reload-app').addEventListener('click', reloadLatestApp);
@@ -6803,14 +8649,8 @@ document.addEventListener('visibilitychange', () => {
       });
     }
 
-    if (localStorage.getItem(ADDR_VISIBLE_KEY) === '1') {
-      ensureAddressData({ showProgress: false }).then(data => {
-        if (!data) return;
-        addrVisible = true;
-        addAddressLayer(data);
-        updateAddrButton();
-      });
-    }
+    updateAddrButton();
+    if (addrVisible) banchiScheduleUpdate(0);
   } catch (e) {
     hideLoading();
     showToast('初期化エラー: ' + e.message, true);
