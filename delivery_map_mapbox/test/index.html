@@ -1653,7 +1653,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.45';
+const APP_VERSION = 'v2026.06.24-test.46';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -5665,10 +5665,11 @@ function splitAddressAndBuilding(text) {
   return { address, note };
 }
 
+// 番地・号は「新規入力時は常に空」— 前回値を初期値にしない
 const MANUAL_ADDRESS_DEFAULT_STATE = {
   town: '',
   chome: '1',
-  ban: '1',
+  ban: '',
   go: ''
 };
 const MANUAL_ADDRESS_STATE = { ...MANUAL_ADDRESS_DEFAULT_STATE };
@@ -5755,9 +5756,8 @@ function loadManualAddressState() {
       if (!saved || typeof saved !== 'object') continue;
       const towns = manualAddressTowns();
       if (towns[saved.town]) MANUAL_ADDRESS_STATE.town = saved.town;
-      ['chome', 'ban', 'go'].forEach(itemKey => {
-        if (saved[itemKey] !== undefined && saved[itemKey] !== null) MANUAL_ADDRESS_STATE[itemKey] = String(saved[itemKey]);
-      });
+      // 復元するのは町名・丁目のみ。番地・号は常に空から始める
+      if (saved.chome !== undefined && saved.chome !== null) MANUAL_ADDRESS_STATE.chome = String(saved.chome);
       break;
     } catch (e) {}
   }
@@ -5766,7 +5766,8 @@ function loadManualAddressState() {
 
 function saveManualAddressState() {
   try {
-    localStorage.setItem(manualAddressStorageKey(), JSON.stringify(MANUAL_ADDRESS_STATE));
+    // 番地・号は保存しない (次回の新規入力を必ず空で始めるため)
+    localStorage.setItem(manualAddressStorageKey(), JSON.stringify({ ...MANUAL_ADDRESS_STATE, ban: '', go: '' }));
   } catch (e) {}
 }
 
@@ -8455,12 +8456,12 @@ $('btn-add-confirm').addEventListener('click', () => {
     // 連続入力: モーダルを開いたまま次の入力に備える
     const builderVisible = builder && !builder.hidden;
     if (builderVisible) {
-      // 住所ホイールは維持し、番地・号だけクリアして次の番地入力へ
-      const banInput = $('manual-ban-input');
-      const goInput = $('manual-go-input');
-      if (banInput) banInput.value = '';
-      if (goInput) goInput.value = '';
+      // 住所ホイールは維持し、番地・号は内部状態ごとクリア
+      // (見た目だけ消すとホイール操作時の同期で前回値が復活してしまう)
+      resetManualAddressDirectInputsForNewItem();
+      syncManualAddressDirectInputs();
       $('add-note').value = '';
+      const banInput = $('manual-ban-input');
       if (banInput) banInput.focus();
     } else {
       $('add-address').value = '';
