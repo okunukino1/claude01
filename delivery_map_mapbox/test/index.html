@@ -1300,6 +1300,8 @@
 </div>
 
 <input type="file" id="file-photo" class="hidden-input" accept="image/*" capture="environment">
+<!-- カメラアプリで連写した写真をアルバムからまとめて取り込む用 (capture無し=ギャラリー複数選択) -->
+<input type="file" id="file-photo-multi" class="hidden-input" accept="image/*" multiple>
 
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
@@ -1310,6 +1312,7 @@
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
       <button id="menu-label-mode" type="button">🏷 表示: 番地+建物</button>
       <button id="menu-batch-photo" type="button">📸 連続撮影モード: OFF</button>
+      <button id="menu-import-photos" type="button">🖼 写真をまとめて読み込み</button>
       <button id="menu-import-pickup" type="button">📦 集荷コースを選択</button>
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
@@ -1653,7 +1656,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.48';
+const APP_VERSION = 'v2026.06.24-test.49';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -6328,6 +6331,37 @@ function updateBatchPhotoUi() {
   }
 }
 
+// カメラアプリで連写した写真を、アルバムからまとめて取り込んで一括処理する。
+// 撮影はカメラアプリ内で完結するので、撮影中にマップへ戻ることがない。
+async function importPhotosFromGallery(files) {
+  const list = Array.from(files || []);
+  if (!list.length) return;
+  const before = {
+    added: batchStats.added,
+    stacked: batchStats.stacked,
+    review: batchStats.review,
+    failed: batchStats.failed
+  };
+  showToast(`📥 ${list.length}枚の写真を読み込み開始（裏で処理します）`);
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const file = list[next++];
+      await processBatchPhoto(file);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(2, list.length) }, worker));
+  const added = batchStats.added - before.added;
+  const stacked = batchStats.stacked - before.stacked;
+  const review = batchStats.review - before.review;
+  const failed = batchStats.failed - before.failed;
+  const parts = [`追加${added}件`];
+  if (stacked) parts.push(`📦複数個口+${stacked}`);
+  if (review) parts.push(`❗要確認${review}件`);
+  if (failed) parts.push(`失敗${failed}件`);
+  showToast(`📥 まとめ読み込み完了: ${parts.join(' / ')}${failed ? ' — 失敗分は個別に撮り直してください' : ''}`, (review + failed) > 0);
+}
+
 function toggleBatchPhotoMode() {
   closeModal('modal-menu');
   batchPhotoMode = !batchPhotoMode;
@@ -8443,6 +8477,16 @@ $('file-photo').addEventListener('change', (e) => {
   }
 });
 $('menu-batch-photo').addEventListener('click', toggleBatchPhotoMode);
+$('menu-import-photos').addEventListener('click', () => {
+  closeModal('modal-menu');
+  $('file-photo-multi').click();
+});
+$('file-photo-multi').addEventListener('change', (e) => {
+  const files = e.target.files;
+  const list = files ? Array.from(files) : [];
+  e.target.value = '';
+  if (list.length) importPhotosFromGallery(list);
+});
 $('btn-photo-rotate-left').addEventListener('click', () => rotatePendingPhoto(-90));
 $('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(90));
 $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
