@@ -1626,7 +1626,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.40';
+const APP_VERSION = 'v2026.06.24-test.41';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -6155,7 +6155,6 @@ async function readPendingPhoto() {
   showLoading('AI で住所を読み取り中...');
   try {
     const data = await job.promise;
-    hideLoading();
 
     const ocrFields = splitOcrAddressFields(data);
     const recipient = normalizeOcrField(data.recipient || '');
@@ -6163,15 +6162,20 @@ async function readPendingPhoto() {
     if (recipient && !note.includes(recipient)) {
       note = note ? `${note}\n宛名: ${recipient}` : `宛名: ${recipient}`;
     }
-    $('add-address').value = ocrFields.address || data.address || '';
+    // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
+    const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address || '');
+    hideLoading();
+    $('add-address').value = resolved.address;
     $('add-note').value = note;
     openModal('modal-add');
-    if (String(data.confidence || '').toLowerCase() === 'low') {
+    if (resolved.swapped) {
+      showToast('現在地に近い方をお届け先として採用しました (発送元側を除外)');
+    } else if (String(data.confidence || '').toLowerCase() === 'low') {
       showToast('⚠ 読み取りの自信度が低めです。住所をよく確認してください', true);
     } else if (data.autoRotated) {
       showToast('向きを自動補正して読み取りました');
     }
-    prefetchGeocodeAddress(ocrFields.address || data.address || '');
+    prefetchGeocodeAddress(resolved.address);
     cancelPendingPhotoOcr();
     resetPhotoPreviewState();
   } catch (e) {
@@ -6182,6 +6186,41 @@ async function readPendingPhoto() {
     updatePhotoPreviewRotation();
     openModal('modal-photo-preview');
   }
+}
+
+// お届け先と発送元の両方が読めた場合の最終判定。
+// 発送元にはピンを立てない。ただしAIのラベル判定が逆のことがあるため、
+// 「発送元とされた住所の方が現在地に明確に近い」場合だけ入れ替える
+// (お届け先は現在地=配達エリアに近いはず、という運用前提)。
+async function resolveDestinationAddress(ocrData, primaryAddress) {
+  const senderRaw = normalizeOcrField(ocrData && ocrData.sender_address || '');
+  if (!senderRaw || !primaryAddress) {
+    return { address: primaryAddress, swapped: false };
+  }
+  const sender = splitOcrAddressFields({ address: senderRaw }).address || senderRaw;
+  if (!sender || canonicalAddressForCache(sender) === canonicalAddressForCache(primaryAddress)) {
+    return { address: primaryAddress, swapped: false };
+  }
+  if (!lastKnownGps) {
+    return { address: primaryAddress, swapped: false }; // GPSなしではAIのラベルを信じる
+  }
+  try {
+    const [destRes, senderRes] = await Promise.all([
+      geocodeAddress(primaryAddress).catch(() => null),
+      geocodeAddress(sender).catch(() => null)
+    ]);
+    if (destRes && senderRes) {
+      const dDest = distanceMeters(lastKnownGps, destRes);
+      const dSender = distanceMeters(lastKnownGps, senderRes);
+      // 発送元側が半分以下の距離かつ2km以上の差 → ラベルが逆と判断して入れ替え
+      if (dSender < dDest * 0.5 && (dDest - dSender) > 2000) {
+        return { address: sender, swapped: true };
+      }
+    }
+  } catch (e) {
+    console.warn('destination resolve failed', e);
+  }
+  return { address: primaryAddress, swapped: false };
 }
 
 // ===== 連続撮影モード =====
@@ -6240,7 +6279,9 @@ async function processBatchPhoto(file) {
     if (recipient && !note.includes(recipient)) {
       note = note ? `${note}\n宛名: ${recipient}` : `宛名: ${recipient}`;
     }
-    const address = ocrFields.address || data.address;
+    // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
+    const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address);
+    const address = resolved.address;
 
     // 重複は自動スキップ (連写中に確認ダイアログは出さない)
     const canon = canonicalAddressForCache(address);
@@ -6282,7 +6323,7 @@ async function processBatchPhoto(file) {
       showToast(`❗要確認: ${address} (${reviewReasons[0]})`, true);
     } else {
       batchStats.added++;
-      showToast(`✅ 追加: ${address}${data.autoRotated ? ' (向き自動補正)' : ''}`);
+      showToast(`✅ 追加: ${address}${resolved.swapped ? ' (発送元側を除外)' : ''}${data.autoRotated ? ' (向き自動補正)' : ''}`);
     }
   } catch (e) {
     batchStats.failed++;
