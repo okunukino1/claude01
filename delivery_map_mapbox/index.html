@@ -1653,7 +1653,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.07.07-1';
+const APP_VERSION = 'v2026.07.07-2';
 const STORAGE_KEY = 'rys-mapbox-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-pickup-deliveries-v1';
@@ -8520,7 +8520,7 @@ $('menu-notifications').addEventListener('click', openNotificationSettings);
 $('menu-reload-app').addEventListener('click', reloadLatestApp);
 $('menu-manual').addEventListener('click', () => {
   closeModal('modal-menu');
-  window.open('manual.html', '_blank', 'noopener');
+  window.open('manual.html?v=' + encodeURIComponent(APP_VERSION), '_blank', 'noopener');
 });
 
 $('btn-delivery-sync-connect').addEventListener('click', connectDeliverySync);
