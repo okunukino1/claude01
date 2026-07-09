@@ -1,0 +1,13 @@
+{
+  "appId": "com.rys.deliverymap",
+  "appName": "RYS配送マップ",
+  "webDir": "www",
+  "server": {
+    "url": "https://rys-services.com/delivery_map_mapbox/test/",
+    "androidScheme": "https",
+    "allowNavigation": ["rys-services.com", "www.rys-services.com"]
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

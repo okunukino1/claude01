@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">RYS配送マップ</string>
+    <string name="title_activity_main">RYS配送マップ</string>
+    <string name="package_name">com.rys.deliverymap</string>
+    <string name="custom_url_scheme">com.rys.deliverymap</string>
+</resources>

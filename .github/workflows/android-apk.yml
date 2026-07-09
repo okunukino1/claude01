@@ -1,0 +1,67 @@
+name: Build Android APK (Capacitor)
+
+# Capacitorの殻アプリをビルドし、APKをサーバーへアップロードする。
+# スマホから https://rys-services.com/delivery_map_mapbox/app/rys-map.apk
+# を開けば直接インストールできる。
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'capacitor/**'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Capacitor dependencies
+        working-directory: capacitor
+        run: npm ci
+
+      - name: Sync native project
+        working-directory: capacitor
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: capacitor/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare APK for upload
+        run: |
+          mkdir -p apk-dist
+          cp capacitor/android/app/build/outputs/apk/debug/app-debug.apk apk-dist/rys-map.apk
+          ls -la apk-dist/
+
+      - name: Upload APK artifact (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rys-map-apk
+          path: apk-dist/rys-map.apk
+
+      - name: Upload APK to server
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./apk-dist/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}app/
+          log-level: standard
