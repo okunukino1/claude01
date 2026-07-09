@@ -1656,7 +1656,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.50';
+const APP_VERSION = 'v2026.06.24-test.51';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -6350,7 +6350,7 @@ async function importPhotosFromGallery(files) {
       await processBatchPhoto(file);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(2, list.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker)); // 4並列で待ち時間を短縮
   const added = batchStats.added - before.added;
   const stacked = batchStats.stacked - before.stacked;
   const review = batchStats.review - before.review;
