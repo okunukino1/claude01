@@ -1,87 +1,118 @@
-# Claude 実装報告 — テスト版改善 (2026-06-12)
+# Claude 現状報告 — プロジェクト全体の状態 (2026-07-10)
 
 **宛先: Codex**
-このドキュメントは、Claude（別AIセッション）が `delivery_map_mapbox/test/index.html` に実装した変更の報告です。
-**同じ内容を二重に実装しないでください。** 変更はすべてテスト版のみで、安定版 `index.html` と `api/` 配下のPHPには一切触れていません。
+このドキュメントは、Claude（別AIセッション）が `delivery_map_mapbox/` と `capacitor/` に行った作業の最新報告です。前回の報告（2026-06-12, v2026.06.12-test.1）から大きく進んでいるため、**過去の報告は破棄してこのファイルを唯一の最新状態として扱ってください。**
 
-- 対象ファイル: `delivery_map_mapbox/test/index.html` のみ
-- バージョン: `v2026.06.10-test.6` → **`v2026.06.12-test.1`**
-- ベースコミット: `7d38787`（main マージ済み）
+**同じ内容を二重に実装しないでください。** また、下記の「開発ルール」を必ず守ってください。
 
 ---
 
-## 変更 1: 未使用コード削除 + ルート最適化の統合（コミット `bd4fcc4`）
+## 1. バージョンの現状（2026-07-10 時点）
 
-### 削除
-- `addLocalNeighborhoodLayers()`（旧 L.2176-2226、51行）— どこからも呼ばれていなかった
-- `GSI_BOUNDARY_TILES` 定数とその説明コメント — 上記関数すら参照していなかった
-- `data/chuo_nihonbashi_boundaries.geojson` 自体は削除していない（安定版が参照している可能性があるため）
+| 対象 | バージョン | 状態 |
+|---|---|---|
+| 安定版 `index.html` | **v2026.07.10-1** | 本日、テスト版 test.54 を全面昇格。デプロイ済み（Actions run #259 success） |
+| テスト版 `test/index.html` | **v2026.06.24-test.54** | 安定版と機能同等。今後の新機能開発はここで行う |
+| Androidアプリ (APK) | test.54 相当 | `capacitor/` のCapacitorシェル。**テスト版URLを読み込む。安定版用APKは作らない（ユーザー指示）** |
 
-### ルート最適化3関数の共通化
-`optimizeRouteOrder` / `optimizeCarRouteOrder` / `optimizeGoogleCarRouteOrder` の重複部分（候補収集・tailNote・確認モーダル・並べ替え確定処理）を以下に抽出:
-
-- `collectRouteCandidates()` — routeItems / noLocationItems / completedItems の振り分け
-- `buildRouteTailNote(noLocationItems, completedItems)`
-- `confirmAndApplyRouteOrder({ title, summary, suggested, ..., geometry, clearGeometry, successMessage })` — 確認→並べ替え→保存→再描画→flyTo→トースト
-- `CAR_ROUTE_PROVIDERS` 設定オブジェクト（mapbox / google）+ `optimizeCarRouteOrderWith(providerKey)`
-- `optimizeCarRouteOrder()` / `optimizeGoogleCarRouteOrder()` は薄いラッパーとして残存（メニューのハンドラ互換のため）
-
-**挙動維持の注意点:**
-- 「おすすめ順」は確定時に `clearOptimizedRouteGeometry()`（従来どおり）
-- 車用2種は `data.geometry` がある時だけ `setOptimizedRouteGeometry()`、ない時は既存ジオメトリを消さない（従来どおり）
-- ユーザー向け文言はすべて従来と同一になるよう `shortName` から組み立て（「車用」「Google車用」）
-
-## 変更 2: マーカー差分更新（コミット `7134fd9`）
-
-`updateDeliveryMarkerElement()` に内容シグネチャ方式の差分更新を導入:
-
-```js
-const contentSig = `${num}|${d.approx ? 1 : 0}|${labelText}|${overlapCount}`;
-if (wrapper.dataset.contentSig === contentSig) return;  // innerHTML 再構築をスキップ
-wrapper.dataset.contentSig = contentSig;
-```
-
-- **毎render実行のまま残したもの**: `classList.toggle('done'/'approx'/'spot')`、`style.zIndex`（完了状態・アクティブピンの前面化は従来どおり毎回反映）
-- **スキップ対象**: `innerHTML=''` からのDOM再構築（番号・ラベル文字列・「N件」バッジが変わらない限り）
-- `mapboxgl-marker` クラス保持の修正（あなたの `942bafc`）はそのまま生きています
-
-## 変更 3: 国土地理院ジオコーダのフォールバック（コミット `e6b1f4d`）
-
-`geocodeAddressUncached()` の末尾に追加。Google（`geocode_address.php`）が全候補文字列で見つからなかった場合のみ、ブラウザから直接 `https://msearch.gsi.go.jp/address-search/AddressSearch?q=...`（無料・キー不要）を呼びます。
-
-- 新関数 `geocodeAddressViaGsi(query)` と定数 `GSI_GEOCODE_API`
-- GSI結果は**常に `approx: true`**（精度保証がないため「?」バッジでピン位置確認を促す）+ `source: 'gsi'`
-- ローカルキャッシュ（`setCachedGeocode`）には保存しない（approxは保存しない既存規約に従う）
-- 共有DBキャッシュ（`saveSharedGeocodeCache`）には approx フラグ付きで保存（Googleのapprox結果と同じ扱い）
-- **PHPは無変更**。安定版のジオコード動作に影響なし
-
-## 変更 4: リスト検索ボックス + ピン薄表示（コミット `88aa4c1`）
-
-### UI
-- `.pickup-list-tabs` と `.list-body` の間に `#list-search`（検索入力 + クリアボタン）を追加
-- リスト折りたたみ時は非表示（`body.list-collapsed .list-search { display: none }`）
-
-### 検索仕様
-- 対象フィールド: `address` / `formatted` / `note` / `completedBy` / `displayNumber()` + 集荷項目は `pickupListDisplay()` の company / detail
-- 正規化: `NFKC`（全角半角統一）+ 小文字化 + 空白除去 → 部分一致
-- **番号は変わらない**: モード/タブのフィルタ後の `{delivery, index}` に対して検索フィルタをかけるため、表示番号・クリック対象のIDは従来どおり
-- 非ヒットのピンは `search-dim` クラスで opacity 0.25（削除はしない）
-- モード切替時に `clearListSearch()` で自動クリア
-- 入力は150msデバウンス、Enterでキーボードを閉じる
-- 検索中の統計表示は「検索 X件 / 全Y件」、非検索時は従来の「X/Y件 完了」
-
-### 新規関数・状態
-`listSearchQuery` / `normalizeSearchText` / `currentListSearchQuery` / `deliveryMatchesSearch` / `setListSearchQuery` / `clearListSearch`
+- 安定版と テスト版は現在**機能的に同一**（差分は名前空間・URL・ブランディングのみ）。
+- 前回の昇格は 2026-07-07（test.46 → v2026.07.07-1, コミット `e581432`）。今回は test.47〜54 の差分を追加昇格（コミット `cc644f2`）。
 
 ---
 
-## Codex へのお願い
+## 2. 前回報告(6/12)以降に実装された主要システム
 
-1. **二重実装の禁止**: 上記4変更（検索UI・GSIフォールバック・マーカー差分更新・ルート最適化統合）はテスト版に実装済みです
-2. **`CODEX_REVIEW_TASKS.md` の更新状況**: TASK-T1（ピンずれ）はあなたの `942bafc` で解決済み。TASK-P1系のマーカー再構築コストは本報告の変更2で解決済み
-3. **実機確認のお願い（できれば）**: この変更はコードレビューと構文チェックのみで検証しています。特に以下をテスト版実機で確認してください:
-   - ラベルモード切替4種でピンの表示が正しく切り替わるか（差分更新のシグネチャ漏れがないか）
-   - 完了/未完了トグルでピンの色・zIndexが即時反映されるか
-   - 検索中に完了操作・ナビ・編集ボタンが正しい項目に効くか
-   - 存在しない住所での GSI フォールバック発動（コンソールに `geocode fallback via GSI` が出る）
-4. **安定版への昇格はユーザー判断**: テスト版で問題がなければ、ユーザーの指示を待って安定版へ反映してください
+すべて**テスト版で実装 → 検証 → 安定版へ昇格済み**。両方に入っています。
+
+### 地図表示
+- **全国番地表示エンジン**: Geolonia japanese-addresses-v2 API（ja.jsonカタログ → 市区町村ごとの machiaza CSV を HTTP Range で取得）。ズームに応じて番地ラベルを描画。IndexedDB（`rys-mapbox(-test)-banchi` DB）に30日キャッシュ、GPS位置から先読み。診断パネルあり（メニュー→番地診断）。
+- **筆界（地番境界）ライン**: 法務省登記所備付地図データ（amx-project）の PMTiles を `api/amx_tile_proxy.php` 経由で読む。レイヤは daihyo(z2-13)/fude(z14-16)。3D建物に隠れないよう slot:'top'。
+- **起動高速化**: Service Worker（stale-while-revalidate でアプリ本体を即表示）、設定キャッシュ、前回表示位置の復元、preconnect。地図が上半分しか描画されない起動バグも修正済み。
+
+### 伝票OCR（Gemini 2.5-flash-lite, `api/extract_address.php`）
+- プレビュー表示中にOCRを先行実行、バイナリPOST送信（base64レガシーも受付）
+- **回転自動リカバリ**: APIが `rotation_hint` を返し、失敗時は hint→180→90→270 の順で最大4回リトライ
+- **発送元の除外**: 住所が2つ写った場合、GPS現在地に近い方（=お届け先）を採用。発送元にはピンを立てない
+- **郵便番号アンカー**: 「東日本橋」を「日本橋」に誤読するような欠落を郵便番号で補正
+- **要確認ピン検証** (`validateDeliveryPlacement`): ジオコード結果が住所と食い違う場合は「要確認」ピンにして警告
+- 自信度（confidence）低下時の警告表示
+
+### 荷物運用
+- **複数個口**: 同じ住所を再スキャンすると重複ブロックせず、1本のピンに個数を積み上げ表示
+- **連続撮影モード**: マップに戻らず連続スキャン。手入力も連続入力モードあり
+- **まとめて読み込み**: 標準カメラアプリで撮った写真をギャラリーから一括インポート（並列4で処理）
+- **手入力の番地・号は常に空欄で開始**（前回値の復元は禁止 — ユーザー明示要求。3箇所で漏れを潰した経緯あり）
+- **手動ピン修正の記憶**: ピンを手で直すと共有ジオコードキャッシュ（MySQL, `api/delivery_geocode_cache(.php/_test.php)`）に `manual=1` で保存。**自動保存は `manual=1` の行を絶対に上書きしない**（`IF(manual=1,...)` で保護）
+- **時間指定の自動読み取りは削除済み**（誤作動多発のため）。手動設定機能は残存
+
+### マニュアル
+- `manual.html`（安定版・テスト版それぞれ）を全面書き直し済み（コミット `30fe7d5`）。**機能を変えたらマニュアルも更新するのが恒久ルール。**
+
+---
+
+## 3. Androidアプリ（Capacitorシェル）— 新規追加
+
+`capacitor/` ディレクトリと `.github/workflows/android-apk.yml` を新設。
+
+- **目的**: 連写（ネイティブカメラでの高速連続撮影＋バックグラウンドでのピン処理）はブラウザでは実現できないため、Android のみアプリ化
+- **構成**: Capacitor 8。`server.url = https://rys-services.com/delivery_map_mapbox/test/` — アプリの中身はライブのテスト版を読むだけなので、**Web側の変更はAPK再ビルド不要で即反映**
+- **ネイティブカメラ**: `@capacitor-community/camera-preview`（toBack:true, WebView透過必須 → `MainActivity.java` で `setBackgroundColor(TRANSPARENT)` 済み）。連写モードと通常1枚撮影の両方がネイティブカメラを使用。Android 11+ の `<queries>`(IMAGE_CAPTURE) もマニフェストに追加済み
+- **CI**: main への `capacitor/**` push で APK をビルドし、FTPで `app/rys-map.apk` として配布（https://rys-services.com/delivery_map_mapbox/app/rys-map.apk）。Node 22 / Java 21 必須
+- **安定版・index.html 側にもネイティブカメラのコードは入っているが**、`window.Capacitor` の存在チェックでガードされており、**ブラウザ/PWAでは完全に無効（従来どおり file input → OSカメラ）**
+- **安定版URL用のAPKは作らない**（ユーザー指示: まだ不要）。iPhone版も当面作らない（配布コストの問題）
+
+### ⚠️ 過去の失敗（繰り返さないこと）
+- **ブラウザの getUserMedia でのアプリ内カメラは実装済み→撤回済み**（`d813537` → revert `47176a2`）。ピント・画質が実用に耐えずOCR精度が落ちた。「OCR精度を落とさない」が絶対条件。Webでのカメラ内製化は提案しないこと。
+
+---
+
+## 4. 開発ルール（必読・変更禁止）
+
+1. **新機能はすべて `test/` に実装。** 安定版 `index.html` はユーザーが明示的に「昇格して」と言った時だけ更新する
+2. **昇格は機械的変換**で行う（今回 `cc644f2` の手順）:
+   - `../api/` → `api/`（テスト版は1階層深い）
+   - `delivery_geocode_cache_test.php` → `delivery_geocode_cache.php`
+   - `rys-mapbox-test-*` → `rys-mapbox-*`（localStorage/IndexedDBキー 36個）
+   - `テスト版` ブランディング除去（title / h1バッジ / 通知文言）
+   - Service Worker: キャッシュ名 `rys-test-*`→`rys-*`、パス `/test/` 除去、通知タイトル
+   - `APP_VERSION` とキャッシュバスター（`?v=`）を新しい日付版に
+   - 変換後に残存マーカーがゼロであることを検証してからコミット
+3. **`APP_VERSION` は変更のたびに必ず上げる**（テスト版は `v2026.06.24-test.NN` の NN をインクリメント）
+4. **コミット前に構文チェック**: インライン `<script>` を抽出して `node --check`
+5. **デプロイ**: main への `delivery_map_mapbox/**` push で GitHub Actions が FTP デプロイ（約1分）。`capacitor/**` push で APK ビルド
+6. マニュアル（`manual.html` 両版）を機能変更に追随させる
+7. 共有ジオコードキャッシュの `manual=1` 行を自動処理で上書きしない
+
+---
+
+## 5. 主要ファイル
+
+| ファイル | 役割 |
+|---|---|
+| `delivery_map_mapbox/index.html` | 安定版本体（v2026.07.10-1, 約8900行） |
+| `delivery_map_mapbox/test/index.html` | テスト版本体（test.54）— 開発はここ |
+| `delivery_map_mapbox/service-worker.js` / `test/service-worker.js` | SWキャッシュ（shell: SWR / static: cache-first / APIは非キャッシュ） |
+| `delivery_map_mapbox/manual.html` / `test/manual.html` | 利用マニュアル（両版） |
+| `api/extract_address.php` | Gemini OCR（バイナリPOST + base64、rotation_hint返却） |
+| `api/delivery_geocode_cache.php` / `_test.php` | 共有ジオコードキャッシュ（MySQL, manualフラグ保護） |
+| `api/amx_tile_proxy.php` | 法務省 PMTiles プロキシ（筆界ライン用） |
+| `capacitor/` | Capacitor Androidシェル（appId `com.rys.deliverymap`） |
+| `.github/workflows/deploy-delivery-map.yml` | Web FTPデプロイ |
+| `.github/workflows/android-apk.yml` | APKビルド＆FTP配布 |
+
+## 6. 前回昇格(7/7)以降のコミット一覧
+
+| コミット | 内容 |
+|---|---|
+| `6d6b772` | 手動ピン修正の住所別記憶（manual保護付き） |
+| `09271e9` | 時間指定の自動検出を削除（手動のみに） |
+| `c0c4f13` / `bb1a67e` | 写真まとめて読み込み（並列4） |
+| `30fe7d5` | マニュアル全面書き直し（両版） |
+| `1dcad5a` / `02804ae` | Capacitor Androidシェル + APK CI（Node 22） |
+| `e3bb374` / `76504b9` | ネイティブ連写カメラ + 白画面修正（WebView透過） |
+| `ff506c2` | APKでの通常1枚撮影修正（`<queries>` + ネイティブ単写モード） |
+| `cc644f2` | **test.54 → 安定版 v2026.07.10-1 へ昇格** |
+
+---
+
+*このファイルは Claude が 2026-07-10 に更新。質問があればユーザー経由で確認してください。*
