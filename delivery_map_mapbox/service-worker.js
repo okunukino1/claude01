@@ -119,8 +119,8 @@ self.addEventListener('push', event => {
   const title = data.title || 'RYS配送マップ';
   const options = {
     body: data.body || '',
-    icon: new URL('./app-icon-192.png?v=20260707-1', self.registration.scope).href,
-    badge: new URL('./app-icon-192.png?v=20260707-1', self.registration.scope).href,
+    icon: new URL('./app-icon-192.png?v=20260710-1', self.registration.scope).href,
+    badge: new URL('./app-icon-192.png?v=20260710-1', self.registration.scope).href,
     tag: data.tag || 'spot-pickup',
     renotify: true,
     data: {
