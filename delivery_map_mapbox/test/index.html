@@ -176,8 +176,8 @@
     justify-content: space-between;
     background: transparent;
   }
-  body.native-camera-open,
-  body.native-camera-open html {
+  html.native-camera-open,
+  html.native-camera-open body {
     background: transparent !important;
   }
   body.native-camera-open > :not(#native-camera-ui):not(#toast) {
@@ -1723,7 +1723,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.52';
+const APP_VERSION = 'v2026.06.24-test.53';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -6450,6 +6450,7 @@ async function openNativeBatchCamera() {
     return false;
   }
   nativeCameraOpen = true;
+  document.documentElement.classList.add('native-camera-open'); // html要素も透過に
   document.body.classList.add('native-camera-open');
   const ui = $('native-camera-ui');
   if (ui) ui.style.display = 'flex';
@@ -6460,6 +6461,7 @@ async function openNativeBatchCamera() {
 async function closeNativeBatchCamera() {
   if (!nativeCameraOpen) return;
   nativeCameraOpen = false;
+  document.documentElement.classList.remove('native-camera-open');
   document.body.classList.remove('native-camera-open');
   const ui = $('native-camera-ui');
   if (ui) ui.style.display = 'none';
