@@ -1723,7 +1723,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.53';
+const APP_VERSION = 'v2026.06.24-test.54';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -6426,6 +6426,7 @@ function nativeCameraPlugin() {
 }
 
 let nativeCameraOpen = false;
+let nativeCameraSingleShot = false; // true = 1枚撮ったら閉じてプレビュー画面へ
 
 function base64ToBlob(b64, mime) {
   const bin = atob(b64);
@@ -6434,7 +6435,7 @@ function base64ToBlob(b64, mime) {
   return new Blob([bytes], { type: mime });
 }
 
-async function openNativeBatchCamera() {
+async function openNativeBatchCamera(options = {}) {
   const plugin = nativeCameraPlugin();
   if (!plugin) return false;
   try {
@@ -6450,11 +6451,17 @@ async function openNativeBatchCamera() {
     return false;
   }
   nativeCameraOpen = true;
+  nativeCameraSingleShot = !!options.singleShot;
   document.documentElement.classList.add('native-camera-open'); // html要素も透過に
   document.body.classList.add('native-camera-open');
   const ui = $('native-camera-ui');
   if (ui) ui.style.display = 'flex';
-  updateBatchPhotoUi();
+  if (nativeCameraSingleShot) {
+    const stats = $('native-camera-stats');
+    if (stats) stats.textContent = '📷 伝票を撮影してください (1枚)';
+  } else {
+    updateBatchPhotoUi();
+  }
   return true;
 }
 
@@ -6481,7 +6488,14 @@ async function captureNativeBatchPhoto() {
     const result = await plugin.capture({ quality: 88 });
     const b64 = result && (result.value || result.base64);
     if (!b64) throw new Error('撮影データが空です');
-    processBatchPhoto(base64ToBlob(b64, 'image/jpeg')); // awaitしない — カメラはそのまま次の撮影へ
+    const blob = base64ToBlob(b64, 'image/jpeg');
+    if (nativeCameraSingleShot) {
+      // 1枚撮影モード: カメラを閉じて、いつものプレビュー→読み取りの流れへ
+      await closeNativeBatchCamera();
+      openPhotoPreview(blob);
+      return;
+    }
+    processBatchPhoto(blob); // awaitしない — カメラはそのまま次の撮影へ
   } catch (e) {
     showToast('撮影失敗: ' + ((e && e.message) || e), true);
   }
@@ -8616,9 +8630,10 @@ $('btn-north').addEventListener('click', () => {
 });
 
 $('btn-add-photo').addEventListener('click', async () => {
-  // Capacitorアプリ内 + 連写モード → ネイティブカメラ (撮りながら裏でピン立て)
-  if (batchPhotoMode && nativeCameraPlugin()) {
-    const opened = await openNativeBatchCamera();
+  // Capacitorアプリ内 → 常にネイティブカメラ
+  // (連写モード: 撮りながら裏でピン立て / 通常: 1枚撮ってプレビューへ)
+  if (nativeCameraPlugin()) {
+    const opened = await openNativeBatchCamera({ singleShot: !batchPhotoMode });
     if (opened) return;
     // 起動失敗時は従来方式へフォールバック
   }
