@@ -47,7 +47,7 @@ class OverlayController(private val service: AccessibilityService) {
             }
         }
 
-        val text = TextView(service).apply {
+        val messageView = TextView(service).apply {
             text = service.getString(R.string.prompt_long_question)
             setTextColor(Color.WHITE)
             textSize = 15f
@@ -68,7 +68,7 @@ class OverlayController(private val service: AccessibilityService) {
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { leftMargin = dp(8) }
-        container.addView(text)
+        container.addView(messageView)
         container.addView(yesButton, buttonParams)
         container.addView(closeButton, buttonParams)
 
