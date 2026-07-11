@@ -16,7 +16,7 @@
     <string name="usage_body">・3本指で下にスワイプ → 通常のスクリーンショット\n・3本指で上にスワイプ → ロング（スクロール）スクリーンショット\n・クイック設定パネルに「スクリーンショット」タイルを追加するとワンタップでも撮影できます\n\n保存先: Pictures/Screenshots（フォトアプリの「スクリーンショット」に表示されます）</string>
 
     <string name="notes_title">注意事項</string>
-    <string name="notes_body">・Android 11 以降（Pixel 4a 以降など）が必要です\n・TalkBack など他のジェスチャー系ユーザー補助機能とは併用できません\n・銀行アプリなど FLAG_SECURE の画面は撮影できません（システム仕様）\n・ロングスクショはページを自動スクロールしながら撮影し、重なり部分を検出してつなぎ合わせます。固定ヘッダーがある画面では継ぎ目が乱れることがあります</string>
+    <string name="notes_body">・3本指ジェスチャーには Android 13 以降が必要です（Android 11〜12 ではクイック設定タイルのみ）\n・TalkBack など他のジェスチャー系ユーザー補助機能とは併用できません\n・銀行アプリなど FLAG_SECURE の画面は撮影できません（システム仕様）\n・ロングスクショはページを自動スクロールしながら撮影し、重なり部分を検出してつなぎ合わせます。固定ヘッダーがある画面では継ぎ目が乱れることがあります</string>
 
     <string name="toast_service_not_running">先にユーザー補助設定で「3本指スクショ」を有効にしてください</string>
     <string name="toast_capturing">撮影中です…</string>

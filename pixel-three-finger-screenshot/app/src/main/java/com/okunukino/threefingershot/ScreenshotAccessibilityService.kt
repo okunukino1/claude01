@@ -1,20 +1,18 @@
 package com.okunukino.threefingershot
 
-import android.accessibilityservice.AccessibilityGestureEvent
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.accessibilityservice.TouchInteractionController
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Region
 import android.net.Uri
 import android.os.Build
 import android.util.Log
 import android.view.Display
-import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -33,10 +31,12 @@ import kotlin.math.min
  * - 3本指で下にスワイプ → 通常のスクリーンショット
  * - 3本指で上にスワイプ → 自動スクロールしながらロングスクリーンショット
  *
- * マルチフィンガージェスチャーの検出には Android 11+ の
- * FLAG_REQUEST_MULTI_FINGER_GESTURES を使う。この検出にはタッチ探索モードが
- * 必要だが、画面全体をタッチ探索パススルー領域に設定することで、
- * 1本指の通常操作には影響を与えないようにしている。
+ * ジェスチャー検出には Android 13+ の TouchInteractionController を使う。
+ * タッチイベントはまず ThreeFingerGestureDetector に届き、3本指スワイプ
+ * だけを取り出して、それ以外は即座に通常の入力パイプラインへ委譲する。
+ * （フレームワーク標準のマルチフィンガージェスチャー検出＋全画面パススルーは
+ * 「パススルー領域内で始まったタッチはジェスチャー検出自体をスキップして委譲」
+ * という仕様のため使えない）
  */
 class ScreenshotAccessibilityService : AccessibilityService() {
 
@@ -51,6 +51,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    private var touchController: TouchInteractionController? = null
+
     @Volatile
     private var busy = false
 
@@ -63,28 +65,36 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
 
-        serviceInfo = serviceInfo?.apply {
-            flags = flags or
-                AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE or
-                AccessibilityServiceInfo.FLAG_REQUEST_MULTI_FINGER_GESTURES
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // 2本指のピンチ／スクロールをアプリへ直接通す
-                flags = flags or AccessibilityServiceInfo.FLAG_REQUEST_2_FINGER_PASSTHROUGH
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // タッチをこちらで分類するモード。3本指スワイプ以外は
+            // 検出器が即座に委譲するため通常操作には影響しない。
+            serviceInfo = serviceInfo?.apply {
+                flags = flags or AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE
             }
+            val controller = getTouchInteractionController(Display.DEFAULT_DISPLAY)
+            val detector = ThreeFingerGestureDetector(this, controller) { isDown ->
+                if (isDown) {
+                    requestSingleScreenshot(delayMs = 300)
+                } else {
+                    requestLongScreenshot(delayMs = 300)
+                }
+            }
+            controller.registerCallback(mainExecutor, detector)
+            touchController = controller
+            Log.i(TAG, "service connected (TouchInteractionController mode)")
+        } else {
+            // Android 11-12: 通常操作を壊さずに3本指を検出する手段がないため、
+            // ジェスチャーは無効。クイック設定タイルとアプリ内ボタンのみ使える。
+            Log.i(TAG, "service connected (gesture unsupported below Android 13)")
         }
-
-        // 1本指の操作はすべて素通しにして、通常のタッチ操作を邪魔しない。
-        // （回転しても覆えるように、長辺サイズの正方形リージョンを指定する）
-        val bounds = getSystemService(WindowManager::class.java)
-            .maximumWindowMetrics.bounds
-        val size = maxOf(bounds.width(), bounds.height())
-        setTouchExplorationPassthroughRegion(Display.DEFAULT_DISPLAY, Region(0, 0, size, size))
-
-        Log.i(TAG, "service connected")
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            touchController?.unregisterAllCallbacks()
+            touchController = null
+        }
         return super.onUnbind(intent)
     }
 
@@ -97,21 +107,6 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
 
     override fun onInterrupt() = Unit
-
-    override fun onGesture(gestureEvent: AccessibilityGestureEvent): Boolean {
-        if (gestureEvent.displayId != Display.DEFAULT_DISPLAY) return false
-        return when (gestureEvent.gestureId) {
-            GESTURE_3_FINGER_SWIPE_DOWN -> {
-                requestSingleScreenshot(delayMs = 250)
-                true
-            }
-            GESTURE_3_FINGER_SWIPE_UP -> {
-                requestLongScreenshot(delayMs = 250)
-                true
-            }
-            else -> false
-        }
-    }
 
     /** 通常のスクリーンショット。delayMs は指が画面から離れるのを待つ猶予。 */
     fun requestSingleScreenshot(delayMs: Long = 0) {
