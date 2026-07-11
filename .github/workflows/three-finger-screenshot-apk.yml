@@ -1,0 +1,58 @@
+name: Build Three Finger Screenshot APK
+
+# Pixel向け「3本指スクショ」アプリをビルドする。
+# APKはActionsのArtifactsからダウンロードできるほか、
+# 既存のCapacitorアプリと同様にサーバーへもアップロードする。
+# スマホから https://rys-services.com/delivery_map_mapbox/app/three-finger-screenshot.apk
+# を開けば直接インストールできる。
+
+on:
+  push:
+    branches:
+      - main
+      - claude/pixel-screenshot-gesture-hwjet0
+    paths:
+      - 'pixel-three-finger-screenshot/**'
+      - '.github/workflows/three-finger-screenshot-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build debug APK
+        working-directory: pixel-three-finger-screenshot
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare APK for upload
+        run: |
+          mkdir -p apk-dist
+          cp pixel-three-finger-screenshot/app/build/outputs/apk/debug/app-debug.apk apk-dist/three-finger-screenshot.apk
+          ls -la apk-dist/
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: three-finger-screenshot-apk
+          path: apk-dist/three-finger-screenshot.apk
+
+      - name: Upload APK to server
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/pixel-screenshot-gesture-hwjet0'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./apk-dist/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}app/
+          log-level: standard
