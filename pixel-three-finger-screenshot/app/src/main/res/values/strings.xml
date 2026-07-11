@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">3本指スクショ</string>
+    <string name="accessibility_service_label">3本指スクショ</string>
+    <string name="tile_label">スクリーンショット</string>
+    <string name="accessibility_service_description">3本の指で下にスワイプすると通常のスクリーンショットを、3本の指で上にスワイプすると自動スクロールしながら長い（スクロール）スクリーンショットを撮影します。画像は端末内の Pictures/Screenshots に保存され、外部には一切送信されません。</string>
+
+    <string name="status_enabled">サービス状態: 有効 ✅</string>
+    <string name="status_disabled">サービス状態: 無効 ❌\n下のボタンから「ユーザー補助」設定を開き、「3本指スクショ」を有効にしてください。</string>
+
+    <string name="btn_open_accessibility">ユーザー補助の設定を開く</string>
+    <string name="btn_test_single">テスト: 3秒後に通常スクショ</string>
+    <string name="btn_test_long">テスト: 3秒後にロングスクショ</string>
+
+    <string name="usage_title">使い方</string>
+    <string name="usage_body">・3本指で下にスワイプ → 通常のスクリーンショット\n・3本指で上にスワイプ → ロング（スクロール）スクリーンショット\n・クイック設定パネルに「スクリーンショット」タイルを追加するとワンタップでも撮影できます\n\n保存先: Pictures/Screenshots（フォトアプリの「スクリーンショット」に表示されます）</string>
+
+    <string name="notes_title">注意事項</string>
+    <string name="notes_body">・Android 11 以降（Pixel 4a 以降など）が必要です\n・TalkBack など他のジェスチャー系ユーザー補助機能とは併用できません\n・銀行アプリなど FLAG_SECURE の画面は撮影できません（システム仕様）\n・ロングスクショはページを自動スクロールしながら撮影し、重なり部分を検出してつなぎ合わせます。固定ヘッダーがある画面では継ぎ目が乱れることがあります</string>
+
+    <string name="toast_service_not_running">先にユーザー補助設定で「3本指スクショ」を有効にしてください</string>
+    <string name="toast_capturing">撮影中です…</string>
+    <string name="toast_long_start">ロングスクリーンショットを撮影中… 画面に触れないでください</string>
+    <string name="toast_saved">スクリーンショットを保存しました</string>
+    <string name="toast_long_saved">ロングスクリーンショットを保存しました</string>
+    <string name="toast_failed">スクリーンショットに失敗しました</string>
+    <string name="toast_countdown">3秒後に撮影します…</string>
+
+    <string name="notif_channel_name">スクリーンショット</string>
+    <string name="notif_saved_title">スクリーンショットを保存しました</string>
+    <string name="notif_long_saved_title">ロングスクリーンショットを保存しました</string>
+    <string name="notif_saved_text">タップして表示</string>
+</resources>
