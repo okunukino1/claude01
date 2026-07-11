@@ -54,6 +54,14 @@ class LongScreenshotCapturer(
         private const val SETTLE_DELAY_MS = 750L
     }
 
+    /** 撮影が終了した理由（通知に表示して遠隔デバッグできるようにする） */
+    var stopReason: String = ""
+        private set
+
+    /** 合成に使ったページ数 */
+    var pagesCaptured: Int = 0
+        private set
+
     private suspend fun grabFrame(): Bitmap? {
         hooks?.beforeCapture()
         val bitmap = service.captureFrame(retries = 2)
@@ -74,13 +82,29 @@ class LongScreenshotCapturer(
 
         try {
             for (page in 1 until maxPages) {
-                if (hooks?.shouldStop() == true) break
-                if (totalHeight >= MAX_TOTAL_HEIGHT) break
-                if (!scrollForward()) break
+                if (hooks?.shouldStop() == true) {
+                    stopReason = "停止ボタン"
+                    break
+                }
+                if (totalHeight >= MAX_TOTAL_HEIGHT) {
+                    stopReason = "高さ上限"
+                    break
+                }
+                if (!scrollForward()) {
+                    stopReason = "スクロール失敗"
+                    break
+                }
                 delay(SETTLE_DELAY_MS)
-                if (hooks?.shouldStop() == true) break
+                if (hooks?.shouldStop() == true) {
+                    stopReason = "停止ボタン"
+                    break
+                }
 
-                val shot = grabFrame() ?: break
+                val shot = grabFrame()
+                if (shot == null) {
+                    stopReason = "撮影失敗(code=${service.lastScreenshotError})"
+                    break
+                }
                 val cur = crop(shot, cropTop, cropBottom)
                 if (cur !== shot) shot.recycle()
 
@@ -88,6 +112,7 @@ class LongScreenshotCapturer(
                 Log.i(TAG, "page=$page scrolled=$scrolled")
                 if (scrolled <= 0) {
                     // 画面が変わっていない＝最下部に到達
+                    stopReason = "最下部と判定"
                     cur.recycle()
                     break
                 }
@@ -99,6 +124,9 @@ class LongScreenshotCapturer(
                 if (prev !== pieces[0]) prev.recycle()
                 prev = cur
             }
+
+            if (stopReason.isEmpty()) stopReason = "ページ上限"
+            pagesCaptured = pieces.size
 
             if (pieces.size == 1) {
                 // スクロールできなかった場合は1画面分をそのまま返す
@@ -123,7 +151,11 @@ class LongScreenshotCapturer(
 
     private suspend fun scrollForward(): Boolean {
         // まずはゆっくりしたドラッグを注入する（スクロール量を制御しやすい）
-        if (dispatchSlowSwipeUp()) return true
+        repeat(2) { attempt ->
+            if (dispatchSlowSwipeUp()) return true
+            Log.w(TAG, "swipe dispatch failed (attempt=$attempt)")
+            delay(400)
+        }
         // ダメならスクロール可能ノードに直接アクションを投げる
         val node = findScrollableNode() ?: return false
         return node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)

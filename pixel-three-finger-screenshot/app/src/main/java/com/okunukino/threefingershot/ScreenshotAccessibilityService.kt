@@ -58,6 +58,11 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     @Volatile
     private var busy = false
 
+    /** 直近の takeScreenshot 失敗コード（デバッグ表示用） */
+    @Volatile
+    var lastScreenshotError: Int = 0
+        private set
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -190,12 +195,13 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                     }
                 }
 
+                val capturer = LongScreenshotCapturer(
+                    this@ScreenshotAccessibilityService,
+                    maxPages = 30,
+                    hooks = hooks
+                )
                 val bitmap = try {
-                    LongScreenshotCapturer(
-                        this@ScreenshotAccessibilityService,
-                        maxPages = 30,
-                        hooks = hooks
-                    ).capture()
+                    capturer.capture()
                 } finally {
                     overlay.removeStop()
                 }
@@ -204,7 +210,11 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                     toast(getString(R.string.toast_failed))
                     return@launch
                 }
-                saveAndNotify(bitmap, isLong = true)
+                saveAndNotify(
+                    bitmap,
+                    isLong = true,
+                    detail = "${capturer.pagesCaptured}ページ / 終了: ${capturer.stopReason}"
+                )
             } finally {
                 busy = false
             }
@@ -230,14 +240,14 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         return true
     }
 
-    private suspend fun saveAndNotify(bitmap: Bitmap, isLong: Boolean) {
+    private suspend fun saveAndNotify(bitmap: Bitmap, isLong: Boolean, detail: String? = null) {
         val prefix = if (isLong) "LongScreenshot" else "Screenshot"
         val uri = ScreenshotSaver.save(this, bitmap, prefix)
         if (uri == null) {
             toast(getString(R.string.toast_failed))
         } else {
             toast(getString(if (isLong) R.string.toast_long_saved else R.string.toast_saved))
-            showSavedNotification(uri, bitmap, isLong)
+            showSavedNotification(uri, bitmap, isLong, detail)
         }
         bitmap.recycle()
     }
@@ -266,11 +276,13 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                         val bitmap = Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
                             ?.copy(Bitmap.Config.ARGB_8888, false)
                         buffer.close()
+                        if (bitmap == null) lastScreenshotError = -1
                         cont.resume(bitmap)
                     }
 
                     override fun onFailure(errorCode: Int) {
                         Log.w(TAG, "takeScreenshot failed: $errorCode")
+                        lastScreenshotError = errorCode
                         cont.resume(null)
                     }
                 }
@@ -290,7 +302,12 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun showSavedNotification(uri: Uri, bitmap: Bitmap, isLong: Boolean) {
+    private fun showSavedNotification(
+        uri: Uri,
+        bitmap: Bitmap,
+        isLong: Boolean,
+        detail: String? = null,
+    ) {
         val viewIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "image/png")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -310,7 +327,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         if (preview !== bitmap && preview !== thumbnail) preview.recycle()
 
         val contentText = if (isLong) {
-            getString(R.string.notif_long_saved_text, bitmap.height)
+            getString(R.string.notif_long_saved_text, bitmap.height) +
+                (detail?.let { " / $it" } ?: "")
         } else {
             getString(R.string.notif_saved_text)
         }
