@@ -41,4 +41,5 @@
     <string name="notif_saved_title">スクリーンショットを保存しました</string>
     <string name="notif_long_saved_title">ロングスクリーンショットを保存しました</string>
     <string name="notif_saved_text">タップして表示</string>
+    <string name="notif_long_saved_text">タップして表示（高さ %1$d px）</string>
 </resources>

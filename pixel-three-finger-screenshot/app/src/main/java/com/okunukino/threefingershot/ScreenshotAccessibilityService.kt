@@ -309,10 +309,15 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         )
         if (preview !== bitmap && preview !== thumbnail) preview.recycle()
 
+        val contentText = if (isLong) {
+            getString(R.string.notif_long_saved_text, bitmap.height)
+        } else {
+            getString(R.string.notif_saved_text)
+        }
         val notification = Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_screenshot)
             .setContentTitle(getString(if (isLong) R.string.notif_long_saved_title else R.string.notif_saved_title))
-            .setContentText(getString(R.string.notif_saved_text))
+            .setContentText(contentText)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setStyle(Notification.BigPictureStyle().bigPicture(thumbnail))

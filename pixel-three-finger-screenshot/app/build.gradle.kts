@@ -11,8 +11,8 @@ android {
         applicationId = "com.okunukino.threefingershot"
         minSdk = 30 // Android 11: マルチフィンガージェスチャー / takeScreenshot API が必須
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.3.1"
+        versionCode = 6
+        versionName = "1.4"
     }
 
     // CIの使い捨て環境で毎回別の鍵が生成されると上書きインストールできなくなるため、
