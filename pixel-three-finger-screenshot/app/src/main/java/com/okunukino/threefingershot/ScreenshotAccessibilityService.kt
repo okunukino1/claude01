@@ -171,10 +171,12 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             try {
                 if (delayMs > 0) delay(delayMs)
                 toast(getString(R.string.toast_long_start))
-                delay(400)
 
                 var stopRequested = false
                 overlay.showStopButton { stopRequested = true }
+
+                // トースト(約2秒)が消えてから撮影を始める（写り込み防止）
+                delay(2300)
                 val hooks = object : LongScreenshotCapturer.Hooks {
                     override fun shouldStop(): Boolean = stopRequested
 

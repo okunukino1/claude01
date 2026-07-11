@@ -52,8 +52,16 @@ class LongScreenshotCapturer(
         const val DEFAULT_MAX_PAGES = 10
         private const val MAX_TOTAL_HEIGHT = 20000
         private const val SETTLE_DELAY_MS = 750L
-        // 行シグネチャ(0〜255)の平均絶対差がこの値未満なら「一致」とみなす
+
+        // 行シグネチャ(0〜255)の平均絶対差がこの値未満なら文句なしの「一致」
         private const val MATCH_THRESHOLD = 12.0
+
+        // 固定ヘッダー/フッター等でコスト全体が底上げされている場合でも、
+        // 他のオフセット候補より明確に良ければ一致とみなす（相対判定）
+        private const val RELATIVE_MATCH_RATIO = 0.6
+
+        // 前後フレームがほぼ同一（＝スクロールが効かず最下部に到達）とみなす閾値
+        private const val IDENTICAL_THRESHOLD = 5.0
     }
 
     private suspend fun grabFrame(): Bitmap? {
@@ -139,14 +147,14 @@ class LongScreenshotCapturer(
     private suspend fun dispatchSlowSwipeUp(): Boolean {
         val bounds = screenBounds()
         val x = bounds.width() / 2f
-        val startY = bounds.height() * 0.72f
-        val endY = bounds.height() * 0.30f
+        val startY = bounds.height() * 0.78f
+        val endY = bounds.height() * 0.22f
 
         val movePath = Path().apply {
             moveTo(x, startY)
             lineTo(x, endY)
         }
-        val moveStroke = GestureDescription.StrokeDescription(movePath, 0, 700, true)
+        val moveStroke = GestureDescription.StrokeDescription(movePath, 0, 800, true)
         if (!dispatch(GestureDescription.Builder().addStroke(moveStroke).build())) return false
 
         val holdPath = Path().apply {
@@ -220,6 +228,8 @@ class LongScreenshotCapturer(
 
         var bestS = 0
         var bestCost = Double.MAX_VALUE
+        var costSum = 0.0
+        var costCount = 0
         var s = minS
         while (s <= maxS) {
             val cost = alignmentCost(sigPrev, sigCur, s)
@@ -227,12 +237,21 @@ class LongScreenshotCapturer(
                 bestCost = cost
                 bestS = s
             }
+            costSum += cost
+            costCount++
             s++
         }
+        val meanCost = costSum / costCount
 
-        // 全く同じ画面（スクロールが効かなかった）場合
-        if (cost0 < MATCH_THRESHOLD && cost0 <= bestCost) return 0
-        return if (bestCost < MATCH_THRESHOLD) bestS else 0
+        // 全く同じ画面（スクロールが効かず最下部に到達）
+        if (cost0 < IDENTICAL_THRESHOLD && cost0 <= bestCost) return 0
+
+        // 固定ヘッダー/フッターがあると全オフセットのコストが一様に底上げされる。
+        // 絶対閾値に加えて「他の候補より明確に良い」相対判定でも受け入れる。
+        val accepted = bestCost < MATCH_THRESHOLD || bestCost < meanCost * RELATIVE_MATCH_RATIO
+        Log.i(TAG, "estimateScroll best=$bestS cost=%.1f mean=%.1f cost0=%.1f accepted=$accepted"
+            .format(bestCost, meanCost, cost0))
+        return if (accepted) bestS else 0
     }
 
     /** prev を s ピクセル上へずらして cur と重ねたときの行シグネチャ平均絶対差。 */
