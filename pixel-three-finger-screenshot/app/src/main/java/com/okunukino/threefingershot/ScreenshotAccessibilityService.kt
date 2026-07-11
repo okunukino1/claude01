@@ -52,6 +52,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var touchController: TouchInteractionController? = null
+    private var screenshotWatcher: ScreenshotWatcher? = null
+    private lateinit var overlay: OverlayController
 
     @Volatile
     private var busy = false
@@ -64,10 +66,24 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        overlay = OverlayController(this)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // タッチをこちらで分類するモード。3本指スワイプ以外は
-            // 検出器が即座に委譲するため通常操作には影響しない。
+        // 3本指ジェスチャー（設定でONの場合のみ。タッチ操作へ干渉するため初期値OFF）
+        refreshGestureMode()
+
+        // システムのスクリーンショット（背面2回タップ等）を検知して
+        // 「ロングスクリーンショットにしますか？」を出す
+        screenshotWatcher = ScreenshotWatcher(this) { onSystemScreenshotDetected() }
+            .also { it.register() }
+
+        Log.i(TAG, "service connected")
+    }
+
+    /** 設定に応じて3本指ジェスチャー検出のON/OFFを切り替える。 */
+    fun refreshGestureMode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val wantEnabled = Prefs.threeFingerEnabled(this)
+        if (wantEnabled && touchController == null) {
             serviceInfo = serviceInfo?.apply {
                 flags = flags or AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE
             }
@@ -81,16 +97,35 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             }
             controller.registerCallback(mainExecutor, detector)
             touchController = controller
-            Log.i(TAG, "service connected (TouchInteractionController mode)")
-        } else {
-            // Android 11-12: 通常操作を壊さずに3本指を検出する手段がないため、
-            // ジェスチャーは無効。クイック設定タイルとアプリ内ボタンのみ使える。
-            Log.i(TAG, "service connected (gesture unsupported below Android 13)")
+            Log.i(TAG, "3-finger gesture mode enabled")
+        } else if (!wantEnabled && touchController != null) {
+            touchController?.unregisterAllCallbacks()
+            touchController = null
+            serviceInfo = serviceInfo?.apply {
+                flags = flags and AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE.inv()
+            }
+            Log.i(TAG, "3-finger gesture mode disabled")
+        }
+    }
+
+    /** システムのスクリーンショットを検知したとき（背面2回タップ等）。 */
+    private fun onSystemScreenshotDetected() {
+        if (busy) return
+        overlay.showPrompt {
+            toast(getString(R.string.toast_interactive_countdown))
+            scope.launch {
+                // システムのサムネイルプレビューが消えるのを待ってから開始する
+                delay(3500)
+                requestLongScreenshot()
+            }
         }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
+        screenshotWatcher?.unregister()
+        screenshotWatcher = null
+        if (::overlay.isInitialized) overlay.removeAll()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             touchController?.unregisterAllCallbacks()
             touchController = null
@@ -126,7 +161,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** ロング（スクロール）スクリーンショット。 */
+    /**
+     * ロング（スクロール）スクリーンショット。
+     * 撮影中は「■ 停止」ボタンを表示し、押されたところまでを合成する。
+     */
     fun requestLongScreenshot(delayMs: Long = 0) {
         if (!markBusy()) return
         scope.launch {
@@ -134,7 +172,32 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 if (delayMs > 0) delay(delayMs)
                 toast(getString(R.string.toast_long_start))
                 delay(400)
-                val bitmap = LongScreenshotCapturer(this@ScreenshotAccessibilityService).capture()
+
+                var stopRequested = false
+                overlay.showStopButton { stopRequested = true }
+                val hooks = object : LongScreenshotCapturer.Hooks {
+                    override fun shouldStop(): Boolean = stopRequested
+
+                    override suspend fun beforeCapture() {
+                        overlay.setStopButtonVisible(false)
+                        delay(120) // 非表示が描画に反映されるのを待つ
+                    }
+
+                    override suspend fun afterCapture() {
+                        overlay.setStopButtonVisible(true)
+                    }
+                }
+
+                val bitmap = try {
+                    LongScreenshotCapturer(
+                        this@ScreenshotAccessibilityService,
+                        maxPages = 30,
+                        hooks = hooks
+                    ).capture()
+                } finally {
+                    overlay.removeStop()
+                }
+
                 if (bitmap == null) {
                     toast(getString(R.string.toast_failed))
                     return@launch

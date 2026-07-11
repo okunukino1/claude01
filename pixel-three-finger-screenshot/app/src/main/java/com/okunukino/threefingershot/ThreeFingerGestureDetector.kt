@@ -1,8 +1,10 @@
 package com.okunukino.threefingershot
 
+import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.accessibilityservice.TouchInteractionController
 import android.annotation.TargetApi
-import android.content.Context
+import android.graphics.Path
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -27,7 +29,7 @@ import kotlin.math.max
  */
 @TargetApi(33)
 class ThreeFingerGestureDetector(
-    context: Context,
+    private val service: AccessibilityService,
     private val controller: TouchInteractionController,
     /** isDown=true: 3本指下スワイプ / false: 3本指上スワイプ */
     private val onSwipe: (isDown: Boolean) -> Unit,
@@ -36,11 +38,12 @@ class ThreeFingerGestureDetector(
     companion object {
         private const val TAG = "3FingerDetector"
 
-        /** 3本目の指を待つ猶予（これを超えたら通常操作として委譲） */
-        private const val DECISION_WINDOW_MS = 120L
+        /** 3本目の指を待つ猶予（これを超えたら通常操作として委譲）。
+         *  長くするほど3本指を拾いやすいが、通常のタップのもたつきが増える。 */
+        private const val DECISION_WINDOW_MS = 70L
 
         /** 2本指まで揃っている場合に3本目を待つ追加の猶予 */
-        private const val EXTENSION_MS = 90L
+        private const val EXTENSION_MS = 100L
     }
 
     private enum class Phase {
@@ -61,15 +64,17 @@ class ThreeFingerGestureDetector(
     }
 
     private val handler = Handler(Looper.getMainLooper())
-    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private val touchSlop = ViewConfiguration.get(service).scaledTouchSlop
     private val delegateSlopSquared =
         (touchSlop * 2f) * (touchSlop * 2f)
-    private val triggerDistancePx = 110f * context.resources.displayMetrics.density
+    private val triggerDistancePx = 110f * service.resources.displayMetrics.density
 
     private var phase = Phase.IDLE
     private var extended = false
     private var currentPointerCount = 0
     private var maxPointerCount = 0
+    private var firstDownX = 0f
+    private var firstDownY = 0f
     private val startX = HashMap<Int, Float>()
     private val startY = HashMap<Int, Float>()
 
@@ -80,6 +85,8 @@ class ThreeFingerGestureDetector(
             MotionEvent.ACTION_DOWN -> {
                 resetState()
                 phase = Phase.PENDING
+                firstDownX = event.x
+                firstDownY = event.y
                 trackNewPointer(event)
                 handler.postDelayed(decideRunnable, DECISION_WINDOW_MS)
             }
@@ -105,12 +112,10 @@ class ThreeFingerGestureDetector(
             MotionEvent.ACTION_UP -> {
                 handler.removeCallbacks(decideRunnable)
                 if (phase == Phase.PENDING && maxPointerCount == 1) {
-                    // 委譲する前に終わった素早いタップ → クリックとして再現する
-                    try {
-                        controller.performClick()
-                    } catch (t: Throwable) {
-                        Log.w(TAG, "performClick failed", t)
-                    }
+                    // 委譲する前に終わった素早いタップ → 同じ座標にタップを注入して再現する。
+                    // （controller.performClick() はアクセシビリティフォーカスされた別の
+                    // 要素を押してしまうことがあるため使わない）
+                    injectTap(firstDownX, firstDownY)
                 }
                 resetState()
             }
@@ -188,6 +193,18 @@ class ThreeFingerGestureDetector(
             controller.requestDelegating()
         } catch (t: Throwable) {
             Log.w(TAG, "requestDelegating failed", t)
+        }
+    }
+
+    private fun injectTap(x: Float, y: Float) {
+        val path = Path().apply { moveTo(x, y) }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 60))
+            .build()
+        try {
+            service.dispatchGesture(gesture, null, null)
+        } catch (t: Throwable) {
+            Log.w(TAG, "injectTap failed", t)
         }
     }
 

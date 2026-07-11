@@ -13,7 +13,18 @@
     <string name="btn_test_long">テスト: 3秒後にロングスクショ</string>
 
     <string name="usage_title">使い方</string>
-    <string name="usage_body">・3本指で下にスワイプ → 通常のスクリーンショット\n・3本指で上にスワイプ → ロング（スクロール）スクリーンショット\n・クイック設定パネルに「スクリーンショット」タイルを追加するとワンタップでも撮影できます\n\n保存先: Pictures/Screenshots（フォトアプリの「スクリーンショット」に表示されます）</string>
+    <string name="usage_body">■ 背面2回タップと連携（おすすめ）\n1. 設定 → システム → ジェスチャー → クイックタップ を ON にして「スクリーンショットを撮る」を選ぶ\n2. 背面を2回タップしてスクリーンショットを撮ると、画面下に「ロングスクリーンショットにしますか？」と表示されます\n3.「はい」を押すと数秒後に自動スクロール撮影が始まり、「■ 停止」を押したところまで（または最下部まで）を1枚に合成します\n※この連携には下の「写真へのアクセスを許可」が必要です。電源+音量下のスクショでも同様に動きます\n\n■ 3本指スワイプ（実験的）\n上のスイッチでONにすると、3本指の下スワイプで通常スクショ、上スワイプでロングスクショが撮れます。タッチ操作に違和感が出る場合はOFFにしてください\n\n■ クイック設定タイル\nクイック設定パネルに「スクリーンショット」タイルを追加するとワンタップでも撮影できます\n\n保存先: Pictures/Screenshots（フォトアプリの「スクリーンショット」に表示されます）</string>
+
+    <string name="switch_three_finger">3本指スワイプジェスチャー（実験的）</string>
+    <string name="btn_grant_images">写真へのアクセスを許可（背面タップ連携用）</string>
+    <string name="images_granted">写真へのアクセス: 許可済み ✅（背面タップ連携が使えます）</string>
+
+    <string name="prompt_long_question">ロングスクリーンショットにしますか？</string>
+    <string name="prompt_yes">はい</string>
+    <string name="prompt_close">✕</string>
+    <string name="stop_button">■ 停止</string>
+    <string name="stop_button_stopping">処理中…</string>
+    <string name="toast_interactive_countdown">まもなくスクロール撮影を開始します。「停止」を押すまで撮影します</string>
 
     <string name="notes_title">注意事項</string>
     <string name="notes_body">・3本指ジェスチャーには Android 13 以降が必要です（Android 11〜12 ではクイック設定タイルのみ）\n・TalkBack など他のジェスチャー系ユーザー補助機能とは併用できません\n・銀行アプリなど FLAG_SECURE の画面は撮影できません（システム仕様）\n・ロングスクショはページを自動スクロールしながら撮影し、重なり部分を検出してつなぎ合わせます。固定ヘッダーがある画面では継ぎ目が乱れることがあります</string>

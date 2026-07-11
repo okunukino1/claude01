@@ -29,19 +29,42 @@ import kotlin.math.max
  *  4. 新しく現れた下端部分だけを切り出してつなぎ足す
  *  5. スクロールが進まなくなるか上限に達するまで 2〜4 を繰り返す
  */
-class LongScreenshotCapturer(private val service: ScreenshotAccessibilityService) {
+class LongScreenshotCapturer(
+    private val service: ScreenshotAccessibilityService,
+    private val maxPages: Int = DEFAULT_MAX_PAGES,
+    private val hooks: Hooks? = null,
+) {
+
+    /** 停止ボタン等のUIと連携するためのフック。 */
+    interface Hooks {
+        /** true を返したらそれ以上スクロールせず、撮影済みの分で合成する。 */
+        fun shouldStop(): Boolean
+
+        /** 各キャプチャ直前（オーバーレイを隠して写り込みを防ぐ等）。 */
+        suspend fun beforeCapture()
+
+        /** 各キャプチャ直後。 */
+        suspend fun afterCapture()
+    }
 
     companion object {
         private const val TAG = "LongScreenshot"
-        private const val MAX_PAGES = 10
-        private const val MAX_TOTAL_HEIGHT = 16000
+        const val DEFAULT_MAX_PAGES = 10
+        private const val MAX_TOTAL_HEIGHT = 20000
         private const val SETTLE_DELAY_MS = 750L
         // 行シグネチャ(0〜255)の平均絶対差がこの値未満なら「一致」とみなす
         private const val MATCH_THRESHOLD = 12.0
     }
 
+    private suspend fun grabFrame(): Bitmap? {
+        hooks?.beforeCapture()
+        val bitmap = service.captureFrame(retries = 2)
+        hooks?.afterCapture()
+        return bitmap
+    }
+
     suspend fun capture(): Bitmap? {
-        val firstShot = service.captureFrame(retries = 2) ?: return null
+        val firstShot = grabFrame() ?: return null
         val (cropTop, cropBottom) = systemBarInsets()
 
         var prev = crop(firstShot, cropTop, cropBottom)
@@ -53,12 +76,14 @@ class LongScreenshotCapturer(private val service: ScreenshotAccessibilityService
         var totalHeight = prev.height
 
         try {
-            for (page in 1 until MAX_PAGES) {
+            for (page in 1 until maxPages) {
+                if (hooks?.shouldStop() == true) break
                 if (totalHeight >= MAX_TOTAL_HEIGHT) break
                 if (!scrollForward()) break
                 delay(SETTLE_DELAY_MS)
+                if (hooks?.shouldStop() == true) break
 
-                val shot = service.captureFrame(retries = 2) ?: break
+                val shot = grabFrame() ?: break
                 val cur = crop(shot, cropTop, cropBottom)
                 if (cur !== shot) shot.recycle()
 

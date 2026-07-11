@@ -16,9 +16,14 @@ object ScreenshotSaver {
 
     private const val TAG = "ScreenshotSaver"
 
+    /** 本アプリが保存したファイルの目印（ScreenshotWatcher が自分の保存を無視するため） */
+    private const val OWN_PREFIX = "3FS_"
+
+    fun isOwnFile(displayName: String): Boolean = displayName.startsWith(OWN_PREFIX)
+
     fun save(context: Context, bitmap: Bitmap, prefix: String): Uri? {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val fileName = "${prefix}_$timestamp.png"
+        val fileName = "$OWN_PREFIX${prefix}_$timestamp.png"
 
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, fileName)

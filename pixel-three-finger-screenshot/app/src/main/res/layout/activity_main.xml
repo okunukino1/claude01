@@ -25,6 +25,21 @@
             android:text="@string/btn_open_accessibility" />
 
         <Button
+            android:id="@+id/btnGrantImages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/btn_grant_images" />
+
+        <Switch
+            android:id="@+id/switchThreeFinger"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:paddingVertical="8dp"
+            android:text="@string/switch_three_finger" />
+
+        <Button
             android:id="@+id/btnTestSingle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
