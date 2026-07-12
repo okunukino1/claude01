@@ -29,9 +29,13 @@
     --danger: #d32f2f;
     --list-height: 50dvh;
     --list-collapsed-height: 46px;
+    --native-app-bottom-inset: 0px;
     --text-scale: 1;
   }
   body.list-collapsed { --list-height: var(--list-collapsed-height); }
+  html.capacitor-native {
+    --native-app-bottom-inset: 36px;
+  }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
@@ -83,7 +87,7 @@
   #map {
     position: fixed;
     top: calc(48px + env(safe-area-inset-top));
-    bottom: var(--list-height);
+    bottom: calc(var(--list-height) + var(--native-app-bottom-inset));
     left: 0; right: 0;
     background: var(--paper-soft);
     transition: bottom 0.25s ease;
@@ -411,7 +415,7 @@
   /* ===== List section ===== */
   .list-section {
     position: fixed;
-    bottom: 0; left: 0; right: 0;
+    bottom: var(--native-app-bottom-inset); left: 0; right: 0;
     height: var(--list-height);
     background: var(--paper);
     border-top: 3px solid var(--ink);
@@ -734,7 +738,7 @@
   /* ===== Bottom add buttons ===== */
   .add-bar {
     position: fixed;
-    bottom: calc(var(--list-height) + env(safe-area-inset-bottom));
+    bottom: calc(var(--list-height) + env(safe-area-inset-bottom) + var(--native-app-bottom-inset));
     left: 0; right: 0;
     z-index: 25;
     display: flex; gap: 6px;
@@ -1311,7 +1315,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.20</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.55</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1361,7 +1365,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.20</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.55</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1723,7 +1727,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.54';
+const APP_VERSION = 'v2026.06.24-test.55';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1780,6 +1784,16 @@ const TEXT_SIZE_OPTIONS = {
   normal: 1,
   large: 1.15
 };
+
+function isCapacitorNativeApp() {
+  return !!(window.Capacitor &&
+    typeof window.Capacitor.isNativePlatform === 'function' &&
+    window.Capacitor.isNativePlatform());
+}
+
+if (isCapacitorNativeApp()) {
+  document.documentElement.classList.add('capacitor-native');
+}
 
 const ADDR_PREF = '東京都';   // 手動住所入力(小舟町/浜町プロファイル)用
 const ADDR_CITY = '中央区';   // 〃
