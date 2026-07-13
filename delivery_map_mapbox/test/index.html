@@ -900,6 +900,21 @@
     font-weight: 700;
     cursor: pointer;
   }
+  .photo-batch-toggle {
+    width: 100%;
+    min-height: 44px;
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    background: white;
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+  .photo-batch-toggle.on {
+    background: var(--accent);
+    color: white;
+  }
   .menu-list button {
     display: block;
     width: 100%;
@@ -1315,7 +1330,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.55</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.56</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1365,7 +1380,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.55</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.56</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1646,6 +1661,7 @@
       <button id="btn-photo-rotate-left" type="button">左に90°</button>
       <button id="btn-photo-rotate-right" type="button">右に90°</button>
     </div>
+    <button class="photo-batch-toggle" id="btn-photo-batch-toggle" type="button" aria-pressed="false">📸 次から連写: OFF</button>
     <div class="modal-help">
       横向きになっている場合は回転してから読み取ってください。
     </div>
@@ -1727,7 +1743,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.55';
+const APP_VERSION = 'v2026.06.24-test.56';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -6223,6 +6239,7 @@ function openPhotoPreview(file) {
   pendingPhotoRotation = 0;
   $('photo-preview-img').src = pendingPhotoUrl;
   updatePhotoPreviewRotation();
+  updateBatchPhotoUi();
   openModal('modal-photo-preview');
   startPendingPhotoOcr(); // プレビューを見ている間に裏で読み取り開始
 }
@@ -6410,6 +6427,12 @@ function updateBatchPhotoUi() {
     menuBtn.textContent = batchPhotoMode ? '📸 連続撮影モード: ON' : '📸 連続撮影モード: OFF';
     menuBtn.classList.toggle('on', batchPhotoMode);
   }
+  const previewBtn = $('btn-photo-batch-toggle');
+  if (previewBtn) {
+    previewBtn.textContent = batchPhotoMode ? '📸 次から連写: ON' : '📸 次から連写: OFF';
+    previewBtn.classList.toggle('on', batchPhotoMode);
+    previewBtn.setAttribute('aria-pressed', batchPhotoMode ? 'true' : 'false');
+  }
   const nativeStats = $('native-camera-stats');
   if (nativeStats) {
     const parts = [];
@@ -6546,17 +6569,20 @@ async function importPhotosFromGallery(files) {
   showToast(`📥 まとめ読み込み完了: ${parts.join(' / ')}${failed ? ' — 失敗分は個別に撮り直してください' : ''}`, (review + failed) > 0);
 }
 
-function toggleBatchPhotoMode() {
-  closeModal('modal-menu');
-  batchPhotoMode = !batchPhotoMode;
+function resetBatchPhotoStats() {
+  batchStats.pending = 0;
+  batchStats.added = 0;
+  batchStats.skipped = 0;
+  batchStats.failed = 0;
+  batchStats.review = 0;
+  batchStats.stacked = 0;
+}
+
+function setBatchPhotoMode(enabled, options = {}) {
+  batchPhotoMode = !!enabled;
   if (batchPhotoMode) {
-    batchStats.pending = 0;
-    batchStats.added = 0;
-    batchStats.skipped = 0;
-    batchStats.failed = 0;
-    batchStats.review = 0;
-    batchStats.stacked = 0;
-    showToast('連続撮影モードON — 「📸 連写」で伝票を次々撮影してください');
+    resetBatchPhotoStats();
+    if (options.toast !== false) showToast('連続撮影モードON — 「📸 連写」で伝票を次々撮影してください');
   } else {
     closeNativeBatchCamera();
     const parts = [`追加${batchStats.added}件`];
@@ -6567,9 +6593,18 @@ function toggleBatchPhotoMode() {
     const hints = [];
     if (batchStats.review) hints.push('❗印のピンを編集画面で確認してください');
     if (batchStats.failed) hints.push('失敗分は撮り直してください');
-    showToast(`連続撮影終了: ${parts.join(' / ')}${hints.length ? ' — ' + hints.join(' / ') : ''}`, (batchStats.failed + batchStats.review) > 0);
+    if (options.summary === false) {
+      if (options.toast !== false) showToast('連続撮影モードOFF');
+    } else {
+      showToast(`連続撮影終了: ${parts.join(' / ')}${hints.length ? ' — ' + hints.join(' / ') : ''}`, (batchStats.failed + batchStats.review) > 0);
+    }
   }
   updateBatchPhotoUi();
+}
+
+function toggleBatchPhotoMode(options = {}) {
+  if (options.closeMenu !== false) closeModal('modal-menu');
+  setBatchPhotoMode(!batchPhotoMode, options);
 }
 
 async function processBatchPhoto(file) {
@@ -8688,6 +8723,7 @@ $('file-photo-multi').addEventListener('change', (e) => {
 });
 $('btn-photo-rotate-left').addEventListener('click', () => rotatePendingPhoto(-90));
 $('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(90));
+$('btn-photo-batch-toggle').addEventListener('click', () => toggleBatchPhotoMode({ closeMenu: false, summary: false }));
 $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
 $('btn-photo-read').addEventListener('click', readPendingPhoto);
 $('btn-add-voice').addEventListener('click', startVoiceInput);
