@@ -762,6 +762,11 @@
     color: var(--ink);
     border-color: var(--paper);
   }
+  .add-bar button.on {
+    background: var(--accent);
+    color: white;
+    border-color: var(--paper);
+  }
 
   /* ===== Modals ===== */
   .modal-bg {
@@ -899,21 +904,6 @@
     color: var(--ink);
     font-weight: 700;
     cursor: pointer;
-  }
-  .photo-batch-toggle {
-    width: 100%;
-    min-height: 44px;
-    border: 2px solid var(--ink);
-    border-radius: 8px;
-    background: white;
-    color: var(--ink);
-    font-size: 14px;
-    font-weight: 800;
-    margin-bottom: 8px;
-  }
-  .photo-batch-toggle.on {
-    background: var(--accent);
-    color: white;
   }
   .menu-list button {
     display: block;
@@ -1330,7 +1320,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.56</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.57</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1351,7 +1341,8 @@
 <div class="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
 
 <div class="add-bar">
-  <button id="btn-add-photo" type="button">📷 伝票撮影</button>
+  <button id="btn-add-photo" type="button">📷 1枚</button>
+  <button id="btn-add-batch-photo" type="button" class="secondary">📸 連写</button>
   <button id="btn-add-voice" type="button" class="secondary">🎤 音声</button>
   <button id="btn-add-manual" type="button" class="secondary">✏️ 手入力</button>
 </div>
@@ -1380,7 +1371,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.56</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.57</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1661,7 +1652,6 @@
       <button id="btn-photo-rotate-left" type="button">左に90°</button>
       <button id="btn-photo-rotate-right" type="button">右に90°</button>
     </div>
-    <button class="photo-batch-toggle" id="btn-photo-batch-toggle" type="button" aria-pressed="false">📸 次から連写: OFF</button>
     <div class="modal-help">
       横向きになっている場合は回転してから読み取ってください。
     </div>
@@ -1743,7 +1733,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.56';
+const APP_VERSION = 'v2026.06.24-test.57';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -6418,20 +6408,18 @@ const batchStats = { pending: 0, added: 0, skipped: 0, failed: 0, review: 0, sta
 function updateBatchPhotoUi() {
   const btn = $('btn-add-photo');
   if (btn) {
-    btn.textContent = batchPhotoMode
-      ? `📸 連写${batchStats.pending > 0 ? ` (処理中${batchStats.pending})` : ''}`
-      : '📷 伝票撮影';
+    btn.textContent = '📷 1枚';
+  }
+  const batchBtn = $('btn-add-batch-photo');
+  if (batchBtn) {
+    batchBtn.textContent = batchStats.pending > 0 ? `📸 連写 (${batchStats.pending})` : '📸 連写';
+    batchBtn.classList.toggle('on', batchPhotoMode);
+    batchBtn.setAttribute('aria-pressed', batchPhotoMode ? 'true' : 'false');
   }
   const menuBtn = $('menu-batch-photo');
   if (menuBtn) {
     menuBtn.textContent = batchPhotoMode ? '📸 連続撮影モード: ON' : '📸 連続撮影モード: OFF';
     menuBtn.classList.toggle('on', batchPhotoMode);
-  }
-  const previewBtn = $('btn-photo-batch-toggle');
-  if (previewBtn) {
-    previewBtn.textContent = batchPhotoMode ? '📸 次から連写: ON' : '📸 次から連写: OFF';
-    previewBtn.classList.toggle('on', batchPhotoMode);
-    previewBtn.setAttribute('aria-pressed', batchPhotoMode ? 'true' : 'false');
   }
   const nativeStats = $('native-camera-stats');
   if (nativeStats) {
@@ -6579,9 +6567,10 @@ function resetBatchPhotoStats() {
 }
 
 function setBatchPhotoMode(enabled, options = {}) {
+  const wasEnabled = batchPhotoMode;
   batchPhotoMode = !!enabled;
   if (batchPhotoMode) {
-    resetBatchPhotoStats();
+    if (!wasEnabled || options.resetStats) resetBatchPhotoStats();
     if (options.toast !== false) showToast('連続撮影モードON — 「📸 連写」で伝票を次々撮影してください');
   } else {
     closeNativeBatchCamera();
@@ -8678,16 +8667,28 @@ $('btn-north').addEventListener('click', () => {
   showToast('🧭 北向き・水平に戻しました');
 });
 
-$('btn-add-photo').addEventListener('click', async () => {
-  // Capacitorアプリ内 → 常にネイティブカメラ
-  // (連写モード: 撮りながら裏でピン立て / 通常: 1枚撮ってプレビューへ)
+async function startSinglePhotoCapture() {
+  setBatchPhotoMode(false, { summary: false, toast: false });
   if (nativeCameraPlugin()) {
-    const opened = await openNativeBatchCamera({ singleShot: !batchPhotoMode });
+    const opened = await openNativeBatchCamera({ singleShot: true });
     if (opened) return;
     // 起動失敗時は従来方式へフォールバック
   }
   $('file-photo').click();
-});
+}
+
+async function startBatchPhotoCapture() {
+  setBatchPhotoMode(true, { toast: false });
+  if (nativeCameraPlugin()) {
+    const opened = await openNativeBatchCamera({ singleShot: false });
+    if (opened) return;
+    // 起動失敗時は従来方式へフォールバック
+  }
+  $('file-photo').click();
+}
+
+$('btn-add-photo').addEventListener('click', startSinglePhotoCapture);
+$('btn-add-batch-photo').addEventListener('click', startBatchPhotoCapture);
 $('native-camera-close').addEventListener('click', closeNativeBatchCamera);
 $('native-camera-shutter').addEventListener('click', captureNativeBatchPhoto);
 document.addEventListener('visibilitychange', () => {
@@ -8723,7 +8724,6 @@ $('file-photo-multi').addEventListener('change', (e) => {
 });
 $('btn-photo-rotate-left').addEventListener('click', () => rotatePendingPhoto(-90));
 $('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(90));
-$('btn-photo-batch-toggle').addEventListener('click', () => toggleBatchPhotoMode({ closeMenu: false, summary: false }));
 $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
 $('btn-photo-read').addEventListener('click', readPendingPhoto);
 $('btn-add-voice').addEventListener('click', startVoiceInput);
