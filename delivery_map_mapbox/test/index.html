@@ -1320,7 +1320,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.57</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.58</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1371,7 +1371,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.57</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.58</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1393,6 +1393,7 @@
       <button id="menu-cache-admin" type="button">🗄 DBキャッシュ管理</button>
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
+      <button id="menu-toggle-streets-housenum" type="button">🔢 ハイフン番地 ON/OFF</button>
       <button id="menu-toggle-gsi" type="button">📐 番地境界線(法務省) ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
       <button id="menu-banchi-debug" type="button">🩺 番地表示の状態</button>
@@ -1733,7 +1734,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.57';
+const APP_VERSION = 'v2026.06.24-test.58';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1745,6 +1746,7 @@ const GSI_OVERLAY_KEY = 'rys-mapbox-test-gsi-overlay-visible';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-test-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-test-addr-visible';
+const STREETS_HOUSENUM_VISIBLE_KEY = 'rys-mapbox-test-streets-housenum-visible';
 const LAST_VIEW_KEY = 'rys-mapbox-test-last-view-v1';
 const BANCHI_CATALOG_KEY = 'rys-mapbox-test-banchi-catalog-v1';
 const BANCHI_CITY_INDEX_PREFIX = 'rys-mapbox-test-banchi-city-v1:';
@@ -1956,6 +1958,7 @@ let recognition = null;
 let mapStyleLoaded = false;
 
 let addrVisible = localStorage.getItem(ADDR_VISIBLE_KEY) !== '0'; // 既定ON
+let streetsHousenumVisible = localStorage.getItem(STREETS_HOUSENUM_VISIBLE_KEY) !== '0'; // 既定ON
 
 // --- 全国対応 番地表示の状態 ---
 let banchiCatalog = null;            // [{code,pref,name,lng,lat}] 全市区町村
@@ -3685,6 +3688,10 @@ function parseAddrSection(text, machiazaName, features) {
   }
 }
 
+function streetsHousenumLayerVisible() {
+  return addrVisible && streetsHousenumVisible;
+}
+
 function addStreetsHousenumLayer() {
   if (!map) return;
   if (!map.getSource(STREETS_HOUSENUM_SOURCE_ID)) {
@@ -3704,7 +3711,7 @@ function addStreetsHousenumLayer() {
     slot: 'top',
     minzoom: BANCHI_DISPLAY_MIN_ZOOM,
     layout: {
-      'visibility': addrVisible ? 'visible' : 'none',
+      'visibility': streetsHousenumLayerVisible() ? 'visible' : 'none',
       'text-field': ['get', 'house_num'],
       'text-size': [
         'interpolate', ['linear'], ['zoom'],
@@ -4043,22 +4050,41 @@ function updateAddrButton() {
   btn.classList.toggle('on', addrVisible);
 }
 
+function updateStreetsHousenumButton() {
+  const btn = $('menu-toggle-streets-housenum');
+  if (!btn) return;
+  btn.textContent = streetsHousenumVisible ? '🔢 ハイフン番地: ON' : '🔢 ハイフン番地: OFF';
+  btn.classList.toggle('on', streetsHousenumVisible);
+}
+
+function setAddressLayerVisibility(id, visible) {
+  if (!map || !map.getLayer(id)) return;
+  try { map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none'); } catch (e) {}
+}
+
 function toggleAddressBlocks() {
   closeModal('modal-menu');
   addrVisible = !addrVisible;
   localStorage.setItem(ADDR_VISIBLE_KEY, addrVisible ? '1' : '0');
-  [BANCHI_LAYER_ID, STREETS_HOUSENUM_LAYER_ID].forEach(id => {
-    if (map && map.getLayer(id)) {
-      try { map.setLayoutProperty(id, 'visibility', addrVisible ? 'visible' : 'none'); } catch (e) {}
-    }
-  });
+  setAddressLayerVisibility(BANCHI_LAYER_ID, addrVisible);
+  setAddressLayerVisibility(STREETS_HOUSENUM_LAYER_ID, streetsHousenumLayerVisible());
   updateAddrButton();
+  updateStreetsHousenumButton();
   if (addrVisible) {
     banchiScheduleUpdate(0);
     showToast(`番地表示ON — ズーム${BANCHI_DISPLAY_MIN_ZOOM}以上で表示`);
   } else {
     showToast('番地表示OFF');
   }
+}
+
+function toggleStreetsHousenumLabels() {
+  closeModal('modal-menu');
+  streetsHousenumVisible = !streetsHousenumVisible;
+  localStorage.setItem(STREETS_HOUSENUM_VISIBLE_KEY, streetsHousenumVisible ? '1' : '0');
+  setAddressLayerVisibility(STREETS_HOUSENUM_LAYER_ID, streetsHousenumLayerVisible());
+  updateStreetsHousenumButton();
+  showToast(streetsHousenumVisible ? 'ハイフン番地ON' : 'ハイフン番地OFF');
 }
 
 function refreshAddressData() {
@@ -4097,6 +4123,7 @@ function openBanchiDebug() {
     lines.push(`中心: ${c.lng.toFixed(5)}, ${c.lat.toFixed(5)} / ズーム: ${map.getZoom().toFixed(1)}`);
   }
   lines.push(`表示設定: ${addrVisible ? 'ON' : 'OFF'} (表示はズーム${BANCHI_DISPLAY_MIN_ZOOM}以上)`);
+  lines.push(`ハイフン番地: ${streetsHousenumVisible ? 'ON' : 'OFF'}`);
   lines.push(`市区町村リスト: ${banchiStatus.catalog}`);
   lines.push(`対象市区町村: ${banchiStatus.cities.length ? banchiStatus.cities.join(', ') : '(未判定)'}`);
   banchiStatus.cities.forEach(key => {
@@ -8796,6 +8823,7 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
   toggleNeighborhoods();
 });
 $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
+$('menu-toggle-streets-housenum').addEventListener('click', toggleStreetsHousenumLabels);
 $('menu-toggle-gsi').addEventListener('click', () => {
   closeModal('modal-menu');
   toggleGsiOverlay();
@@ -8906,6 +8934,7 @@ document.addEventListener('visibilitychange', () => {
     updateLabelModeButton();
     updateNeighborhoodButton();
     updateAddrButton();
+    updateStreetsHousenumButton();
     updateGsiOverlayButton();
     showLoading('地図を読み込み中...');
     mapboxConfig = await loadMapboxConfig();
@@ -8940,6 +8969,7 @@ document.addEventListener('visibilitychange', () => {
     }
 
     updateAddrButton();
+    updateStreetsHousenumButton();
     if (addrVisible) banchiScheduleUpdate(0);
   } catch (e) {
     hideLoading();
