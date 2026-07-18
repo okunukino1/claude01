@@ -1320,7 +1320,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.59</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.60</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1371,7 +1371,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.59</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.60</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1735,7 +1735,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.59';
+const APP_VERSION = 'v2026.06.24-test.60';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1856,6 +1856,7 @@ const COURSE_AREAS = [
 const DELIVERY_COURSE_OPTION_PREFIX = '__delivery_course__:';
 const KOBUNACHO_DELIVERY_COURSE = '小舟町店';
 const HAMACHO_DELIVERY_COURSE = '浜町店';
+const OTHER_DELIVERY_COURSE = 'その他';
 const MANUAL_ADDRESS_PROFILES = {
   kobunacho: {
     key: 'kobunacho',
@@ -5113,19 +5114,22 @@ function setCachedGeocode(key, result) {
 // ピン位置の自動検証。読み間違い住所をGoogleが「別の実在住所」として
 // 自信満々に解決してしまうケースを、登録直後に機械的に検出する。
 // 戻り値: 怪しい理由の配列 (空なら問題なし)
-function validateDeliveryPlacement(address, result) {
+function validateDeliveryPlacement(address, result, deliveryCourse = '') {
   const reasons = [];
   if (result.approx) reasons.push('概算位置');
+  const resolvedCourse = deliveryCourse || (appMode === 'delivery' ? getSelectedDeliveryCourse() : '');
+  const shouldCheckDistance = resolvedCourse !== OTHER_DELIVERY_COURSE;
 
-  // 現在地から極端に遠い (配達エリア外 = ほぼ確実に誤り)
-  if (lastKnownGps && Number.isFinite(result.lat) && Number.isFinite(result.lng)) {
+  // 定型コースでは、現在地から極端に遠いピンを誤検索候補として扱う。
+  // 「その他」は遠方配送が正常なため、距離だけでは要確認にしない。
+  if (shouldCheckDistance && lastKnownGps && Number.isFinite(result.lat) && Number.isFinite(result.lng)) {
     const dKm = distanceMeters(lastKnownGps, result) / 1000;
     if (dKm > 10) reasons.push(`現在地から約${Math.round(dKm)}km`);
   }
 
-  // 既存ピン群の中心から極端に遠い
+  // 定型コースでは、既存ピン群の中心から極端に遠いピンも検出する。
   const others = deliveries.filter(d => Number.isFinite(d.lat) && Number.isFinite(d.lng));
-  if (others.length >= 3) {
+  if (shouldCheckDistance && others.length >= 3) {
     const lats = others.map(d => d.lat).sort((a, b) => a - b);
     const lngs = others.map(d => d.lng).sort((a, b) => a - b);
     const median = { lat: lats[Math.floor(lats.length / 2)], lng: lngs[Math.floor(lngs.length / 2)] };
@@ -5204,7 +5208,8 @@ async function insertDelivery({ address, note, deliveryCourse }) {
   hideLoading();
   if (!result) { showToast('住所が見つかりませんでした', true); return; }
 
-  const reviewReasons = validateDeliveryPlacement(address, result);
+  const resolvedDeliveryCourse = deliveryCourse || (appMode === 'delivery' ? getSelectedDeliveryCourse() : '');
+  const reviewReasons = validateDeliveryPlacement(address, result, resolvedDeliveryCourse);
   const d = {
     id: uid(),
     address,
@@ -5218,7 +5223,7 @@ async function insertDelivery({ address, note, deliveryCourse }) {
     packageCount: 1,
     completed: false,
     completedAt: null,
-    deliveryCourse: deliveryCourse || (appMode === 'delivery' ? getSelectedDeliveryCourse() : ''),
+    deliveryCourse: resolvedDeliveryCourse,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -6661,7 +6666,8 @@ async function processBatchPhoto(file) {
     const result = await geocodeAddress(address);
     if (!result) throw new Error('住所が見つかりません: ' + address);
 
-    const reviewReasons = validateDeliveryPlacement(address, result);
+    const resolvedDeliveryCourse = appMode === 'delivery' ? getSelectedDeliveryCourse() : '';
+    const reviewReasons = validateDeliveryPlacement(address, result, resolvedDeliveryCourse);
     if (String(data.confidence || '').toLowerCase() === 'low') reviewReasons.push('読み取り自信度低');
     const newId = uid();
     deliveries.push({
@@ -6677,7 +6683,7 @@ async function processBatchPhoto(file) {
       packageCount: 1,
       completed: false,
       completedAt: null,
-      deliveryCourse: appMode === 'delivery' ? getSelectedDeliveryCourse() : '',
+      deliveryCourse: resolvedDeliveryCourse,
       createdAt: Date.now(),
       updatedAt: Date.now()
     });
