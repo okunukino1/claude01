@@ -1320,7 +1320,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.60</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.61</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1371,7 +1371,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.60</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.61</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1382,6 +1382,7 @@
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
       <button id="menu-optimize-recommended" type="button">🧠 おすすめ配送順（試験）</button>
+      <button id="menu-optimize-road-blocks" type="button">🛣 100件向け 道路ブロック順（試験）</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
@@ -1735,7 +1736,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.60';
+const APP_VERSION = 'v2026.06.24-test.61';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2794,7 +2795,7 @@ function updateModeUi() {
     resetPickupBtn.style.display = appMode === 'pickup' ? 'block' : 'none';
   }
   const pickupOnlyIds = ['menu-operator'];
-  const deliveryOnlyIds = ['menu-optimize-walk', 'menu-optimize-recommended', 'menu-optimize-car', 'menu-optimize-google', 'menu-clear-done', 'menu-usage'];
+  const deliveryOnlyIds = ['menu-optimize-walk', 'menu-optimize-recommended', 'menu-optimize-road-blocks', 'menu-optimize-car', 'menu-optimize-google', 'menu-clear-done', 'menu-usage'];
   const hiddenDailyIds = ['menu-export-json', 'menu-copy', 'menu-clear-all'];
   pickupOnlyIds.forEach(id => {
     const el = $(id);
@@ -8655,6 +8656,216 @@ const CAR_ROUTE_PROVIDERS = {
   }
 };
 
+const ROAD_BLOCK_MIN_ITEMS = 25;
+const ROAD_BLOCK_MAX_SIZE = 20;
+const ROAD_BLOCK_MAX_BLOCKS = 24;
+
+function splitRouteItemsIntoRoadBlocks(routeItems, maxSize = ROAD_BLOCK_MAX_SIZE) {
+  const items = routeItems.slice();
+  if (!items.length) return [];
+  const blockCount = Math.max(1, Math.ceil(items.length / maxSize));
+  const meanLat = items.reduce((sum, item) => sum + Number(item.lat), 0) / items.length;
+  const lngScale = Math.cos(meanLat * Math.PI / 180);
+  const projected = item => ({
+    x: Number(item.lng) * lngScale,
+    y: Number(item.lat)
+  });
+
+  const splitBalanced = (group, parts) => {
+    if (parts <= 1 || group.length <= 1) return [group.slice()];
+    const coords = group.map(projected);
+    const xs = coords.map(point => point.x);
+    const ys = coords.map(point => point.y);
+    const axis = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys) ? 'x' : 'y';
+    const sorted = group.slice().sort((a, b) => {
+      const delta = projected(a)[axis] - projected(b)[axis];
+      return delta || String(a.id).localeCompare(String(b.id));
+    });
+    const leftParts = Math.floor(parts / 2);
+    const rightParts = parts - leftParts;
+    const idealLeftSize = Math.round(sorted.length * leftParts / parts);
+    const leftSize = Math.max(leftParts, Math.min(sorted.length - rightParts, idealLeftSize));
+    return splitBalanced(sorted.slice(0, leftSize), leftParts)
+      .concat(splitBalanced(sorted.slice(leftSize), rightParts));
+  };
+
+  return splitBalanced(items, blockCount);
+}
+
+function roadBlockRepresentative(block) {
+  const center = {
+    lat: block.reduce((sum, item) => sum + Number(item.lat), 0) / block.length,
+    lng: block.reduce((sum, item) => sum + Number(item.lng), 0) / block.length
+  };
+  return block.reduce((best, item) =>
+    distanceMeters(center, routePoint(item)) < distanceMeters(center, routePoint(best)) ? item : best,
+  block[0]);
+}
+
+async function requestCarRouteOptimization(provider, start, routeItems) {
+  bumpUsage(provider.usageKind);
+  const res = await fetch(provider.endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(provider.buildRequestBody(start, routeItems))
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+
+  if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
+    throw new Error(((data && data.error) || `${provider.shortName}ルート検索に失敗しました`) + provider.errorDetail(data));
+  }
+
+  const byId = new Map(routeItems.map(item => [String(item.id), item]));
+  const ordered = data.orderedIds.map(id => byId.get(String(id))).filter(Boolean);
+  const uniqueIds = new Set(ordered.map(item => String(item.id)));
+  if (ordered.length !== routeItems.length || uniqueIds.size !== routeItems.length) {
+    throw new Error(`${provider.shortName}ルート検索結果の件数が一致しませんでした`);
+  }
+  return { data, ordered };
+}
+
+async function buildRoadBlockRoute(start, routeItems, provider, options = {}) {
+  const requestOptimization = options.requestOptimization || requestCarRouteOptimization;
+  const onProgress = options.onProgress || (() => {});
+  const blocks = splitRouteItemsIntoRoadBlocks(routeItems);
+  if (blocks.length > ROAD_BLOCK_MAX_BLOCKS) {
+    throw new Error(`道路ブロック順は最大${ROAD_BLOCK_MAX_SIZE * ROAD_BLOCK_MAX_BLOCKS}件まで対応しています`);
+  }
+
+  const representatives = blocks.map(roadBlockRepresentative);
+  const hasBlockOrderCall = blocks.length > 1;
+  const totalCalls = blocks.length + (hasBlockOrderCall ? 1 : 0);
+  let orderedBlocks = blocks;
+  if (hasBlockOrderCall) {
+    onProgress({ current: 1, total: totalCalls, label: 'ブロック順' });
+    const blockOrderResult = await requestOptimization(provider, start, representatives);
+    const blockByRepresentativeId = new Map(representatives.map((item, index) => [String(item.id), blocks[index]]));
+    orderedBlocks = blockOrderResult.ordered
+      .map(item => blockByRepresentativeId.get(String(item.id)))
+      .filter(Boolean);
+  }
+  if (orderedBlocks.length !== blocks.length) {
+    throw new Error('道路ブロックの順番を正しく取得できませんでした');
+  }
+
+  const suggested = [];
+  const blockSummaries = [];
+  let currentStart = start;
+  let totalDistance = 0;
+  let totalDuration = 0;
+  let hasDistance = true;
+  let hasDuration = true;
+
+  for (let index = 0; index < orderedBlocks.length; index++) {
+    const block = orderedBlocks[index];
+    onProgress({ current: index + (hasBlockOrderCall ? 2 : 1), total: totalCalls, label: `ブロック${index + 1}` });
+    const result = await requestOptimization(provider, currentStart, block);
+    suggested.push(...result.ordered);
+
+    const distance = result.data.distance === null || result.data.distance === undefined
+      ? null
+      : Number(result.data.distance);
+    const duration = result.data.duration === null || result.data.duration === undefined
+      ? null
+      : Number(result.data.duration);
+    if (Number.isFinite(distance)) totalDistance += distance;
+    else hasDistance = false;
+    if (Number.isFinite(duration)) totalDuration += duration;
+    else hasDuration = false;
+
+    const first = result.ordered[0];
+    const last = result.ordered[result.ordered.length - 1];
+    blockSummaries.push({
+      count: result.ordered.length,
+      first,
+      last,
+      distance: Number.isFinite(distance) ? distance : null,
+      duration: Number.isFinite(duration) ? duration : null
+    });
+    currentStart = routePoint(last);
+  }
+
+  const uniqueIds = new Set(suggested.map(item => String(item.id)));
+  if (suggested.length !== routeItems.length || uniqueIds.size !== routeItems.length) {
+    throw new Error('道路ブロック計算後の配送先件数が一致しませんでした');
+  }
+
+  return {
+    suggested,
+    blockSummaries,
+    blockCount: blocks.length,
+    apiCalls: totalCalls,
+    totalDistance: hasDistance ? totalDistance : null,
+    totalDuration: hasDuration ? totalDuration : null
+  };
+}
+
+function roadBlockStopLabel(item) {
+  return extractBuilding(item.note) || extractBanchi(item.address) || item.address || '配送先';
+}
+
+async function runRoadBlockRouteOrder({ start, routeItems, noLocationItems, completedItems }) {
+  const provider = CAR_ROUTE_PROVIDERS.mapbox;
+  showLoading('道路ブロック順を計算中...');
+  try {
+    const result = await buildRoadBlockRoute(start, routeItems, provider, {
+      onProgress: progress => showLoading(`道路ブロック順を計算中 (${progress.current}/${progress.total})\n${progress.label}`)
+    });
+    hideLoading();
+
+    const blockLines = result.blockSummaries.slice(0, 10).map((block, index) =>
+      `${index + 1}. ${block.count}件: ${roadBlockStopLabel(block.first)} → ${roadBlockStopLabel(block.last)}`
+    ).join('\n');
+    const omittedBlocks = Math.max(0, result.blockSummaries.length - 10);
+    const distanceText = result.totalDistance !== null ? formatKm(result.totalDistance) : '不明';
+    const durationText = result.totalDuration !== null ? formatDuration(result.totalDuration) : '';
+
+    confirmAndApplyRouteOrder({
+      title: '100件向け 道路ブロック順（試験）',
+      summary: `全${routeItems.length}件を${result.blockCount}ブロックに分け、Mapboxの道路時間で並べました。\n` +
+        `道路計算: ${result.apiCalls}段階 / 目安: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n` +
+        `大通り・線路・川による遠回りを道路時間へ反映し、同じ地域をまとめて回る順番です。\n\n` +
+        blockLines +
+        (omittedBlocks ? `\n...ほか ${omittedBlocks}ブロック` : '') +
+        '\n\n横断回数を完全に保証するものではないため、実走行では次区間のナビも確認してください。',
+      suggested: result.suggested,
+      noLocationItems,
+      completedItems,
+      clearGeometry: true,
+      successMessage: `${routeItems.length}件を道路ブロック順に並べ替えました`
+    });
+  } catch (e) {
+    hideLoading();
+    showToast(e.message || '道路ブロック順の計算に失敗しました', true);
+  }
+}
+
+function optimizeRoadBlockRouteOrder() {
+  closeModal('modal-menu');
+  const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
+  if (routeItems.length < ROAD_BLOCK_MIN_ITEMS) {
+    showToast(`25件未満は「車向け 道路優先ルート」を使ってください`, true);
+    return;
+  }
+
+  const blocks = splitRouteItemsIntoRoadBlocks(routeItems);
+  if (blocks.length > ROAD_BLOCK_MAX_BLOCKS) {
+    showToast(`道路ブロック順は最大${ROAD_BLOCK_MAX_SIZE * ROAD_BLOCK_MAX_BLOCKS}件まで対応しています`, true);
+    return;
+  }
+
+  const start = getRouteStartPoint();
+  const apiCalls = blocks.length + 1;
+  showConfirm(
+    '100件向け 道路ブロック順（試験）',
+    `全${routeItems.length}件を${blocks.length}ブロックに分けます。\n` +
+      `Mapboxで${apiCalls}段階の道路計算を行うため、処理には少し時間がかかります。\n` +
+      `始点: ${start.label}\n\n計算を開始しますか？`,
+    () => runRoadBlockRouteOrder({ start, routeItems, noLocationItems, completedItems })
+  );
+}
+
 async function optimizeCarRouteOrderWith(providerKey) {
   const provider = CAR_ROUTE_PROVIDERS[providerKey];
   if (!provider) return;
@@ -8680,25 +8891,9 @@ async function optimizeCarRouteOrderWith(providerKey) {
 
   showLoading(`${provider.shortName}ルートを検索中...`);
   try {
-    bumpUsage(provider.usageKind);
-    const res = await fetch(provider.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(provider.buildRequestBody(start, apiItems))
-    });
-    let data = null;
-    try { data = await res.json(); } catch (e) {}
+    const { data, ordered } = await requestCarRouteOptimization(provider, start, apiItems);
     hideLoading();
-
-    if (!res.ok || !data || data.error || !Array.isArray(data.orderedIds)) {
-      throw new Error(((data && data.error) || `${provider.shortName}ルート検索に失敗しました`) + provider.errorDetail(data));
-    }
-
-    const byId = new Map(deliveries.map(d => [d.id, d]));
-    let suggested = data.orderedIds.map(id => byId.get(id)).filter(Boolean);
-    if (suggested.length !== apiItems.length) {
-      throw new Error(`${provider.shortName}ルート検索結果の件数が一致しませんでした`);
-    }
+    let suggested = ordered;
 
     if (overflowItems.length) {
       const lastStop = routePoint(suggested[suggested.length - 1]);
@@ -9021,6 +9216,7 @@ $('menu-import-pickup').addEventListener('click', openPickupImportModal);
 $('menu-reset-pickup').addEventListener('click', resetPickupCompletionsManually);
 $('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
 $('menu-optimize-recommended').addEventListener('click', optimizeRecommendedRouteOrder);
+$('menu-optimize-road-blocks').addEventListener('click', optimizeRoadBlockRouteOrder);
 $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
 $('menu-optimize-google').addEventListener('click', optimizeGoogleCarRouteOrder);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
