@@ -35,6 +35,7 @@ if (!is_array($input)) {
   echo json_encode(['error' => 'JSON形式のリクエストではありません'], JSON_UNESCAPED_UNICODE);
   exit;
 }
+$preserveAllPoints = !empty($input['preserve_all_points']);
 
 function valid_coord($value) {
   return is_numeric($value) && is_finite((float)$value);
@@ -333,7 +334,12 @@ function call_mapbox_directions($profile, $points, $token) {
 }
 
 if (count($cleanPoints) > 11) {
-  $matrixPoints = array_merge([$start], $cleanPoints);
+  // 大量配送の道路ブロック計算では、先に取り出した固定終点もMatrixへ戻す。
+  // フラグなしの既存呼び出しは従来動作のままにする。
+  $matrixRoutePoints = $preserveAllPoints
+    ? array_merge($cleanPoints, [$endPoint])
+    : $cleanPoints;
+  $matrixPoints = array_merge([$start], $matrixRoutePoints);
   $matrixAttempt = call_mapbox_matrix($profile, $matrixPoints, $token);
   $matrixData = is_string($matrixAttempt['body']) ? json_decode($matrixAttempt['body'], true) : null;
   if ($matrixAttempt['body'] === false || $matrixAttempt['httpCode'] < 200 || $matrixAttempt['httpCode'] >= 300 || !is_array($matrixData) || (($matrixData['code'] ?? '') !== 'Ok')) {
@@ -361,6 +367,7 @@ if (count($cleanPoints) > 11) {
     'ok' => true,
     'profile' => $profile,
     'method' => 'matrix-directions',
+    'allPointsPreserved' => $preserveAllPoints,
     'orderedIds' => array_values(array_map(function($p) { return $p['id']; }, $orderedPoints)),
     'waypoints' => array_values(array_map(function($p, $idx) {
       return ['id' => $p['id'], 'waypoint_index' => $idx + 1, 'name' => '', 'location' => [$p['lng'], $p['lat']]];
