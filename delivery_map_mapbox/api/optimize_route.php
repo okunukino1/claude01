@@ -333,7 +333,11 @@ function call_mapbox_directions($profile, $points, $token) {
   return ['body' => $body, 'curlErr' => $curlErr, 'httpCode' => (int)$httpCode];
 }
 
-if (count($cleanPoints) > 11) {
+// 全件保持時は、固定終点を外す前の総座標数で12座標の境界を判定する。
+$useMatrixRouting = count($cleanPoints) > 11
+  || ($preserveAllPoints && count($orderedInput) > 12);
+
+if ($useMatrixRouting) {
   // 大量配送の道路ブロック計算では、先に取り出した固定終点もMatrixへ戻す。
   // フラグなしの既存呼び出しは従来動作のままにする。
   $matrixRoutePoints = $preserveAllPoints
