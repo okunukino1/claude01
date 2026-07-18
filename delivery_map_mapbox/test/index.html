@@ -1320,7 +1320,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.58</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.59</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1371,7 +1371,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.58</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.59</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1381,6 +1381,7 @@
       <button id="menu-import-pickup" type="button">📦 集荷コースを選択</button>
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
+      <button id="menu-optimize-recommended" type="button">🧠 おすすめ配送順（試験）</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
@@ -1734,7 +1735,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.58';
+const APP_VERSION = 'v2026.06.24-test.59';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2792,7 +2793,7 @@ function updateModeUi() {
     resetPickupBtn.style.display = appMode === 'pickup' ? 'block' : 'none';
   }
   const pickupOnlyIds = ['menu-operator'];
-  const deliveryOnlyIds = ['menu-optimize-walk', 'menu-optimize-car', 'menu-optimize-google', 'menu-clear-done', 'menu-usage'];
+  const deliveryOnlyIds = ['menu-optimize-walk', 'menu-optimize-recommended', 'menu-optimize-car', 'menu-optimize-google', 'menu-clear-done', 'menu-usage'];
   const hiddenDailyIds = ['menu-export-json', 'menu-copy', 'menu-clear-all'];
   pickupOnlyIds.forEach(id => {
     const el = $(id);
@@ -8303,6 +8304,179 @@ function improveRouteWithTwoOpt(start, route) {
   return improved;
 }
 
+function routeBearingDegrees(a, b) {
+  const meanLat = ((Number(a.lat) + Number(b.lat)) / 2) * Math.PI / 180;
+  const x = (Number(b.lng) - Number(a.lng)) * Math.cos(meanLat);
+  const y = Number(b.lat) - Number(a.lat);
+  if (Math.abs(x) < 1e-12 && Math.abs(y) < 1e-12) return null;
+  return (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+}
+
+function bearingDeltaDegrees(a, b) {
+  const delta = Math.abs(Number(a) - Number(b)) % 360;
+  return delta > 180 ? 360 - delta : delta;
+}
+
+function routeQualityMetrics(start, route) {
+  let totalDistance = 0;
+  let backtrackDistance = 0;
+  let turnPenalty = 0;
+  let sharpTurns = 0;
+  let previous = start;
+  let previousRadius = 0;
+  let previousBearing = null;
+  let previousLeg = 0;
+
+  route.forEach(item => {
+    const point = routePoint(item);
+    const leg = distanceMeters(previous, point);
+    const radius = distanceMeters(start, point);
+    const bearing = leg > 1 ? routeBearingDegrees(previous, point) : null;
+    totalDistance += leg;
+
+    if (radius + 60 < previousRadius) {
+      backtrackDistance += previousRadius - radius;
+    }
+
+    if (bearing !== null && previousBearing !== null) {
+      const turn = bearingDeltaDegrees(previousBearing, bearing);
+      if (turn > 95) {
+        const severity = (turn - 95) / 85;
+        turnPenalty += Math.min(previousLeg, leg) * severity * 0.45;
+      }
+      if (turn >= 135 && previousLeg > 20 && leg > 20) sharpTurns++;
+    }
+
+    previous = point;
+    previousRadius = radius;
+    if (bearing !== null) previousBearing = bearing;
+    previousLeg = leg;
+  });
+
+  return {
+    distance: totalDistance,
+    backtrackDistance,
+    sharpTurns,
+    score: totalDistance + backtrackDistance * 0.5 + turnPenalty
+  };
+}
+
+function rotateRoute(route, index) {
+  if (!route.length || index <= 0) return route.slice();
+  return route.slice(index).concat(route.slice(0, index));
+}
+
+function selectRouteSeeds(start, items, limit = 8) {
+  const sorted = items.slice().sort((a, b) =>
+    distanceMeters(start, routePoint(a)) - distanceMeters(start, routePoint(b)));
+  if (sorted.length <= limit) return sorted;
+
+  const selected = [];
+  const used = new Set();
+  for (let i = 0; i < limit; i++) {
+    const index = Math.round(i * (sorted.length - 1) / (limit - 1));
+    const item = sorted[index];
+    if (item && !used.has(item.id)) {
+      used.add(item.id);
+      selected.push(item);
+    }
+  }
+  return selected;
+}
+
+function buildSectorRoute(start, items, clockwise) {
+  const sectorCount = items.length >= 18 ? 6 : (items.length >= 8 ? 4 : 3);
+  const sectors = Array.from({ length: sectorCount }, () => []);
+  const sectorWidth = 360 / sectorCount;
+
+  items.forEach(item => {
+    const bearing = routeBearingDegrees(start, routePoint(item)) || 0;
+    sectors[Math.floor(bearing / sectorWidth) % sectorCount].push(item);
+  });
+
+  const nearest = items.reduce((best, item) =>
+    distanceMeters(start, routePoint(item)) < distanceMeters(start, routePoint(best)) ? item : best,
+  items[0]);
+  const firstBearing = routeBearingDegrees(start, routePoint(nearest)) || 0;
+  const firstSector = Math.floor(firstBearing / sectorWidth) % sectorCount;
+  const ordered = [];
+  let current = start;
+
+  for (let offset = 0; offset < sectorCount; offset++) {
+    const direction = clockwise ? 1 : -1;
+    const sectorIndex = (firstSector + direction * offset + sectorCount) % sectorCount;
+    const segment = nearestNeighborRoute(current, sectors[sectorIndex]);
+    ordered.push(...segment);
+    if (segment.length) current = routePoint(segment[segment.length - 1]);
+  }
+  return ordered;
+}
+
+function buildRecommendedRoute(start, routeItems) {
+  const candidates = [];
+  const signatures = new Set();
+  const addCandidate = (name, route) => {
+    if (!Array.isArray(route) || route.length !== routeItems.length) return;
+    const signature = route.map(item => item.id).join('|');
+    if (signatures.has(signature)) return;
+    signatures.add(signature);
+    candidates.push({ name, route: route.slice() });
+  };
+
+  addCandidate('現在順', routeItems);
+  const currentMetrics = routeQualityMetrics(start, routeItems);
+  const nearestRoute = improveRouteWithTwoOpt(start, nearestNeighborRoute(start, routeItems));
+  const nearestMetrics = routeQualityMetrics(start, nearestRoute);
+  addCandidate('近い順', nearestRoute);
+
+  selectRouteSeeds(start, routeItems).forEach((seed, index) => {
+    const remaining = routeItems.filter(item => item.id !== seed.id);
+    addCandidate(`始点候補${index + 1}`, [seed].concat(nearestNeighborRoute(routePoint(seed), remaining)));
+  });
+
+  const byBearing = routeItems.slice().sort((a, b) =>
+    (routeBearingDegrees(start, routePoint(a)) || 0) - (routeBearingDegrees(start, routePoint(b)) || 0));
+  [byBearing, byBearing.slice().reverse()].forEach((sweep, index) => {
+    const nearestIndex = sweep.reduce((bestIndex, item, itemIndex) =>
+      distanceMeters(start, routePoint(item)) < distanceMeters(start, routePoint(sweep[bestIndex]))
+        ? itemIndex
+        : bestIndex,
+    0);
+    addCandidate(index === 0 ? '地域順・時計回り' : '地域順・反時計回り', rotateRoute(sweep, nearestIndex));
+  });
+
+  addCandidate('地域まとまり・時計回り', buildSectorRoute(start, routeItems, true));
+  addCandidate('地域まとまり・反時計回り', buildSectorRoute(start, routeItems, false));
+
+  let evaluated = candidates.map(candidate => ({
+    ...candidate,
+    metrics: routeQualityMetrics(start, candidate.route)
+  }));
+  const firstBest = evaluated.reduce((best, candidate) =>
+    candidate.metrics.score < best.metrics.score ? candidate : best,
+  evaluated[0]);
+  addCandidate('距離調整', improveRouteWithTwoOpt(start, firstBest.route));
+
+  evaluated = candidates.map(candidate => ({
+    ...candidate,
+    metrics: routeQualityMetrics(start, candidate.route)
+  }));
+  const shortestDistance = Math.min(...evaluated.map(candidate => candidate.metrics.distance));
+  const distanceLimit = shortestDistance + Math.max(100, shortestDistance * 0.05);
+  const eligible = evaluated.filter(candidate => candidate.metrics.distance <= distanceLimit);
+  eligible.sort((a, b) =>
+    a.metrics.score - b.metrics.score || a.metrics.distance - b.metrics.distance);
+
+  return {
+    suggested: eligible[0].route,
+    metrics: eligible[0].metrics,
+    candidateName: eligible[0].name,
+    candidateCount: evaluated.length,
+    currentMetrics,
+    nearestMetrics
+  };
+}
+
 function getRouteStartPoint() {
   if (userMarker) {
     const ll = userMarker.getLngLat();
@@ -8412,6 +8586,38 @@ function optimizeRouteOrder() {
     completedItems,
     clearGeometry: true,
     successMessage: `${modeLabel()}順を並べ替えました`
+  });
+}
+
+function optimizeRecommendedRouteOrder() {
+  closeModal('modal-menu');
+  const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
+
+  if (routeItems.length < 2) {
+    showToast(`${modeLabel()}先が2件以上ある時におすすめ順を計算できます`, true);
+    return;
+  }
+
+  const start = getRouteStartPoint();
+  const result = buildRecommendedRoute(start, routeItems);
+  const unchanged = result.suggested.map(item => item.id).join('|') === routeItems.map(item => item.id).join('|');
+  const savedDistance = Math.max(0, result.currentMetrics.distance - result.metrics.distance);
+
+  confirmAndApplyRouteOrder({
+    title: 'おすすめ配送順（試験）',
+    summary: `${start.label}から${result.candidateCount}通りの回り方を比較しました。\n` +
+      `現在順: ${formatKm(result.currentMetrics.distance)} / 折返し目安 ${formatKm(result.currentMetrics.backtrackDistance)}\n` +
+      `近い順: ${formatKm(result.nearestMetrics.distance)} / 折返し目安 ${formatKm(result.nearestMetrics.backtrackDistance)}\n` +
+      `おすすめ: ${formatKm(result.metrics.distance)} / 折返し目安 ${formatKm(result.metrics.backtrackDistance)} / 急な折返し ${result.metrics.sharpTurns}回\n` +
+      `選択候補: ${result.candidateName}` +
+      (savedDistance > 0 ? ` / 現在順より${formatKm(savedDistance)}短縮` : '') +
+      (unchanged ? '\n現在の順番が最良候補でした。' : '') +
+      '\n道路・一方通行・渋滞は未考慮です。実際の走行は各区間のナビで確認してください。',
+    suggested: result.suggested,
+    noLocationItems,
+    completedItems,
+    clearGeometry: true,
+    successMessage: `${modeLabel()}順をおすすめ配送順に並べ替えました`
   });
 }
 
@@ -8808,6 +9014,7 @@ $('menu-label-mode').addEventListener('click', cycleLabelMode);
 $('menu-import-pickup').addEventListener('click', openPickupImportModal);
 $('menu-reset-pickup').addEventListener('click', resetPickupCompletionsManually);
 $('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
+$('menu-optimize-recommended').addEventListener('click', optimizeRecommendedRouteOrder);
 $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
 $('menu-optimize-google').addEventListener('click', optimizeGoogleCarRouteOrder);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
