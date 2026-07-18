@@ -8,6 +8,15 @@
         </intent>
     </queries>
 
+    <!-- Permissions and optional device features -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- ネイティブカメラ (連写用 camera-preview プラグイン) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- 現在地表示・要確認ピン判定用 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -41,13 +50,4 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
     </application>
-
-    <!-- Permissions -->
-
-    <uses-permission android:name="android.permission.INTERNET" />
-    <!-- ネイティブカメラ (連写用 camera-preview プラグイン) -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <!-- 現在地表示・要確認ピン判定用 -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 </manifest>
