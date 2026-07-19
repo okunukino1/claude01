@@ -1515,7 +1515,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.69</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.70</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1570,7 +1570,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.69</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.70</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1959,7 +1959,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.69';
+const APP_VERSION = 'v2026.06.24-test.70';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1998,6 +1998,8 @@ const DELIVERY_SYNC_API = '../api/delivery_sync.php';
 const ROAD_SEGMENT_API = '../api/route_segment.php';
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
+const MAPBOX_GEOCODING_API = 'https://api.mapbox.com/search/geocode/v6/forward';
+const MAPBOX_ADDRESS_MATCH_VERSION = 1;
 const SPOT_COMPLETION_PUSH_API = '../api/push_spot_completed.php';
 const SPOT_PICKUP_PREFETCH_API = '../api/spot_pickups.php';
 const SHARED_GEOCODE_CACHE_RETRY_MS = 10 * 60 * 1000;
@@ -2224,6 +2226,7 @@ const MAPBOX_OPTIMIZE_COST_PER_CALL = 0.002;
 let usage = JSON.parse(localStorage.getItem(USAGE_KEY) || '{"ocr":0,"geocode":0}');
 usage.ocr = usage.ocr || 0;
 usage.geocode = usage.geocode || 0;
+usage.mapboxAddressGeocode = usage.mapboxAddressGeocode || 0;
 usage.routeOptimize = usage.routeOptimize || 0;
 usage.googleRouteOptimize = usage.googleRouteOptimize || 0;
 
@@ -5004,12 +5007,142 @@ function canonicalAddressForCache(rawAddress) {
     .toLowerCase();
 }
 
+function cleanAddressForMapboxGeocoding(rawAddress) {
+  let address = normalizeKanjiDigitsForAddress(normalizeAddress(rawAddress || ''));
+  address = address.replace(/〒?\s*\d{3}\s*[-ー－‐―−]?\s*\d{4}\s*/g, '');
+  address = address.replace(/[一-鿿々ー]{1,15}\s*様\s*$/g, '');
+  address = address.replace(/[-\s]*\d+\s*(?:号室|室|階|F)\s*$/i, '');
+  const separated = splitAddressAndBuilding(address);
+  const cleaned = String(separated.address || address).replace(/\s+/g, ' ').trim();
+  if (/[丁目番号]/.test(cleaned)) return cleaned;
+  const threeParts = cleaned.match(/^(.*?)(\d+)-(\d+)-(\d+)$/);
+  if (threeParts) return `${threeParts[1]}${threeParts[2]}丁目${threeParts[3]}番${threeParts[4]}号`;
+  const twoParts = cleaned.match(/^(.*?)(\d+)-(\d+)$/);
+  if (twoParts) return `${twoParts[1]}${twoParts[2]}番${twoParts[3]}号`;
+  return cleaned;
+}
+
+function mapboxAddressNumberParts(value) {
+  let address = normalizeKanjiDigitsForAddress(normalizeAddress(value || ''));
+  address = address.replace(/〒?\s*\d{3}\s*[-ー－‐―−]?\s*\d{4}\s*/g, '');
+  address = address
+    .replace(/(\d+)\s*丁目/g, '$1-')
+    .replace(/(\d+)\s*番(?:地)?/g, '$1-')
+    .replace(/(\d+)\s*号(?!室)/g, '$1')
+    .replace(/(\d)\s*[のノ]\s*(?=\d)/g, '$1-')
+    .replace(/-+/g, '-');
+  const matches = [...address.matchAll(/\d+(?:-\d+){1,3}/g)];
+  if (!matches.length) return [];
+  const best = matches.reduce((current, candidate) => {
+    const currentCount = current[0].split('-').length;
+    const candidateCount = candidate[0].split('-').length;
+    return candidateCount >= currentCount ? candidate : current;
+  });
+  return best[0].split('-').map(part => String(Number(part)));
+}
+
+function mapboxAddressTextStem(value) {
+  return normalizeKanjiDigitsForAddress(normalizeAddress(value || ''))
+    .replace(/〒?\s*\d{3}\s*[-ー－‐―−]?\s*\d{4}\s*/g, '')
+    .replace(/^日本\s*[,、]?\s*/, '')
+    .replace(/\d.*$/, '')
+    .replace(/[\s,、，。]/g, '')
+    .toLowerCase();
+}
+
+function mapboxAddressFeatureIsExact(feature, queryAddress) {
+  if (!feature || !feature.geometry || !Array.isArray(feature.geometry.coordinates)) return false;
+  const props = feature.properties || {};
+  if ((props.feature_type || feature.type) !== 'address') return false;
+  const accuracy = String(props.coordinates && props.coordinates.accuracy || '').toLowerCase();
+  if (accuracy !== 'rooftop' && accuracy !== 'point') return false;
+  const matchCode = props.match_code || {};
+  if (matchCode.address_number !== 'matched' || matchCode.block !== 'matched') return false;
+
+  const queryParts = mapboxAddressNumberParts(queryAddress);
+  const resultParts = mapboxAddressNumberParts(props.full_address || props.name || '');
+  if (queryParts.length < 2 || queryParts.length !== resultParts.length) return false;
+  if (!queryParts.every((part, index) => part === resultParts[index])) return false;
+  return mapboxAddressTextStem(queryAddress) === mapboxAddressTextStem(props.full_address || props.name || '');
+}
+
+async function lookupExactMapboxAddress(rawAddress) {
+  if (!mapboxConfig || !mapboxConfig.mapboxAccessToken) return { state: 'unavailable' };
+  const queryAddress = cleanAddressForMapboxGeocoding(rawAddress);
+  if (mapboxAddressNumberParts(queryAddress).length < 2) return { state: 'checked' };
+
+  const params = new URLSearchParams({
+    q: queryAddress,
+    country: 'jp',
+    language: 'ja',
+    types: 'address',
+    autocomplete: 'false',
+    permanent: 'true',
+    limit: '5',
+    access_token: mapboxConfig.mapboxAccessToken
+  });
+  try {
+    bumpUsage('mapboxAddressGeocode');
+    const res = await fetch(`${MAPBOX_GEOCODING_API}?${params}`);
+    if (!res.ok) {
+      console.warn('Mapbox address geocode failed', res.status);
+      return { state: res.status === 400 || res.status === 404 || res.status === 422 ? 'checked' : 'unavailable' };
+    }
+    const data = await res.json();
+    const feature = Array.isArray(data.features)
+      ? data.features.find(candidate => mapboxAddressFeatureIsExact(candidate, queryAddress))
+      : null;
+    if (!feature) return { state: 'checked' };
+    const lng = Number(feature.geometry.coordinates[0]);
+    const lat = Number(feature.geometry.coordinates[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { state: 'checked' };
+    const props = feature.properties || {};
+    const addressParts = mapboxAddressNumberParts(queryAddress);
+    return {
+      state: 'matched',
+      result: {
+        lat,
+        lng,
+        approx: false,
+        manual: false,
+        formatted: props.full_address || props.name || queryAddress,
+        source: 'mapbox',
+        mapboxMatched: true,
+        mapboxMatchVersion: MAPBOX_ADDRESS_MATCH_VERSION,
+        mapboxAccuracy: String(props.coordinates && props.coordinates.accuracy || ''),
+        mapboxHouseNumber: addressParts[addressParts.length - 1] || ''
+      }
+    };
+  } catch (e) {
+    console.warn('Mapbox address geocode failed', e);
+    return { state: 'unavailable' };
+  }
+}
+
+async function preferExactMapboxAddress(rawAddress, baseResult) {
+  if (baseResult && (baseResult.manual || Number(baseResult.mapboxMatchVersion || 0) >= MAPBOX_ADDRESS_MATCH_VERSION)) {
+    return baseResult;
+  }
+  const lookup = await lookupExactMapboxAddress(rawAddress);
+  if (lookup.state === 'matched') return lookup.result;
+  if (lookup.state === 'checked' && baseResult) {
+    return {
+      ...baseResult,
+      mapboxMatched: false,
+      mapboxMatchVersion: MAPBOX_ADDRESS_MATCH_VERSION
+    };
+  }
+  return baseResult || null;
+}
+
 async function geocodeAddress(rawAddress) {
   const cacheKey = geocodeCacheKey(rawAddress);
   const cached = getCachedGeocode(cacheKey);
   if (cached) {
-    saveSharedGeocodeCache(cacheKey, rawAddress, cached);
-    return cached;
+    const result = await preferExactMapboxAddress(rawAddress, cached);
+    if (cacheKey && result !== cached) setCachedGeocode(cacheKey, result);
+    saveSharedGeocodeCache(cacheKey, rawAddress, result);
+    return result;
   }
   if (cacheKey && geocodeInFlight.has(cacheKey)) return geocodeInFlight.get(cacheKey);
 
@@ -5025,8 +5158,10 @@ async function geocodeAddress(rawAddress) {
 async function geocodeAddressWithSharedCache(rawAddress, cacheKey) {
   const shared = await getSharedGeocodeCache(cacheKey);
   if (shared) {
-    setCachedGeocode(cacheKey, shared);
-    return shared;
+    const result = await preferExactMapboxAddress(rawAddress, shared);
+    setCachedGeocode(cacheKey, result);
+    if (result !== shared) saveSharedGeocodeCache(cacheKey, rawAddress, result);
+    return result;
   }
   return geocodeAddressUncached(rawAddress, cacheKey);
 }
@@ -5321,6 +5456,14 @@ async function deleteSelectedCacheAdminItem() {
 }
 
 async function geocodeAddressUncached(rawAddress, cacheKey) {
+  const mapboxLookup = await lookupExactMapboxAddress(rawAddress);
+  if (mapboxLookup.state === 'matched') {
+    const result = mapboxLookup.result;
+    if (cacheKey) setCachedGeocode(cacheKey, result);
+    if (cacheKey) saveSharedGeocodeCache(cacheKey, rawAddress, result);
+    return result;
+  }
+  const mapboxMatchVersion = mapboxLookup.state === 'checked' ? MAPBOX_ADDRESS_MATCH_VERSION : 0;
   const candidates = [
     cleanAddressForGeocoding(rawAddress),
     normalizeAddress(rawAddress)
@@ -5340,7 +5483,11 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
           lat: data.lat,
           lng: data.lng,
           approx: !!data.approx,
-          formatted: data.formatted || q
+          formatted: data.formatted || q,
+          source: 'google',
+          locationType: data.location_type || '',
+          mapboxMatched: false,
+          mapboxMatchVersion
         };
         if (cacheKey && !result.approx) setCachedGeocode(cacheKey, result);
         if (cacheKey) saveSharedGeocodeCache(cacheKey, rawAddress, result);
@@ -5359,7 +5506,11 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
         // 概算位置(approx)は共有キャッシュに保存しない。
         // 保存するとapprox結果が固定され、次回syncでGoogleを再試行できなくなる。
         console.info('geocode fallback via GSI for', q);
-        return result;
+        return {
+          ...result,
+          mapboxMatched: false,
+          mapboxMatchVersion
+        };
       }
     } catch (e) {
       console.warn('gsi geocode failed for', q, e);
@@ -5432,7 +5583,13 @@ function getCachedGeocode(key) {
     lng: Number(item.lng),
     approx: !!item.approx,
     manual: !!item.manual,
-    formatted: item.formatted || ''
+    formatted: item.formatted || '',
+    source: item.source || '',
+    locationType: item.locationType || '',
+    mapboxMatched: !!item.mapboxMatched,
+    mapboxMatchVersion: Number(item.mapboxMatchVersion || 0),
+    mapboxAccuracy: item.mapboxAccuracy || '',
+    mapboxHouseNumber: item.mapboxHouseNumber || ''
   };
 }
 
@@ -5448,6 +5605,12 @@ function setCachedGeocode(key, result) {
     approx: !!result.approx,
     manual: !!result.manual,
     formatted: result.formatted || '',
+    source: result.source || '',
+    locationType: result.locationType || '',
+    mapboxMatched: !!result.mapboxMatched,
+    mapboxMatchVersion: Number(result.mapboxMatchVersion || 0),
+    mapboxAccuracy: result.mapboxAccuracy || '',
+    mapboxHouseNumber: result.mapboxHouseNumber || '',
     savedAt: Date.now(),
     lastUsedAt: Date.now()
   };
@@ -7413,6 +7576,9 @@ function showUsage() {
     <p><b>住所→緯度経度 (Google Geocoding)</b><br>
     呼び出し回数: ${usage.geocode} 回<br>
     推定費用: $${geoCost}</p>
+    <p><b>建物上の番地点 (Mapbox住所検索)</b><br>
+    呼び出し回数: ${usage.mapboxAddressGeocode} 回<br>
+    費用はMapbox管理画面で確認してください。</p>
     <p><b>車用ルート最適化 (Mapbox)</b><br>
     呼び出し回数: ${usage.routeOptimize} 回<br>
     無料枠超過時の目安: $${routeCost}</p>
@@ -7431,7 +7597,7 @@ function showUsage() {
 
 function resetUsage() {
   showConfirm('使用状況リセット', 'カウンターをリセットしますか？', () => {
-    usage = { ocr: 0, geocode: 0, routeOptimize: 0, googleRouteOptimize: 0 };
+    usage = { ocr: 0, geocode: 0, mapboxAddressGeocode: 0, routeOptimize: 0, googleRouteOptimize: 0 };
     localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
     showUsage();
     showToast('リセットしました');
