@@ -1408,7 +1408,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.64</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.65</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1459,7 +1459,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.64</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.65</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1845,7 +1845,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.64';
+const APP_VERSION = 'v2026.06.24-test.65';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2067,6 +2067,7 @@ let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
 let gsiOverlayVisible = localStorage.getItem(GSI_OVERLAY_KEY) !== '0';
 let listSearchQuery = '';
 let optimizedRouteOrderedIds = [];
+let nextSegmentUpdateId = 0;
 let recognition = null;
 let mapStyleLoaded = false;
 
@@ -3315,6 +3316,8 @@ const OPTIMIZED_ROUTE_SOURCE_ID = 'optimized-route';
 const OPTIMIZED_ROUTE_LAYER_ID = 'optimized-route-line';
 const NEXT_SEGMENT_SOURCE_ID = 'next-segment';
 const NEXT_SEGMENT_LAYER_ID = 'next-segment-line';
+const FOLLOWING_SEGMENT_SOURCE_ID = 'following-segment';
+const FOLLOWING_SEGMENT_LAYER_ID = 'following-segment-line';
 
 function addNeighborhoodLayer(layer) {
   if (map.getLayer(layer.id)) return;
@@ -4088,8 +4091,16 @@ function clearOptimizedRouteGeometry() {
 
 function clearNextSegmentLayer() {
   if (!map) return;
+  nextSegmentUpdateId++;
   if (map.getLayer(NEXT_SEGMENT_LAYER_ID)) map.removeLayer(NEXT_SEGMENT_LAYER_ID);
   if (map.getSource(NEXT_SEGMENT_SOURCE_ID)) map.removeSource(NEXT_SEGMENT_SOURCE_ID);
+  clearFollowingSegmentLayer();
+}
+
+function clearFollowingSegmentLayer() {
+  if (!map) return;
+  if (map.getLayer(FOLLOWING_SEGMENT_LAYER_ID)) map.removeLayer(FOLLOWING_SEGMENT_LAYER_ID);
+  if (map.getSource(FOLLOWING_SEGMENT_SOURCE_ID)) map.removeSource(FOLLOWING_SEGMENT_SOURCE_ID);
 }
 
 function addNextSegmentLayer() {
@@ -4125,18 +4136,73 @@ function setNextSegmentGeometry(geometry) {
   addNextSegmentLayer();
 }
 
+function addFollowingSegmentLayer() {
+  if (map.getLayer(FOLLOWING_SEGMENT_LAYER_ID)) return;
+  const layerDef = {
+    id: FOLLOWING_SEGMENT_LAYER_ID,
+    type: 'line',
+    source: FOLLOWING_SEGMENT_SOURCE_ID,
+    slot: 'top',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-color': '#2563eb',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 16, 7, 19, 10],
+      'line-opacity': 0.9
+    }
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+  }
+}
+
+function setFollowingSegmentGeometry(geometry) {
+  if (!map || !geometry) return;
+  const data = { type: 'Feature', geometry, properties: {} };
+  if (map.getSource(FOLLOWING_SEGMENT_SOURCE_ID)) {
+    map.getSource(FOLLOWING_SEGMENT_SOURCE_ID).setData(data);
+    addFollowingSegmentLayer();
+    return;
+  }
+  map.addSource(FOLLOWING_SEGMENT_SOURCE_ID, { type: 'geojson', data });
+  addFollowingSegmentLayer();
+}
+
+async function fetchDrivingSegmentGeometry(start, destination, token) {
+  try {
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start.lng},${start.lat};${destination.lng},${destination.lat}?geometries=geojson&steps=false&access_token=${encodeURIComponent(token)}`;
+    const res = await fetch(url);
+    const data = res.ok ? await res.json() : null;
+    return data && data.routes && data.routes[0] && data.routes[0].geometry || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function updateNextSegmentHighlight() {
+  const updateId = ++nextSegmentUpdateId;
   if (!map || optimizedRouteOrderedIds.length === 0) { clearNextSegmentLayer(); return; }
   const deliveryById = new Map(deliveries.map(d => [d.id, d]));
-  const nextDelivery = optimizedRouteOrderedIds
+  const pendingDeliveries = optimizedRouteOrderedIds
     .map(id => deliveryById.get(id))
-    .find(d => d && !d.completed && d.lat != null && d.lng != null);
+    .filter(d => d && !d.completed && d.lat != null && d.lng != null);
+  const nextDelivery = pendingDeliveries[0];
+  const followingDelivery = pendingDeliveries[1];
 
   if (!nextDelivery) { clearNextSegmentLayer(); return; }
 
   const start = getRouteStartPoint();
 
-  // Draw straight line immediately for instant feedback when a stop is completed
+  // Draw straight lines immediately so completing a stop updates both segments at once.
+  if (followingDelivery) {
+    setFollowingSegmentGeometry({
+      type: 'LineString',
+      coordinates: [[nextDelivery.lng, nextDelivery.lat], [followingDelivery.lng, followingDelivery.lat]]
+    });
+  } else {
+    clearFollowingSegmentLayer();
+  }
   setNextSegmentGeometry({
     type: 'LineString',
     coordinates: [[start.lng, start.lat], [nextDelivery.lng, nextDelivery.lat]]
@@ -4145,15 +4211,15 @@ async function updateNextSegmentHighlight() {
   const token = mapboxConfig && mapboxConfig.mapboxAccessToken;
   if (!token) return;
 
-  try {
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start.lng},${start.lat};${nextDelivery.lng},${nextDelivery.lat}?geometries=geojson&steps=false&access_token=${token}`;
-    const res = await fetch(url);
-    const data = res.ok ? await res.json() : null;
-    const geometry = data && data.routes && data.routes[0] && data.routes[0].geometry;
-    if (geometry) setNextSegmentGeometry(geometry);
-  } catch (e) {
-    // straight line already shown above
-  }
+  const [nextGeometry, followingGeometry] = await Promise.all([
+    fetchDrivingSegmentGeometry(start, nextDelivery, token),
+    followingDelivery
+      ? fetchDrivingSegmentGeometry(nextDelivery, followingDelivery, token)
+      : Promise.resolve(null)
+  ]);
+  if (updateId !== nextSegmentUpdateId) return;
+  if (followingGeometry) setFollowingSegmentGeometry(followingGeometry);
+  if (nextGeometry) setNextSegmentGeometry(nextGeometry);
 }
 
 function updateAddrButton() {
