@@ -179,6 +179,7 @@
     flex-direction: column;
     justify-content: space-between;
     background: transparent;
+    overflow: hidden;
   }
   html.native-camera-open,
   html.native-camera-open body {
@@ -188,6 +189,8 @@
     visibility: hidden;
   }
   .native-camera-top {
+    position: relative;
+    z-index: 3;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -209,20 +212,93 @@
     font-size: 14px;
   }
   .native-camera-bottom {
+    position: relative;
+    z-index: 3;
     display: flex;
     justify-content: center;
     padding: 14px 0 calc(24px + env(safe-area-inset-bottom));
     background: linear-gradient(transparent, rgba(0,0,0,0.55));
   }
+  .native-camera-guide {
+    position: absolute;
+    z-index: 1;
+    left: max(7vw, 20px);
+    right: max(7vw, 20px);
+    top: 25%;
+    height: min(38vh, 330px);
+    border: 2px solid rgba(255,255,255,0.82);
+    border-radius: 6px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(0,0,0,0.2);
+    pointer-events: none;
+  }
+  #native-camera-flash {
+    position: absolute;
+    z-index: 4;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+  }
+  #native-camera-ui.capture-flash #native-camera-flash {
+    animation: native-camera-flash 320ms ease-out;
+  }
+  #native-camera-capture-feedback {
+    position: absolute;
+    z-index: 5;
+    left: 50%;
+    top: 17%;
+    transform: translate(-50%, -8px);
+    min-width: 126px;
+    padding: 9px 14px;
+    border-radius: 6px;
+    background: rgba(17,24,39,0.88);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 800;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease, transform 120ms ease;
+  }
+  #native-camera-capture-feedback.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
   #native-camera-shutter {
+    position: relative;
     width: 78px;
     height: 78px;
     border-radius: 50%;
     background: #fff;
     border: 5px solid rgba(255,255,255,0.45);
     box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    transition: transform 100ms ease, background 100ms ease, opacity 100ms ease;
   }
-  #native-camera-shutter:disabled { opacity: 0.4; }
+  #native-camera-shutter::after {
+    content: '';
+    position: absolute;
+    inset: 8px;
+    border: 2px solid #111827;
+    border-radius: 50%;
+  }
+  #native-camera-shutter.is-capturing {
+    transform: scale(0.84);
+    background: #fbbf24;
+  }
+  #native-camera-shutter.is-captured {
+    animation: native-shutter-confirm 360ms ease-out;
+  }
+  #native-camera-shutter:disabled:not(.is-capturing) { opacity: 0.48; }
+  @keyframes native-camera-flash {
+    0% { opacity: 0; }
+    18% { opacity: 0.82; }
+    100% { opacity: 0; }
+  }
+  @keyframes native-shutter-confirm {
+    0% { transform: scale(0.84); }
+    55% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+  }
   .delivery-pin .pin-num {
     position: absolute;
     left: 0; top: 8px;
@@ -1408,7 +1484,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.67</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.68</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1459,7 +1535,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.67</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.68</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1755,10 +1831,10 @@
 
 <div class="modal-bg" id="modal-edit">
   <div class="modal">
-    <h3>配送先を編集</h3>
+    <h3 id="edit-modal-title">配送先を編集</h3>
     <div id="edit-review-banner" style="display:none;background:#fef2f2;border:1px solid #e11d48;border-radius:8px;padding:8px 10px;margin:4px 0 8px;color:#be123c;font-size:12px;font-weight:700;"></div>
     <div id="edit-photo-wrap" style="display:none;margin:4px 0 8px;">
-      <img id="edit-photo" alt="伝票写真" style="max-width:100%;max-height:200px;border-radius:8px;display:block;margin:0 auto;">
+      <img id="edit-photo" alt="伝票写真" style="max-width:100%;max-height:min(32vh,260px);border-radius:8px;display:block;margin:0 auto;object-fit:contain;">
     </div>
     <label>住所</label>
     <input type="text" id="edit-address">
@@ -1773,7 +1849,7 @@
       <button class="done" id="btn-edit-done" type="button">完了</button>
       <button class="go" id="btn-edit-navi" type="button">ナビ</button>
       <button class="danger" id="btn-edit-delete" type="button">削除</button>
-      <button class="cancel" type="button" data-close="modal-edit">キャンセル</button>
+      <button class="cancel" id="btn-edit-cancel" type="button">キャンセル</button>
       <button class="primary" id="btn-edit-save" type="button">保存</button>
     </div>
   </div>
@@ -1832,6 +1908,9 @@
 <!-- ネイティブ連写カメラのUI (Capacitorアプリ内でのみ使用)。
      カメラ映像はWebViewの背後にネイティブ描画されるため、この層は透過。 -->
 <div id="native-camera-ui">
+  <div id="native-camera-flash" aria-hidden="true"></div>
+  <div class="native-camera-guide" aria-hidden="true"></div>
+  <div id="native-camera-capture-feedback" role="status" aria-live="polite"></div>
   <div class="native-camera-top">
     <div id="native-camera-stats">📸 連続撮影</div>
     <button id="native-camera-close" type="button">✕ 終了</button>
@@ -1845,7 +1924,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.67';
+const APP_VERSION = 'v2026.06.24-test.68';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1889,6 +1968,10 @@ const SHARED_GEOCODE_CACHE_RETRY_MS = 10 * 60 * 1000;
 const PICKUP_GEOCODE_CONCURRENCY = 3;
 const PHOTO_OCR_MAX_SIZE = 1280; // 文字欠け・かすれに強くするため少し高解像度に
 const PHOTO_OCR_QUALITY = 0.8;
+const BATCH_PHOTO_OCR_MAX_SIZE = 1800; // 連写は確認画面を省くため、細い住所文字を多めに残す
+const BATCH_PHOTO_OCR_QUALITY = 0.9;
+const NATIVE_CAMERA_FOCUS_WARMUP_MS = 700;
+const NATIVE_CAPTURE_MIN_INTERVAL_MS = 900;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
@@ -5737,11 +5820,18 @@ function openEdit(id) {
   editingItemId = id;
   const d = deliveries.find(x => x.id === id);
   if (!d) return;
+  const immediateBatchReview = batchReviewEditingId === id;
+  const reviewReasonText = (d.reviewReasons || []).join(' / ') || 'ピン位置を確認してください';
+  const title = $('edit-modal-title');
+  if (title) title.textContent = immediateBatchReview ? '伝票を確認・修正' : '配送先を編集';
   // 要確認バナーと伝票写真 (連写モードで要確認になったものは写真と見比べられる)
   const banner = $('edit-review-banner');
   if (banner) {
-    if (d.needsReview && !d.completed) {
-      banner.textContent = `❗要確認: ${(d.reviewReasons || []).join(' / ') || 'ピン位置を確認してください'}`;
+    if (immediateBatchReview) {
+      banner.textContent = `❗連写を一時停止しました。写真と住所を確認して保存してください。理由: ${reviewReasonText}`;
+      banner.style.display = '';
+    } else if (d.needsReview && !d.completed) {
+      banner.textContent = `❗要確認: ${reviewReasonText}`;
       banner.style.display = '';
     } else {
       banner.style.display = 'none';
@@ -5760,11 +5850,33 @@ function openEdit(id) {
   const doneBtn = $('btn-edit-done');
   doneBtn.textContent = d.completed ? '完了解除' : '完了';
   doneBtn.disabled = false;
+  doneBtn.hidden = immediateBatchReview;
+  const naviBtn = $('btn-edit-navi');
+  if (naviBtn) naviBtn.hidden = immediateBatchReview;
   const deleteBtn = $('btn-edit-delete');
   const isPickupItem = isPickupStorageRecord(d);
-  deleteBtn.hidden = isPickupItem;
-  deleteBtn.disabled = isPickupItem;
+  deleteBtn.hidden = isPickupItem || immediateBatchReview;
+  deleteBtn.disabled = isPickupItem || immediateBatchReview;
+  const cancelBtn = $('btn-edit-cancel');
+  if (cancelBtn) cancelBtn.textContent = immediateBatchReview ? '連写を終了' : 'キャンセル';
   openModal('modal-edit');
+}
+
+function cancelEditedItem() {
+  const cancelledId = editingItemId;
+  const immediateBatchReview = !!cancelledId && batchReviewEditingId === cancelledId;
+  closeModal('modal-edit');
+  editingItemId = null;
+  if (!immediateBatchReview) return;
+
+  batchReviewEditingId = null;
+  batchReviewQueue.length = 0;
+  batchReviewResumeNativeCamera = false;
+  if (batchPhotoMode) {
+    setBatchPhotoMode(false);
+  } else {
+    showToast('修正を中止しました。❗要確認は配送リストに残っています', true);
+  }
 }
 
 async function toggleEditedItemDone() {
@@ -5799,6 +5911,8 @@ async function reGeocodeEditedItem() {
   if (!editingItemId) return;
   const d = deliveries.find(x => x.id === editingItemId);
   if (!d) return;
+  const editedId = editingItemId;
+  const immediateBatchReview = batchReviewEditingId === editedId;
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
   const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
@@ -5858,15 +5972,19 @@ async function reGeocodeEditedItem() {
   editingItemId = null;
   const message = result.approx ? '概算位置で更新しました' : '住所検索でピン位置を更新しました';
   showToast(locationSynced ? message : `${message}（固定位置の共有保存は未完了）`, !locationSynced);
+  if (immediateBatchReview) await finishImmediateBatchReview(editedId);
 }
 
 async function saveEditedItem() {
   if (!editingItemId) return;
   const d = deliveries.find(x => x.id === editingItemId);
   if (!d) return;
+  const editedId = editingItemId;
+  const immediateBatchReview = batchReviewEditingId === editedId;
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
   const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
+  const newPkgCount = Math.max(1, parseInt($('edit-package-count').value, 10) || 1);
   if (!newAddr) { showToast('住所を入力してください', true); return; }
 
   const addressChanged = (newAddr !== d.address);
@@ -5880,32 +5998,36 @@ async function saveEditedItem() {
     formatted: d.formatted,
     timeWindowId: d.timeWindowId
   };
-  d.note = newNote;
-  d.timeWindowId = newTimeWindowId;
-  const newPkgCount = Math.max(1, parseInt($('edit-package-count').value, 10) || 1);
-  d.packageCount = newPkgCount;
-  d.needsReview = false; // ユーザーが内容を確認して保存した
-  d.reviewReasons = [];
-  d.updatedAt = Date.now();
 
   let locationChanged = false;
+  let geocodeResult = null;
   if (addressChanged) {
     showLoading('住所を再検索中...');
-    const result = await geocodeAddress(newAddr);
+    geocodeResult = await geocodeAddress(newAddr);
     hideLoading();
-    if (result) {
-      d.address = newAddr;
-      d.lat = result.lat;
-      d.lng = result.lng;
-      d.approx = result.approx;
-      d.formatted = result.formatted;
+    if (geocodeResult) {
       locationChanged = true;
+    } else if (immediateBatchReview) {
+      showToast('住所が見つかりませんでした。伝票を見て住所を直してください', true);
+      return;
     } else {
       showToast('住所が見つかりませんでした(備考のみ更新)', true);
     }
-  } else {
-    d.address = newAddr;
   }
+
+  d.address = locationChanged ? newAddr : d.address;
+  d.note = newNote;
+  d.timeWindowId = newTimeWindowId;
+  d.packageCount = newPkgCount;
+  if (geocodeResult) {
+    d.lat = geocodeResult.lat;
+    d.lng = geocodeResult.lng;
+    d.approx = geocodeResult.approx;
+    d.formatted = geocodeResult.formatted;
+  }
+  d.needsReview = false; // ユーザーが写真と内容を確認して保存した
+  d.reviewReasons = [];
+  d.updatedAt = Date.now();
 
   saveDeliveries();
   renderMarkers();
@@ -5929,6 +6051,7 @@ async function saveEditedItem() {
   closeModal('modal-edit');
   editingItemId = null;
   showToast(locationSynced ? '更新しました' : '更新しました（固定位置の共有保存は未完了）', !locationSynced);
+  if (immediateBatchReview) await finishImmediateBatchReview(editedId);
 }
 
 function deleteEditedItem() {
@@ -6361,8 +6484,12 @@ function updatePhotoPreviewRotation() {
 }
 
 // 1回分のOCR呼び出し (回転角度つき・バイナリ送信)
-async function ocrExtractAddress(file, rotation, signal) {
-  const compressed = await compressImage(file, PHOTO_OCR_MAX_SIZE, PHOTO_OCR_QUALITY, rotation);
+async function ocrExtractAddress(file, rotation, signal, imageProfile = null) {
+  const maxSize = imageProfile && imageProfile.maxSize || PHOTO_OCR_MAX_SIZE;
+  const quality = imageProfile && Number.isFinite(imageProfile.quality)
+    ? imageProfile.quality
+    : PHOTO_OCR_QUALITY;
+  const compressed = await compressImage(file, maxSize, quality, rotation);
   bumpUsage('ocr');
   const res = await fetch('../api/extract_address.php', {
     method: 'POST',
@@ -6627,6 +6754,10 @@ async function resolveDestinationAddress(ocrData, primaryAddress) {
 // 朝の積み込みで伝票を次々読み込む用途。処理は撮影と並行して進む。
 let batchPhotoMode = false;
 const batchStats = { pending: 0, added: 0, skipped: 0, failed: 0, review: 0, stacked: 0 };
+const batchReviewQueue = [];
+let batchReviewEditingId = null;
+let batchReviewTransitioning = false;
+let batchReviewResumeNativeCamera = false;
 
 function updateBatchPhotoUi() {
   const btn = $('btn-add-photo');
@@ -6656,6 +6787,76 @@ function updateBatchPhotoUi() {
   }
 }
 
+function releaseReviewPhoto(id) {
+  const photoUrl = reviewPhotoUrls.get(id);
+  if (photoUrl) {
+    try { URL.revokeObjectURL(photoUrl); } catch (e) {}
+    reviewPhotoUrls.delete(id);
+  }
+}
+
+async function presentNextBatchReview() {
+  if (batchReviewEditingId || batchReviewTransitioning || !batchReviewQueue.length) return;
+  batchReviewTransitioning = true;
+  let nextId = null;
+  try {
+    if (nativeCameraOpen) {
+      if (!nativeCameraSingleShot) batchReviewResumeNativeCamera = true;
+      await closeNativeBatchCamera();
+    }
+    while (batchReviewQueue.length && !nextId) {
+      const candidate = batchReviewQueue.shift();
+      if (deliveries.some(d => d.id === candidate && d.needsReview && !d.completed)) nextId = candidate;
+    }
+    if (nextId) {
+      batchReviewEditingId = nextId;
+      openEdit(nextId);
+    }
+  } finally {
+    batchReviewTransitioning = false;
+  }
+  if (!batchReviewEditingId && batchReviewQueue.length) {
+    presentNextBatchReview().catch(e => console.warn('next batch review failed', e));
+  }
+}
+
+function queueImmediateBatchReview(id) {
+  if (!id || batchReviewEditingId === id || batchReviewQueue.includes(id)) return;
+  if (nativeCameraOpen && !nativeCameraSingleShot) batchReviewResumeNativeCamera = true;
+  batchReviewQueue.push(id);
+  presentNextBatchReview().catch(e => console.warn('batch review failed', e));
+}
+
+async function finishImmediateBatchReview(id, options = {}) {
+  if (batchReviewEditingId !== id) return;
+  const resume = options.resume !== false;
+  batchReviewEditingId = null;
+  releaseReviewPhoto(id);
+
+  if (!resume) {
+    batchReviewQueue.length = 0;
+    batchReviewResumeNativeCamera = false;
+    return;
+  }
+  if (batchReviewQueue.length) {
+    await presentNextBatchReview();
+    if (batchReviewEditingId) return;
+  }
+
+  const shouldResumeNative = batchReviewResumeNativeCamera && batchPhotoMode;
+  batchReviewResumeNativeCamera = false;
+  if (!shouldResumeNative) return;
+
+  batchReviewTransitioning = true;
+  try {
+    const opened = await openNativeBatchCamera({ singleShot: false });
+    if (!opened) showToast('修正は保存しました。連写ボタンでもう一度カメラを開いてください', true);
+  } finally {
+    batchReviewTransitioning = false;
+  }
+  if (batchReviewQueue.length) await presentNextBatchReview();
+}
+
 // ===== ネイティブ連写カメラ (Capacitorアプリ内でのみ有効) =====
 // アプリ内に本物のカメラ (オートフォーカス完備) を表示し、
 // シャッターを押すたびに裏でOCR+ピン立てを並行実行する。
@@ -6675,6 +6876,105 @@ function nativeCameraPlugin() {
 
 let nativeCameraOpen = false;
 let nativeCameraSingleShot = false; // true = 1枚撮ったら閉じてプレビュー画面へ
+let nativeCaptureInFlight = false;
+let nativeCameraReadyTimer = null;
+let nativeCameraFeedbackTimer = null;
+let nativeCameraAudioContext = null;
+
+function showNativeCameraFeedback(message, duration = 0) {
+  const feedback = $('native-camera-capture-feedback');
+  if (!feedback) return;
+  clearTimeout(nativeCameraFeedbackTimer);
+  feedback.textContent = message;
+  feedback.classList.add('show');
+  if (duration > 0) {
+    nativeCameraFeedbackTimer = setTimeout(() => {
+      feedback.classList.remove('show');
+      nativeCameraFeedbackTimer = null;
+    }, duration);
+  }
+}
+
+function prepareNativeCameraSound() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    if (!nativeCameraAudioContext) nativeCameraAudioContext = new AudioContextClass();
+    if (nativeCameraAudioContext.state === 'suspended') {
+      nativeCameraAudioContext.resume().catch(() => {});
+    }
+  } catch (e) {}
+}
+
+function playNativeCameraSound() {
+  try {
+    prepareNativeCameraSound();
+    const ctx = nativeCameraAudioContext;
+    if (!ctx || ctx.state !== 'running') return;
+    const now = ctx.currentTime;
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(1100, now);
+    oscillator.frequency.exponentialRampToValueAtTime(420, now + 0.055);
+    gain.gain.setValueAtTime(0.07, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.065);
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.07);
+  } catch (e) {}
+}
+
+function beginNativeCaptureFeedback() {
+  prepareNativeCameraSound();
+  const shutter = $('native-camera-shutter');
+  if (shutter) shutter.classList.add('is-capturing');
+  showNativeCameraFeedback('撮影中...');
+}
+
+function completeNativeCaptureFeedback() {
+  const ui = $('native-camera-ui');
+  const shutter = $('native-camera-shutter');
+  if (ui) {
+    ui.classList.remove('capture-flash');
+    void ui.offsetWidth;
+    ui.classList.add('capture-flash');
+  }
+  if (shutter) {
+    shutter.classList.remove('is-capturing', 'is-captured');
+    void shutter.offsetWidth;
+    shutter.classList.add('is-captured');
+  }
+  showNativeCameraFeedback('撮影しました', 650);
+  try { if (navigator.vibrate) navigator.vibrate(55); } catch (e) {}
+  playNativeCameraSound();
+}
+
+function resetNativeCaptureFeedback() {
+  clearTimeout(nativeCameraReadyTimer);
+  clearTimeout(nativeCameraFeedbackTimer);
+  nativeCameraReadyTimer = null;
+  nativeCameraFeedbackTimer = null;
+  const ui = $('native-camera-ui');
+  const shutter = $('native-camera-shutter');
+  const feedback = $('native-camera-capture-feedback');
+  if (ui) ui.classList.remove('capture-flash');
+  if (shutter) shutter.classList.remove('is-capturing', 'is-captured');
+  if (feedback) feedback.classList.remove('show');
+}
+
+function armNativeCameraShutter() {
+  const shutter = $('native-camera-shutter');
+  if (!shutter) return;
+  shutter.disabled = true;
+  showNativeCameraFeedback('ピント調整中...', NATIVE_CAMERA_FOCUS_WARMUP_MS);
+  clearTimeout(nativeCameraReadyTimer);
+  nativeCameraReadyTimer = setTimeout(() => {
+    nativeCameraReadyTimer = null;
+    if (nativeCameraOpen && !nativeCaptureInFlight) shutter.disabled = false;
+  }, NATIVE_CAMERA_FOCUS_WARMUP_MS);
+}
 
 function base64ToBlob(b64, mime) {
   const bin = atob(b64);
@@ -6700,10 +7000,13 @@ async function openNativeBatchCamera(options = {}) {
   }
   nativeCameraOpen = true;
   nativeCameraSingleShot = !!options.singleShot;
+  nativeCaptureInFlight = false;
   document.documentElement.classList.add('native-camera-open'); // html要素も透過に
   document.body.classList.add('native-camera-open');
   const ui = $('native-camera-ui');
   if (ui) ui.style.display = 'flex';
+  resetNativeCaptureFeedback();
+  armNativeCameraShutter();
   if (nativeCameraSingleShot) {
     const stats = $('native-camera-stats');
     if (stats) stats.textContent = '📷 伝票を撮影してください (1枚)';
@@ -6716,36 +7019,52 @@ async function openNativeBatchCamera(options = {}) {
 async function closeNativeBatchCamera() {
   if (!nativeCameraOpen) return;
   nativeCameraOpen = false;
+  nativeCameraSingleShot = false;
   document.documentElement.classList.remove('native-camera-open');
   document.body.classList.remove('native-camera-open');
   const ui = $('native-camera-ui');
   if (ui) ui.style.display = 'none';
+  resetNativeCaptureFeedback();
+  const shutter = $('native-camera-shutter');
+  if (shutter) shutter.disabled = true;
   const plugin = nativeCameraPlugin();
   try { if (plugin) await plugin.stop(); } catch (e) {}
 }
 
 async function captureNativeBatchPhoto() {
   const plugin = nativeCameraPlugin();
-  if (!plugin || !nativeCameraOpen) return;
+  if (!plugin || !nativeCameraOpen || nativeCaptureInFlight) return;
   const shutter = $('native-camera-shutter');
-  if (shutter) {
-    shutter.disabled = true;
-    setTimeout(() => { shutter.disabled = false; }, 600); // 連打防止
-  }
+  const singleShot = nativeCameraSingleShot;
+  const startedAt = Date.now();
+  nativeCaptureInFlight = true;
+  if (shutter) shutter.disabled = true;
+  beginNativeCaptureFeedback();
   try {
-    const result = await plugin.capture({ quality: 88 });
+    const result = await plugin.capture({ quality: 95 });
     const b64 = result && (result.value || result.base64);
     if (!b64) throw new Error('撮影データが空です');
     const blob = base64ToBlob(b64, 'image/jpeg');
-    if (nativeCameraSingleShot) {
+    completeNativeCaptureFeedback();
+    if (singleShot) {
       // 1枚撮影モード: カメラを閉じて、いつものプレビュー→読み取りの流れへ
       await closeNativeBatchCamera();
       openPhotoPreview(blob);
       return;
     }
-    processBatchPhoto(blob); // awaitしない — カメラはそのまま次の撮影へ
+    processBatchPhoto(blob, { immediateReview: true }); // awaitしない — カメラはそのまま次の撮影へ
   } catch (e) {
+    if (shutter) shutter.classList.remove('is-capturing');
+    showNativeCameraFeedback('撮影できませんでした', 900);
     showToast('撮影失敗: ' + ((e && e.message) || e), true);
+  } finally {
+    const cooldown = Math.max(0, NATIVE_CAPTURE_MIN_INTERVAL_MS - (Date.now() - startedAt));
+    if (cooldown) await new Promise(resolve => setTimeout(resolve, cooldown));
+    nativeCaptureInFlight = false;
+    if (shutter) {
+      shutter.classList.remove('is-capturing');
+      shutter.disabled = !nativeCameraOpen;
+    }
   }
 }
 
@@ -6819,12 +7138,20 @@ function toggleBatchPhotoMode(options = {}) {
   setBatchPhotoMode(!batchPhotoMode, options);
 }
 
-async function processBatchPhoto(file) {
+async function processBatchPhoto(file, options = {}) {
   batchStats.pending++;
   updateBatchPhotoUi();
   try {
     // 向きが変でも自動で回転して読み取り直す
-    const data = await ocrWithRotationRetry((rot) => ocrExtractAddress(file, rot), 0, null);
+    const batchImageProfile = {
+      maxSize: BATCH_PHOTO_OCR_MAX_SIZE,
+      quality: BATCH_PHOTO_OCR_QUALITY
+    };
+    const data = await ocrWithRotationRetry(
+      (rot) => ocrExtractAddress(file, rot, undefined, batchImageProfile),
+      0,
+      null
+    );
 
     const ocrFields = splitOcrAddressFields(data);
     const recipient = normalizeOcrField(data.recipient || '');
@@ -6850,7 +7177,7 @@ async function processBatchPhoto(file) {
       renderList();
       batchStats.stacked++;
       showToast(`📦 複数個口: ${address} (${dupActive.packageCount}個)`);
-      return;
+      return { status: 'stacked', id: dupActive.id, address };
     }
 
     const result = await geocodeAddress(address);
@@ -6885,13 +7212,17 @@ async function processBatchPhoto(file) {
       try { reviewPhotoUrls.set(newId, URL.createObjectURL(file)); } catch (e) {}
       batchStats.review++;
       showToast(`❗要確認: ${address} (${reviewReasons[0]})`, true);
+      if (options.immediateReview) queueImmediateBatchReview(newId);
+      return { status: 'review', id: newId, address, reviewReasons };
     } else {
       batchStats.added++;
       showToast(`✅ 追加: ${address}${resolved.swapped ? ' (発送元側を除外)' : ''}${data.autoRotated ? ' (向き自動補正)' : ''}`);
+      return { status: 'added', id: newId, address };
     }
   } catch (e) {
     batchStats.failed++;
     showToast(`❌ 読み取り失敗 — その伝票を撮り直してください (${e.message})`, true);
+    return { status: 'failed', error: (e && e.message) || String(e) };
   } finally {
     batchStats.pending--;
     updateBatchPhotoUi();
@@ -9690,7 +10021,7 @@ $('file-photo').addEventListener('change', (e) => {
   e.target.value = '';
   if (!file) return;
   if (batchPhotoMode) {
-    processBatchPhoto(file); // 裏で処理 (待たない)
+    processBatchPhoto(file, { immediateReview: true }); // 裏で処理 (待たない)
     // 続けて次の伝票を撮れるよう、すぐカメラを開き直す。
     // 端末側がブロックした場合は「📸連写」を再タップすれば同じ。
     setTimeout(() => {
@@ -9761,6 +10092,7 @@ $('add-continuous').addEventListener('change', (e) => {
 });
 
 $('btn-edit-save').addEventListener('click', saveEditedItem);
+$('btn-edit-cancel').addEventListener('click', cancelEditedItem);
 $('btn-edit-geocode').addEventListener('click', reGeocodeEditedItem);
 $('btn-edit-done').addEventListener('click', toggleEditedItemDone);
 $('btn-edit-navi').addEventListener('click', openEditedItemNavigation);
