@@ -1206,6 +1206,94 @@
     white-space: pre-wrap;
   }
 
+  .route-area-intro {
+    margin: 0 0 12px;
+    color: var(--ink-soft);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .route-area-first-field {
+    margin-bottom: 12px;
+  }
+  .route-area-first-field select {
+    margin-bottom: 0;
+  }
+  .route-area-order-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 4px 0 6px;
+  }
+  .route-area-order-heading strong {
+    font-size: 13px;
+  }
+  .route-area-order-heading span {
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .route-area-order-list {
+    border-top: 1px solid #d8d2bf;
+    border-bottom: 1px solid #d8d2bf;
+  }
+  .route-area-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 40px 40px;
+    align-items: center;
+    gap: 6px;
+    min-height: 54px;
+    border-top: 1px solid #ece8dc;
+  }
+  .route-area-row:first-child {
+    border-top: 0;
+  }
+  .route-area-rank {
+    color: var(--accent);
+    font-size: 17px;
+    font-weight: 800;
+    text-align: center;
+  }
+  .route-area-name {
+    min-width: 0;
+  }
+  .route-area-name strong,
+  .route-area-name span {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+  .route-area-name strong {
+    font-size: 14px;
+  }
+  .route-area-name span {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .route-area-move {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1.5px solid #b9b39f;
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    font-size: 20px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .route-area-move:disabled {
+    color: #bbb6a8;
+    background: #f4f2eb;
+    cursor: default;
+  }
+  .route-area-plan-note {
+    margin: 10px 0 2px;
+    color: #4f493b;
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+  }
+
   /* ===== Loading overlay ===== */
   .loading-overlay {
     position: fixed; inset: 0;
@@ -1320,7 +1408,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.63</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.64</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1371,7 +1459,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.63</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.64</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1381,8 +1469,8 @@
       <button id="menu-import-pickup" type="button">📦 集荷コースを選択</button>
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
-      <button id="menu-optimize-recommended" type="button">🧠 おすすめ配送順（試験）</button>
-      <button id="menu-optimize-road-blocks" type="button">🛣 100件向け 道路ブロック順（試験）</button>
+      <button id="menu-optimize-recommended" type="button">🧠 エリア相談 → おすすめ配送順（試験）</button>
+      <button id="menu-optimize-road-blocks" type="button">🗺 エリア相談 → 100件向け道路順（試験）</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
@@ -1691,6 +1779,27 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-route-areas">
+  <div class="modal">
+    <h3 id="route-area-title">配るエリアの相談</h3>
+    <p class="route-area-intro" id="route-area-intro"></p>
+    <div class="route-area-first-field" id="route-area-first-field">
+      <label for="route-area-first">最初に配りたいエリア</label>
+      <select id="route-area-first"></select>
+    </div>
+    <div class="route-area-order-heading">
+      <strong>エリアを終わらせる順番</strong>
+      <span>上下で変更</span>
+    </div>
+    <div class="route-area-order-list" id="route-area-order-list"></div>
+    <div class="route-area-plan-note" id="route-area-plan-note"></div>
+    <div class="modal-actions">
+      <button class="cancel" id="btn-route-area-cancel" type="button">キャンセル</button>
+      <button class="primary" id="btn-route-area-build" type="button">この順で計算</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-confirm">
   <div class="modal">
     <h3 id="confirm-title">確認</h3>
@@ -1736,7 +1845,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.63';
+const APP_VERSION = 'v2026.06.24-test.64';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1921,6 +2030,7 @@ let placingItemId = null;
 let pendingPlacementCoord = null;
 let editingItemId = null;
 let confirmCallback = null;
+let routeAreaPlannerState = null;
 let operatorSaveCallback = null;
 let operatorCancelCallback = null;
 let pickupSyncTimer = null;
@@ -8250,6 +8360,199 @@ function distanceMeters(a, b) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
+const ROUTE_AREA_UNKNOWN_KEY = '__route_area_unknown__';
+const ROUTE_AREA_UNKNOWN_LABEL = 'エリア不明';
+
+function routeAreaFromAddress(rawAddress) {
+  let text = normalizeAddress(rawAddress || '')
+    .replace(/〒?\s*\d{3}[-]?\d{4}\s*/g, '')
+    .replace(/[（(][^）)]*[）)]/g, '')
+    .replace(/\s+/g, '');
+  if (!text) {
+    return { key: ROUTE_AREA_UNKNOWN_KEY, label: ROUTE_AREA_UNKNOWN_LABEL, municipality: '', town: '' };
+  }
+
+  const prefectureMatch = text.match(/^(北海道|東京都|(?:京都|大阪)府|[^0-9]{2,3}県)/);
+  const hadPrefecture = !!prefectureMatch;
+  if (prefectureMatch) text = text.slice(prefectureMatch[0].length);
+
+  let municipality = '';
+  let municipalityMatch = text.match(/^((?:[^0-9]+?市)?[^0-9]+?区|[^0-9]+?市|[^0-9]+?郡[^0-9]+?[町村])/);
+  if (!municipalityMatch && hadPrefecture) {
+    municipalityMatch = text.match(/^([^0-9]+?[町村])/);
+  }
+  if (municipalityMatch) {
+    municipality = municipalityMatch[1];
+    text = text.slice(municipalityMatch[0].length);
+  }
+
+  text = text.replace(/^(?:大字|字)/, '');
+  text = text.replace(/([〇零一二三四五六七八九十百千]+)(?=丁目)/g, value =>
+    normalizeKanjiDigitsForAddress(value));
+  const townMatch = text.match(/^(.+?)(?=\d+(?:丁目|番地?|番|号|-|の|$)|$)/);
+  let town = (townMatch ? townMatch[1] : text)
+    .replace(/[、，,。].*$/, '')
+    .trim();
+
+  if (!town || /^\d+$/.test(town) || town.length > 24) {
+    return { key: ROUTE_AREA_UNKNOWN_KEY, label: ROUTE_AREA_UNKNOWN_LABEL, municipality: '', town: '' };
+  }
+
+  return {
+    key: `${municipality || '_'}|${town}`,
+    label: town,
+    municipality,
+    town
+  };
+}
+
+function buildDeliveryAreaGroups(routeItems) {
+  const grouped = new Map();
+  routeItems.forEach(item => {
+    const area = routeAreaFromAddress(item.address || item.formatted || '');
+    if (!grouped.has(area.key)) {
+      grouped.set(area.key, {
+        key: area.key,
+        label: area.label,
+        municipality: area.municipality,
+        town: area.town,
+        items: []
+      });
+    }
+    grouped.get(area.key).items.push(item);
+  });
+
+  const groups = Array.from(grouped.values());
+  const labelCounts = new Map();
+  groups.forEach(group => labelCounts.set(group.label, (labelCounts.get(group.label) || 0) + 1));
+
+  groups.forEach(group => {
+    if (labelCounts.get(group.label) > 1 && group.municipality) {
+      group.label = `${group.municipality} ${group.label}`;
+    }
+    group.center = {
+      lat: group.items.reduce((sum, item) => sum + Number(item.lat), 0) / group.items.length,
+      lng: group.items.reduce((sum, item) => sum + Number(item.lng), 0) / group.items.length
+    };
+  });
+  return groups;
+}
+
+function routeAreaEntryDistance(point, group) {
+  return group.items.reduce((best, item) =>
+    Math.min(best, distanceMeters(point, routePoint(item))),
+  Infinity);
+}
+
+function orderRouteAreaGroups(start, groups, preferredFirstKey = '') {
+  const remaining = groups.slice();
+  const ordered = [];
+  let current = start;
+
+  while (remaining.length) {
+    let candidates = remaining;
+    let selectedIndex = -1;
+    if (ordered.length === 0 && preferredFirstKey) {
+      selectedIndex = remaining.findIndex(group => group.key === preferredFirstKey);
+    }
+    if (selectedIndex < 0) {
+      const known = remaining.filter(group => group.key !== ROUTE_AREA_UNKNOWN_KEY);
+      if (known.length) candidates = known;
+      const selected = candidates.reduce((best, group) =>
+        routeAreaEntryDistance(current, group) < routeAreaEntryDistance(current, best) ? group : best,
+      candidates[0]);
+      selectedIndex = remaining.indexOf(selected);
+    }
+    const next = remaining.splice(selectedIndex, 1)[0];
+    ordered.push(next);
+    current = next.center;
+  }
+  return ordered;
+}
+
+function routeAreaOrderText(groups, limit = 8) {
+  const visible = groups.slice(0, limit).map((group, index) =>
+    `${index + 1}. ${group.label}（${group.items.length}件）`);
+  if (groups.length > limit) visible.push(`...ほか ${groups.length - limit}エリア`);
+  return visible.join('\n');
+}
+
+function renderRouteAreaPlanner() {
+  const state = routeAreaPlannerState;
+  if (!state) return;
+  $('route-area-title').textContent = state.title;
+  $('route-area-intro').textContent =
+    `未完了の${state.routeItemCount}件を住所の町名で${state.groups.length}エリアに分けました。` +
+    '同じエリアを終えてから次へ進みます。';
+
+  const firstField = $('route-area-first-field');
+  firstField.style.display = state.groups.length > 1 ? '' : 'none';
+  if (state.groups.length > 1) {
+    const select = $('route-area-first');
+    select.innerHTML = '<option value="">現在地から近いエリアを自動選択</option>' +
+      state.originalGroups.map(group =>
+        `<option value="${escapeHtml(group.key)}">${escapeHtml(group.label)}（${group.items.length}件）</option>`
+      ).join('');
+    select.value = state.selectedFirstKey;
+  }
+
+  $('route-area-order-list').innerHTML = state.groups.map((group, index) => `
+    <div class="route-area-row" data-route-area-index="${index}">
+      <div class="route-area-rank">${index + 1}</div>
+      <div class="route-area-name">
+        <strong>${escapeHtml(group.label)}</strong>
+        <span>${group.items.length}件を続けて配る</span>
+      </div>
+      <button class="route-area-move" type="button" data-route-area-move="up" title="一つ前へ" aria-label="${escapeHtml(group.label)}を一つ前へ" ${index === 0 ? 'disabled' : ''}>↑</button>
+      <button class="route-area-move" type="button" data-route-area-move="down" title="一つ後ろへ" aria-label="${escapeHtml(group.label)}を一つ後ろへ" ${index === state.groups.length - 1 ? 'disabled' : ''}>↓</button>
+    </div>
+  `).join('');
+
+  const unknown = state.groups.find(group => group.key === ROUTE_AREA_UNKNOWN_KEY);
+  const notes = [state.planNote];
+  if (unknown) notes.push(`町名を判定できない${unknown.items.length}件は「エリア不明」としてまとめています。`);
+  $('route-area-plan-note').textContent = notes.filter(Boolean).join('\n');
+}
+
+function openRouteAreaPlanner({ title, start, routeItems, planNote, onConfirm }) {
+  const originalGroups = buildDeliveryAreaGroups(routeItems);
+  if (!originalGroups.length) return;
+  routeAreaPlannerState = {
+    title,
+    start,
+    routeItemCount: routeItems.length,
+    originalGroups,
+    groups: orderRouteAreaGroups(start, originalGroups),
+    selectedFirstKey: '',
+    planNote: planNote || '',
+    onConfirm
+  };
+  renderRouteAreaPlanner();
+  openModal('modal-route-areas');
+}
+
+function cancelRouteAreaPlanner() {
+  closeModal('modal-route-areas');
+  routeAreaPlannerState = null;
+}
+
+function confirmRouteAreaPlanner() {
+  const state = routeAreaPlannerState;
+  if (!state) return;
+  const groups = state.groups.slice();
+  const callback = state.onConfirm;
+  closeModal('modal-route-areas');
+  routeAreaPlannerState = null;
+  try {
+    const result = callback(groups);
+    if (result && typeof result.catch === 'function') {
+      result.catch(error => showToast(error.message || 'ルートを計算できませんでした', true));
+    }
+  } catch (error) {
+    showToast(error.message || 'ルートを計算できませんでした', true);
+  }
+}
+
 function routeDistanceMeters(start, route) {
   if (!route.length) return 0;
   let total = distanceMeters(start, routePoint(route[0]));
@@ -8484,6 +8787,33 @@ function buildRecommendedRoute(start, routeItems) {
   };
 }
 
+function buildAreaPreservingRecommendedRoute(start, areaGroups) {
+  const suggested = [];
+  const areaResults = [];
+  let current = start;
+  let candidateCount = 0;
+
+  areaGroups.forEach(group => {
+    const result = buildRecommendedRoute(current, group.items);
+    suggested.push(...result.suggested);
+    candidateCount += result.candidateCount;
+    areaResults.push({
+      label: group.label,
+      count: group.items.length,
+      candidateName: result.candidateName
+    });
+    const last = result.suggested[result.suggested.length - 1];
+    if (last) current = routePoint(last);
+  });
+
+  return {
+    suggested,
+    areaResults,
+    candidateCount,
+    metrics: routeQualityMetrics(start, suggested)
+  };
+}
+
 function getRouteStartPoint() {
   if (userMarker) {
     const ll = userMarker.getLngLat();
@@ -8596,6 +8926,30 @@ function optimizeRouteOrder() {
   });
 }
 
+function runRecommendedRouteOrder({ start, routeItems, areaGroups, noLocationItems, completedItems }) {
+  const result = buildAreaPreservingRecommendedRoute(start, areaGroups);
+  const currentMetrics = routeQualityMetrics(start, routeItems);
+  const unchanged = result.suggested.map(item => item.id).join('|') === routeItems.map(item => item.id).join('|');
+  const savedDistance = Math.max(0, currentMetrics.distance - result.metrics.distance);
+
+  confirmAndApplyRouteOrder({
+    title: 'エリアごとのおすすめ配送順（試験）',
+    summary: `${start.label}から、指定した町名順を崩さず各エリア内の回り方を比較しました。\n` +
+      `エリア順:\n${routeAreaOrderText(areaGroups)}\n\n` +
+      `現在順: ${formatKm(currentMetrics.distance)} / 折返し目安 ${formatKm(currentMetrics.backtrackDistance)}\n` +
+      `おすすめ: ${formatKm(result.metrics.distance)} / 折返し目安 ${formatKm(result.metrics.backtrackDistance)} / 急な折返し ${result.metrics.sharpTurns}回\n` +
+      `比較した候補: ${result.candidateCount}通り` +
+      (savedDistance > 0 ? ` / 現在順より${formatKm(savedDistance)}短縮` : '') +
+      (unchanged ? '\n現在の順番が最良候補でした。' : '') +
+      '\n道路・一方通行・渋滞は未考慮です。実際の走行は各区間のナビで確認してください。',
+    suggested: result.suggested,
+    noLocationItems,
+    completedItems,
+    clearGeometry: true,
+    successMessage: `${modeLabel()}順をエリアごとのおすすめ順に並べ替えました`
+  });
+}
+
 function optimizeRecommendedRouteOrder() {
   closeModal('modal-menu');
   const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
@@ -8606,25 +8960,18 @@ function optimizeRecommendedRouteOrder() {
   }
 
   const start = getRouteStartPoint();
-  const result = buildRecommendedRoute(start, routeItems);
-  const unchanged = result.suggested.map(item => item.id).join('|') === routeItems.map(item => item.id).join('|');
-  const savedDistance = Math.max(0, result.currentMetrics.distance - result.metrics.distance);
-
-  confirmAndApplyRouteOrder({
-    title: 'おすすめ配送順（試験）',
-    summary: `${start.label}から${result.candidateCount}通りの回り方を比較しました。\n` +
-      `現在順: ${formatKm(result.currentMetrics.distance)} / 折返し目安 ${formatKm(result.currentMetrics.backtrackDistance)}\n` +
-      `近い順: ${formatKm(result.nearestMetrics.distance)} / 折返し目安 ${formatKm(result.nearestMetrics.backtrackDistance)}\n` +
-      `おすすめ: ${formatKm(result.metrics.distance)} / 折返し目安 ${formatKm(result.metrics.backtrackDistance)} / 急な折返し ${result.metrics.sharpTurns}回\n` +
-      `選択候補: ${result.candidateName}` +
-      (savedDistance > 0 ? ` / 現在順より${formatKm(savedDistance)}短縮` : '') +
-      (unchanged ? '\n現在の順番が最良候補でした。' : '') +
-      '\n道路・一方通行・渋滞は未考慮です。実際の走行は各区間のナビで確認してください。',
-    suggested: result.suggested,
-    noLocationItems,
-    completedItems,
-    clearGeometry: true,
-    successMessage: `${modeLabel()}順をおすすめ配送順に並べ替えました`
+  openRouteAreaPlanner({
+    title: 'おすすめ配送順の相談',
+    start,
+    routeItems,
+    planNote: '選んだエリア順を固定し、その中だけで距離と折り返しを比較します。',
+    onConfirm: areaGroups => runRecommendedRouteOrder({
+      start,
+      routeItems,
+      areaGroups,
+      noLocationItems,
+      completedItems
+    })
   });
 }
 
@@ -8659,6 +9006,16 @@ const CAR_ROUTE_PROVIDERS = {
 const ROAD_BLOCK_MIN_ITEMS = 25;
 const ROAD_BLOCK_MAX_SIZE = 20;
 const ROAD_BLOCK_MAX_BLOCKS = 24;
+
+function roadBlockApiCallCount(itemCount) {
+  if (itemCount < 2) return 0;
+  const blockCount = Math.ceil(itemCount / ROAD_BLOCK_MAX_SIZE);
+  return blockCount + (blockCount > 1 ? 1 : 0);
+}
+
+function areaRouteApiCallCount(areaGroups) {
+  return areaGroups.reduce((sum, group) => sum + roadBlockApiCallCount(group.items.length), 0);
+}
 
 function splitRouteItemsIntoRoadBlocks(routeItems, maxSize = ROAD_BLOCK_MAX_SIZE) {
   const items = routeItems.slice();
@@ -8807,43 +9164,120 @@ async function buildRoadBlockRoute(start, routeItems, provider, options = {}) {
   };
 }
 
+async function buildAreaPriorityRoadBlockRoute(start, areaGroups, provider, options = {}) {
+  const onProgress = options.onProgress || (() => {});
+  const totalCalls = areaRouteApiCallCount(areaGroups);
+  const suggested = [];
+  const areaSummaries = [];
+  let completedCalls = 0;
+  let totalDistance = 0;
+  let totalDuration = 0;
+  let hasDistance = true;
+  let hasDuration = true;
+  let currentStart = start;
+  let blockCount = 0;
+
+  for (let areaIndex = 0; areaIndex < areaGroups.length; areaIndex++) {
+    const group = areaGroups[areaIndex];
+    let areaSuggested = [];
+    let areaDistance = null;
+    let areaDuration = null;
+    let areaBlockCount = 0;
+
+    if (group.items.length === 1) {
+      areaSuggested = group.items.slice();
+      hasDistance = false;
+      hasDuration = false;
+    } else {
+      const result = await buildRoadBlockRoute(currentStart, group.items, provider, {
+        onProgress: progress => onProgress({
+          current: completedCalls + progress.current,
+          total: totalCalls,
+          label: `${group.label}: ${progress.label}`
+        })
+      });
+      areaSuggested = result.suggested;
+      areaDistance = result.totalDistance;
+      areaDuration = result.totalDuration;
+      areaBlockCount = result.blockCount;
+      completedCalls += result.apiCalls;
+      blockCount += result.blockCount;
+      if (areaDistance !== null) totalDistance += areaDistance;
+      else hasDistance = false;
+      if (areaDuration !== null) totalDuration += areaDuration;
+      else hasDuration = false;
+    }
+
+    suggested.push(...areaSuggested);
+    const first = areaSuggested[0];
+    const last = areaSuggested[areaSuggested.length - 1];
+    areaSummaries.push({
+      label: group.label,
+      count: areaSuggested.length,
+      first,
+      last,
+      blockCount: areaBlockCount,
+      distance: areaDistance,
+      duration: areaDuration
+    });
+    if (last) currentStart = routePoint(last);
+  }
+
+  const expectedCount = areaGroups.reduce((sum, group) => sum + group.items.length, 0);
+  const uniqueIds = new Set(suggested.map(item => String(item.id)));
+  if (suggested.length !== expectedCount || uniqueIds.size !== expectedCount) {
+    throw new Error('エリア計算後の配送先件数が一致しませんでした');
+  }
+
+  return {
+    suggested,
+    areaSummaries,
+    areaCount: areaGroups.length,
+    blockCount,
+    apiCalls: totalCalls,
+    totalDistance: hasDistance ? totalDistance : null,
+    totalDuration: hasDuration ? totalDuration : null
+  };
+}
+
 function roadBlockStopLabel(item) {
   return extractBuilding(item.note) || extractBanchi(item.address) || item.address || '配送先';
 }
 
-async function runRoadBlockRouteOrder({ start, routeItems, noLocationItems, completedItems }) {
+async function runRoadBlockRouteOrder({ start, routeItems, areaGroups, noLocationItems, completedItems }) {
   const provider = CAR_ROUTE_PROVIDERS.mapbox;
-  showLoading('道路ブロック順を計算中...');
+  showLoading('エリアごとの道路順を計算中...');
   try {
-    const result = await buildRoadBlockRoute(start, routeItems, provider, {
-      onProgress: progress => showLoading(`道路ブロック順を計算中 (${progress.current}/${progress.total})\n${progress.label}`)
+    const result = await buildAreaPriorityRoadBlockRoute(start, areaGroups, provider, {
+      onProgress: progress => showLoading(`エリアごとの道路順を計算中 (${progress.current}/${progress.total})\n${progress.label}`)
     });
     hideLoading();
 
-    const blockLines = result.blockSummaries.slice(0, 10).map((block, index) =>
-      `${index + 1}. ${block.count}件: ${roadBlockStopLabel(block.first)} → ${roadBlockStopLabel(block.last)}`
+    const areaLines = result.areaSummaries.slice(0, 10).map((area, index) =>
+      `${index + 1}. ${area.label} ${area.count}件: ${roadBlockStopLabel(area.first)} → ${roadBlockStopLabel(area.last)}`
     ).join('\n');
-    const omittedBlocks = Math.max(0, result.blockSummaries.length - 10);
+    const omittedAreas = Math.max(0, result.areaSummaries.length - 10);
     const distanceText = result.totalDistance !== null ? formatKm(result.totalDistance) : '不明';
     const durationText = result.totalDuration !== null ? formatDuration(result.totalDuration) : '';
 
     confirmAndApplyRouteOrder({
-      title: '100件向け 道路ブロック順（試験）',
-      summary: `全${routeItems.length}件を${result.blockCount}ブロックに分け、Mapboxの道路時間で並べました。\n` +
+      title: 'エリアごとの100件向け道路順（試験）',
+      summary: `全${routeItems.length}件を町名ごとの${result.areaCount}エリアに分け、指定したエリア順を固定しました。\n` +
+        `各エリア内は20件以下の道路ブロックに分け、Mapboxの道路時間で並べています。\n` +
         `道路計算: ${result.apiCalls}段階 / 目安: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n` +
-        `大通り・線路・川による遠回りを道路時間へ反映し、同じ地域をまとめて回る順番です。\n\n` +
-        blockLines +
-        (omittedBlocks ? `\n...ほか ${omittedBlocks}ブロック` : '') +
+        `大通り・線路・川による遠回りを道路時間へ反映し、町名の違う荷物を途中に混ぜません。\n\n` +
+        areaLines +
+        (omittedAreas ? `\n...ほか ${omittedAreas}エリア` : '') +
         '\n\n横断回数を完全に保証するものではないため、実走行では次区間のナビも確認してください。',
       suggested: result.suggested,
       noLocationItems,
       completedItems,
       clearGeometry: true,
-      successMessage: `${routeItems.length}件を道路ブロック順に並べ替えました`
+      successMessage: `${routeItems.length}件をエリアごとの道路順に並べ替えました`
     });
   } catch (e) {
     hideLoading();
-    showToast(e.message || '道路ブロック順の計算に失敗しました', true);
+    showToast(e.message || 'エリアごとの道路順の計算に失敗しました', true);
   }
 }
 
@@ -8855,21 +9289,27 @@ function optimizeRoadBlockRouteOrder() {
     return;
   }
 
-  const blocks = splitRouteItemsIntoRoadBlocks(routeItems);
-  if (blocks.length > ROAD_BLOCK_MAX_BLOCKS) {
+  if (routeItems.length > ROAD_BLOCK_MAX_SIZE * ROAD_BLOCK_MAX_BLOCKS) {
     showToast(`道路ブロック順は最大${ROAD_BLOCK_MAX_SIZE * ROAD_BLOCK_MAX_BLOCKS}件まで対応しています`, true);
     return;
   }
 
   const start = getRouteStartPoint();
-  const apiCalls = blocks.length + 1;
-  showConfirm(
-    '100件向け 道路ブロック順（試験）',
-    `全${routeItems.length}件を${blocks.length}ブロックに分けます。\n` +
-      `Mapboxで${apiCalls}段階の道路計算を行うため、処理には少し時間がかかります。\n` +
-      `始点: ${start.label}\n\n計算を開始しますか？`,
-    () => runRoadBlockRouteOrder({ start, routeItems, noLocationItems, completedItems })
-  );
+  const initialGroups = buildDeliveryAreaGroups(routeItems);
+  const apiCalls = areaRouteApiCallCount(initialGroups);
+  openRouteAreaPlanner({
+    title: '100件向け道路順の相談',
+    start,
+    routeItems,
+    planNote: `選んだエリア順を固定し、Mapboxで約${apiCalls}段階の道路計算を行います。処理には少し時間がかかります。`,
+    onConfirm: areaGroups => runRoadBlockRouteOrder({
+      start,
+      routeItems,
+      areaGroups,
+      noLocationItems,
+      completedItems
+    })
+  });
 }
 
 async function optimizeCarRouteOrderWith(providerKey) {
@@ -9225,6 +9665,32 @@ $('menu-optimize-recommended').addEventListener('click', optimizeRecommendedRout
 $('menu-optimize-road-blocks').addEventListener('click', optimizeRoadBlockRouteOrder);
 $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
 $('menu-optimize-google').addEventListener('click', optimizeGoogleCarRouteOrder);
+$('route-area-first').addEventListener('change', event => {
+  if (!routeAreaPlannerState) return;
+  routeAreaPlannerState.selectedFirstKey = event.target.value;
+  routeAreaPlannerState.groups = orderRouteAreaGroups(
+    routeAreaPlannerState.start,
+    routeAreaPlannerState.originalGroups,
+    event.target.value
+  );
+  renderRouteAreaPlanner();
+});
+$('route-area-order-list').addEventListener('click', event => {
+  const button = event.target.closest('[data-route-area-move]');
+  if (!button || !routeAreaPlannerState) return;
+  const row = button.closest('[data-route-area-index]');
+  const index = Number(row && row.dataset.routeAreaIndex);
+  const offset = button.dataset.routeAreaMove === 'up' ? -1 : 1;
+  const targetIndex = index + offset;
+  if (!Number.isInteger(index) || targetIndex < 0 || targetIndex >= routeAreaPlannerState.groups.length) return;
+  const groups = routeAreaPlannerState.groups.slice();
+  [groups[index], groups[targetIndex]] = [groups[targetIndex], groups[index]];
+  routeAreaPlannerState.groups = groups;
+  routeAreaPlannerState.selectedFirstKey = groups[0].key;
+  renderRouteAreaPlanner();
+});
+$('btn-route-area-cancel').addEventListener('click', cancelRouteAreaPlanner);
+$('btn-route-area-build').addEventListener('click', confirmRouteAreaPlanner);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
 $('menu-delivery-sync').addEventListener('click', openDeliverySyncModal);
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
