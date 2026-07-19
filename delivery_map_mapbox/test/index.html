@@ -1408,7 +1408,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.66</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.67</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1459,7 +1459,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.66</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.67</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1845,7 +1845,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.66';
+const APP_VERSION = 'v2026.06.24-test.67';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -9383,6 +9383,12 @@ function optimizeRoadBlockRouteOrder() {
   const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
   if (routeItems.length < 2) {
     showToast(`${modeLabel()}先が2件以上ある時に道路順を計算できます`, true);
+    return;
+  }
+
+  if (!userMarker) {
+    ensureGpsWatching();
+    showToast('現在地を取得中です。GPSの青丸が表示されたら、もう一度道路優先配送順を押してください', true);
     return;
   }
 
