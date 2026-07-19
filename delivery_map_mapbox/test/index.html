@@ -517,6 +517,33 @@
     font-size: 11px;
     color: var(--ink-soft);
   }
+  .work-mode-switch {
+    display: grid;
+    grid-template-columns: repeat(2, 46px);
+    height: 30px;
+    padding: 2px;
+    border: 1.5px solid var(--ink);
+    border-radius: 6px;
+    background: white;
+    flex: 0 0 auto;
+  }
+  .work-mode-switch button {
+    width: 46px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 24px;
+    cursor: pointer;
+  }
+  .work-mode-switch button.selected {
+    background: var(--accent);
+    color: white;
+  }
   .list-header .toggle-icon {
     background: white;
     border: 1.5px solid var(--ink);
@@ -842,6 +869,9 @@
     background: var(--accent);
     color: white;
     border-color: var(--paper);
+  }
+  body.work-mode-delivery .input-only-control {
+    display: none !important;
   }
 
   /* ===== Modals ===== */
@@ -1240,6 +1270,7 @@
   .item-info .note,
   .item-info .pickup-detail { font-size: calc(11px * var(--text-scale)); }
   .map-control-left button,
+  .work-mode-switch button,
   .list-header .toggle-icon,
   .delivery-item.spot .num-badge,
   .add-bar button,
@@ -1484,7 +1515,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.68</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.69</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1504,7 +1535,7 @@
 
 <div class="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
 
-<div class="add-bar">
+<div class="add-bar input-only-control">
   <button id="btn-add-photo" type="button">📷 1枚</button>
   <button id="btn-add-batch-photo" type="button" class="secondary">📸 連写</button>
   <button id="btn-add-voice" type="button" class="secondary">🎤 音声</button>
@@ -1515,6 +1546,10 @@
   <div class="list-header" id="list-header">
     <h2>配送リスト</h2>
     <div class="stat" id="list-stat"></div>
+    <div class="work-mode-switch" role="group" aria-label="作業モード">
+      <button id="btn-work-mode-input" type="button" title="入力モード" aria-label="入力モード" aria-pressed="true">入力</button>
+      <button id="btn-work-mode-delivery" type="button" title="配送モード" aria-label="配送モード" aria-pressed="false">配送</button>
+    </div>
     <div class="toggle-icon" aria-label="リストを折りたたむ">▼</div>
   </div>
   <div class="pickup-list-tabs" id="pickup-list-tabs" role="tablist" aria-label="集荷種別">
@@ -1535,13 +1570,13 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.68</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.69</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
       <button id="menu-label-mode" type="button">🏷 表示: 番地+建物</button>
-      <button id="menu-batch-photo" type="button">📸 連続撮影モード: OFF</button>
-      <button id="menu-import-photos" type="button">🖼 写真をまとめて読み込み</button>
+      <button id="menu-batch-photo" class="input-only-control" type="button">📸 連続撮影モード: OFF</button>
+      <button id="menu-import-photos" class="input-only-control" type="button">🖼 写真をまとめて読み込み</button>
       <button id="menu-import-pickup" type="button">📦 集荷コースを選択</button>
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
@@ -1924,12 +1959,13 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.68';
+const APP_VERSION = 'v2026.06.24-test.69';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
 const APP_MODE_KEY = 'rys-mapbox-test-app-mode';
+const WORK_MODE_KEY = 'rys-mapbox-test-work-mode-v1';
 const USAGE_KEY = 'rys-mapbox-test-usage-v1';
 const NEIGHBORHOOD_KEY = 'rys-mapbox-test-neighborhoods-visible';
 const GSI_OVERLAY_KEY = 'rys-mapbox-test-gsi-overlay-visible';
@@ -2100,6 +2136,7 @@ function detectInitialAppMode() {
 let map = null;
 let mapboxConfig = null;
 let appMode = detectInitialAppMode();
+let workMode = localStorage.getItem(WORK_MODE_KEY) === 'delivery' ? 'delivery' : 'input';
 let selectedDeliveryCourse = normalizeDeliveryCourse(localStorage.getItem(DELIVERY_COURSE_KEY));
 let selectedCourseArea = localStorage.getItem(COURSE_AREA_KEY) || '';
 let deliveries = [];
@@ -2157,7 +2194,8 @@ let recognition = null;
 let mapStyleLoaded = false;
 
 let addrVisible = localStorage.getItem(ADDR_VISIBLE_KEY) !== '0'; // 既定ON
-let streetsHousenumVisible = localStorage.getItem(STREETS_HOUSENUM_VISIBLE_KEY) !== '0'; // 既定ON
+// 保存キー名は旧仕様との互換用。現在は青いハイフン番地の表示状態を保存する。
+let hyphenBanchiVisible = localStorage.getItem(STREETS_HOUSENUM_VISIBLE_KEY) !== '0'; // 既定ON
 
 // --- 全国対応 番地表示の状態 ---
 let banchiCatalog = null;            // [{code,pref,name,lng,lat}] 全市区町村
@@ -2774,6 +2812,37 @@ function ensureOperatorName() {
 
 function modeLabel() {
   return appMode === 'pickup' ? '集荷' : '配送';
+}
+
+function updateWorkModeUi() {
+  const deliveryMode = workMode === 'delivery';
+  document.body.classList.toggle('work-mode-delivery', deliveryMode);
+  const inputButton = $('btn-work-mode-input');
+  const deliveryButton = $('btn-work-mode-delivery');
+  if (inputButton) {
+    inputButton.classList.toggle('selected', !deliveryMode);
+    inputButton.setAttribute('aria-pressed', deliveryMode ? 'false' : 'true');
+  }
+  if (deliveryButton) {
+    deliveryButton.classList.toggle('selected', deliveryMode);
+    deliveryButton.setAttribute('aria-pressed', deliveryMode ? 'true' : 'false');
+  }
+}
+
+function setWorkMode(mode, options = {}) {
+  if (mode !== 'input' && mode !== 'delivery') return;
+  workMode = mode;
+  localStorage.setItem(WORK_MODE_KEY, workMode);
+  if (workMode === 'delivery' && batchPhotoMode) {
+    setBatchPhotoMode(false, { summary: false, toast: false });
+  }
+  updateWorkModeUi();
+  setTimeout(() => { if (map) map.resize(); }, 0);
+  if (options.toast !== false) {
+    showToast(workMode === 'delivery'
+      ? '配送モード — 配送先の入力ボタンを隠しました'
+      : '入力モード — 配送先を追加できます');
+  }
 }
 
 function normalizeDeliveryCourse(course) {
@@ -3890,7 +3959,11 @@ function parseAddrSection(text, machiazaName, features) {
 }
 
 function streetsHousenumLayerVisible() {
-  return addrVisible && streetsHousenumVisible;
+  return addrVisible;
+}
+
+function hyphenBanchiLayerVisible() {
+  return addrVisible && hyphenBanchiVisible;
 }
 
 function addStreetsHousenumLayer() {
@@ -3972,7 +4045,7 @@ function addBanchiLayer() {
     slot: 'top',
     minzoom: BANCHI_DISPLAY_MIN_ZOOM,
     layout: {
-      'visibility': addrVisible ? 'visible' : 'none',
+      'visibility': hyphenBanchiLayerVisible() ? 'visible' : 'none',
       'text-field': ['get', 'label'],
       'text-size': [
         'interpolate', ['linear'], ['zoom'],
@@ -4028,7 +4101,7 @@ function banchiRender() {
   const source = map.getSource(BANCHI_SOURCE_ID);
   if (!source) return;
   const features = [];
-  if (addrVisible && map.getZoom() >= BANCHI_PREFETCH_MIN_ZOOM) {
+  if (hyphenBanchiLayerVisible() && map.getZoom() >= BANCHI_PREFETCH_MIN_ZOOM) {
     const bounds = map.getBounds();
     outer:
     for (const list of banchiMachiData.values()) {
@@ -4047,7 +4120,7 @@ function banchiRender() {
 
 async function banchiUpdate() {
   if (!map || !mapStyleLoaded) return;
-  if (!addrVisible || map.getZoom() < BANCHI_PREFETCH_MIN_ZOOM) { banchiRender(); return; }
+  if (!hyphenBanchiLayerVisible() || map.getZoom() < BANCHI_PREFETCH_MIN_ZOOM) { banchiRender(); return; }
   if (banchiUpdateRunning) { banchiScheduleUpdate(500); return; }
   banchiUpdateRunning = true;
   try {
@@ -4328,8 +4401,8 @@ function updateAddrButton() {
 function updateStreetsHousenumButton() {
   const btn = $('menu-toggle-streets-housenum');
   if (!btn) return;
-  btn.textContent = streetsHousenumVisible ? '🔢 ハイフン番地: ON' : '🔢 ハイフン番地: OFF';
-  btn.classList.toggle('on', streetsHousenumVisible);
+  btn.textContent = hyphenBanchiVisible ? '🔢 ハイフン番地: ON' : '🔢 ハイフン番地: OFF';
+  btn.classList.toggle('on', hyphenBanchiVisible);
 }
 
 function setAddressLayerVisibility(id, visible) {
@@ -4341,25 +4414,29 @@ function toggleAddressBlocks() {
   closeModal('modal-menu');
   addrVisible = !addrVisible;
   localStorage.setItem(ADDR_VISIBLE_KEY, addrVisible ? '1' : '0');
-  setAddressLayerVisibility(BANCHI_LAYER_ID, addrVisible);
+  setAddressLayerVisibility(BANCHI_LAYER_ID, hyphenBanchiLayerVisible());
   setAddressLayerVisibility(STREETS_HOUSENUM_LAYER_ID, streetsHousenumLayerVisible());
   updateAddrButton();
   updateStreetsHousenumButton();
-  if (addrVisible) {
+  if (hyphenBanchiLayerVisible()) {
     banchiScheduleUpdate(0);
     showToast(`番地表示ON — ズーム${BANCHI_DISPLAY_MIN_ZOOM}以上で表示`);
+  } else if (addrVisible) {
+    showToast(`番地表示ON — 黒い番地をズーム${BANCHI_DISPLAY_MIN_ZOOM}以上で表示`);
   } else {
     showToast('番地表示OFF');
   }
 }
 
-function toggleStreetsHousenumLabels() {
+function toggleHyphenBanchiLabels() {
   closeModal('modal-menu');
-  streetsHousenumVisible = !streetsHousenumVisible;
-  localStorage.setItem(STREETS_HOUSENUM_VISIBLE_KEY, streetsHousenumVisible ? '1' : '0');
-  setAddressLayerVisibility(STREETS_HOUSENUM_LAYER_ID, streetsHousenumLayerVisible());
+  hyphenBanchiVisible = !hyphenBanchiVisible;
+  localStorage.setItem(STREETS_HOUSENUM_VISIBLE_KEY, hyphenBanchiVisible ? '1' : '0');
+  setAddressLayerVisibility(BANCHI_LAYER_ID, hyphenBanchiLayerVisible());
+  if (hyphenBanchiLayerVisible()) banchiScheduleUpdate(0);
+  else banchiRender();
   updateStreetsHousenumButton();
-  showToast(streetsHousenumVisible ? 'ハイフン番地ON' : 'ハイフン番地OFF');
+  showToast(hyphenBanchiVisible ? 'ハイフン番地ON' : 'ハイフン番地OFF — 黒い番地は残ります');
 }
 
 function refreshAddressData() {
@@ -4398,7 +4475,7 @@ function openBanchiDebug() {
     lines.push(`中心: ${c.lng.toFixed(5)}, ${c.lat.toFixed(5)} / ズーム: ${map.getZoom().toFixed(1)}`);
   }
   lines.push(`表示設定: ${addrVisible ? 'ON' : 'OFF'} (表示はズーム${BANCHI_DISPLAY_MIN_ZOOM}以上)`);
-  lines.push(`ハイフン番地: ${streetsHousenumVisible ? 'ON' : 'OFF'}`);
+  lines.push(`ハイフン番地: ${hyphenBanchiVisible ? 'ON' : 'OFF'}`);
   lines.push(`市区町村リスト: ${banchiStatus.catalog}`);
   lines.push(`対象市区町村: ${banchiStatus.cities.length ? banchiStatus.cities.join(', ') : '(未判定)'}`);
   banchiStatus.cities.forEach(key => {
@@ -9980,7 +10057,18 @@ function toggleListCollapse(forceState) {
   localStorage.setItem(LIST_COLLAPSED_KEY, willCollapse ? '1' : '0');
   setTimeout(() => { if (map) map.resize(); }, 280);
 }
-$('list-header').addEventListener('click', () => toggleListCollapse());
+$('list-header').addEventListener('click', event => {
+  if (event.target.closest('.work-mode-switch')) return;
+  toggleListCollapse();
+});
+$('btn-work-mode-input').addEventListener('click', event => {
+  event.stopPropagation();
+  setWorkMode('input');
+});
+$('btn-work-mode-delivery').addEventListener('click', event => {
+  event.stopPropagation();
+  setWorkMode('delivery');
+});
 document.querySelectorAll('[data-pickup-list-tab]').forEach(button => {
   button.addEventListener('click', () => setPickupListTab(button.dataset.pickupListTab));
 });
@@ -10147,7 +10235,7 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
   toggleNeighborhoods();
 });
 $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
-$('menu-toggle-streets-housenum').addEventListener('click', toggleStreetsHousenumLabels);
+$('menu-toggle-streets-housenum').addEventListener('click', toggleHyphenBanchiLabels);
 $('menu-toggle-gsi').addEventListener('click', () => {
   closeModal('modal-menu');
   toggleGsiOverlay();
@@ -10251,6 +10339,7 @@ document.addEventListener('visibilitychange', () => {
   try {
     updateAppVersionLabels();
     applyTextSize(currentTextSize(), false);
+    updateWorkModeUi();
     if (localStorage.getItem(LIST_COLLAPSED_KEY) === '1') {
       document.body.classList.add('list-collapsed');
     }
@@ -10294,7 +10383,7 @@ document.addEventListener('visibilitychange', () => {
 
     updateAddrButton();
     updateStreetsHousenumButton();
-    if (addrVisible) banchiScheduleUpdate(0);
+    if (hyphenBanchiLayerVisible()) banchiScheduleUpdate(0);
   } catch (e) {
     hideLoading();
     showToast('初期化エラー: ' + e.message, true);
