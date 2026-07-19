@@ -75,6 +75,25 @@ if (count($cleanPoints) < 2) {
   exit;
 }
 
+$allCleanPoints = $cleanPoints;
+$endHint = null;
+if ($preserveAllPoints && array_key_exists('end_hint', $input)) {
+  $hint = $input['end_hint'];
+  if (!is_array($hint) || !valid_coord($hint['lat'] ?? null) || !valid_coord($hint['lng'] ?? null)) {
+    http_response_code(400);
+    echo json_encode(['error' => '次エリア目標の緯度経度が不正です'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $hintLat = (float)$hint['lat'];
+  $hintLng = (float)$hint['lng'];
+  if ($hintLat < -90 || $hintLat > 90 || $hintLng < -180 || $hintLng > 180) {
+    http_response_code(400);
+    echo json_encode(['error' => '次エリア目標の緯度経度が範囲外です'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $endHint = ['id' => '__end_hint__', 'lat' => $hintLat, 'lng' => $hintLng];
+}
+
 // Optimization API v1 は始点込み12座標まで。12件以上は Matrix + Directions で補助最適化する。
 if (count($cleanPoints) > 24) {
   http_response_code(400);
@@ -264,6 +283,93 @@ function improve_matrix_route($route, $matrix, $points) {
   return $route;
 }
 
+function matrix_route_cost_to_end($route, $matrix, $points, $endIndex) {
+  if (count($route) === 0) return matrix_cost($matrix, 0, $endIndex, $points);
+  $total = matrix_cost($matrix, 0, $route[0], $points);
+  for ($i = 1; $i < count($route); $i++) {
+    $total += matrix_cost($matrix, $route[$i - 1], $route[$i], $points);
+  }
+  return $total + matrix_cost($matrix, $route[count($route) - 1], $endIndex, $points);
+}
+
+function nearest_neighbor_matrix_route_to_end($matrix, $points, $endIndex) {
+  $remaining = $endIndex > 1 ? range(1, $endIndex - 1) : [];
+  $route = [];
+  $current = 0;
+  while (count($remaining) > 0) {
+    $bestPos = 0;
+    $bestCost = INF;
+    foreach ($remaining as $pos => $idx) {
+      $cost = matrix_cost($matrix, $current, $idx, $points);
+      if ($cost < $bestCost) {
+        $bestCost = $cost;
+        $bestPos = $pos;
+      }
+    }
+    $next = $remaining[$bestPos];
+    array_splice($remaining, $bestPos, 1);
+    $route[] = $next;
+    $current = $next;
+  }
+  return $route;
+}
+
+function cheapest_insertion_matrix_route_to_end($matrix, $points, $endIndex) {
+  $remaining = $endIndex > 1 ? range(1, $endIndex - 1) : [];
+  $route = [];
+  while (count($remaining) > 0) {
+    $bestRemainingPos = 0;
+    $bestInsertPos = 0;
+    $bestDelta = INF;
+    foreach ($remaining as $remainingPos => $idx) {
+      for ($insertPos = 0; $insertPos <= count($route); $insertPos++) {
+        $from = $insertPos === 0 ? 0 : $route[$insertPos - 1];
+        $to = $insertPos === count($route) ? $endIndex : $route[$insertPos];
+        $delta = matrix_cost($matrix, $from, $idx, $points)
+          + matrix_cost($matrix, $idx, $to, $points)
+          - matrix_cost($matrix, $from, $to, $points);
+        if ($delta < $bestDelta) {
+          $bestDelta = $delta;
+          $bestRemainingPos = $remainingPos;
+          $bestInsertPos = $insertPos;
+        }
+      }
+    }
+    $next = $remaining[$bestRemainingPos];
+    array_splice($remaining, $bestRemainingPos, 1);
+    array_splice($route, $bestInsertPos, 0, [$next]);
+  }
+  return $route;
+}
+
+function improve_asymmetric_matrix_route_to_end($route, $matrix, $points, $endIndex) {
+  if (count($route) < 2) return $route;
+  $deadline = microtime(true) + 1.5;
+  $bestCost = matrix_route_cost_to_end($route, $matrix, $points, $endIndex);
+  $maxPasses = min(80, max(12, count($route) * 3));
+
+  for ($pass = 0; $pass < $maxPasses && microtime(true) < $deadline; $pass++) {
+    $changed = false;
+    for ($i = 0; $i < count($route) - 1; $i++) {
+      for ($k = $i + 1; $k < count($route); $k++) {
+        if (microtime(true) >= $deadline) break 2;
+        $candidate = $route;
+        $slice = array_reverse(array_slice($candidate, $i, $k - $i + 1));
+        array_splice($candidate, $i, count($slice), $slice);
+        $candidateCost = matrix_route_cost_to_end($candidate, $matrix, $points, $endIndex);
+        if ($candidateCost + 1 < $bestCost) {
+          $route = $candidate;
+          $bestCost = $candidateCost;
+          $changed = true;
+          break 2;
+        }
+      }
+    }
+    if (!$changed) break;
+  }
+  return $route;
+}
+
 function call_mapbox_matrix($profile, $points, $token) {
   $coordText = implode(';', array_map(function($p) {
     return rawurlencode((string)$p['lng']) . ',' . rawurlencode((string)$p['lat']);
@@ -331,6 +437,83 @@ function call_mapbox_directions($profile, $points, $token) {
   $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
   curl_close($ch);
   return ['body' => $body, 'curlErr' => $curlErr, 'httpCode' => (int)$httpCode];
+}
+
+// テスト版のエリア道路順だけが end_hint を送る。次エリアまでの道路時間を
+// 終端コストへ加え、川・線路・一方通行を考慮した場所で現在エリアを終える。
+if ($endHint !== null) {
+  if (count($allCleanPoints) > 23) {
+    http_response_code(400);
+    echo json_encode([
+      'error' => '次エリアを考慮する道路順は一度に23件まで対応しています',
+      'detail' => 'Mapbox Matrix API の最大25座標（始点・次エリア目標を含む）に合わせています。'
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  $matrixProfile = $profile;
+  $matrixPoints = array_merge([$start], $allCleanPoints, [$endHint]);
+  if ($matrixProfile === 'mapbox/driving-traffic' && count($matrixPoints) > 10) {
+    $matrixProfile = 'mapbox/driving';
+  }
+
+  $matrixAttempt = call_mapbox_matrix($matrixProfile, $matrixPoints, $token);
+  $matrixData = is_string($matrixAttempt['body']) ? json_decode($matrixAttempt['body'], true) : null;
+  if ($matrixAttempt['body'] === false || $matrixAttempt['httpCode'] < 200 || $matrixAttempt['httpCode'] >= 300 || !is_array($matrixData) || (($matrixData['code'] ?? '') !== 'Ok')) {
+    response_error_from_mapbox($matrixAttempt);
+  }
+
+  $durations = $matrixData['durations'] ?? [];
+  if (!is_array($durations) || count($durations) !== count($matrixPoints)) {
+    http_response_code(502);
+    echo json_encode(['error' => 'Mapbox Matrix APIの応答形式が不正です'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  $endHintIndex = count($matrixPoints) - 1;
+  $nearestRoute = nearest_neighbor_matrix_route_to_end($durations, $matrixPoints, $endHintIndex);
+  $insertionRoute = cheapest_insertion_matrix_route_to_end($durations, $matrixPoints, $endHintIndex);
+  $routeIndexes = matrix_route_cost_to_end($insertionRoute, $durations, $matrixPoints, $endHintIndex)
+      < matrix_route_cost_to_end($nearestRoute, $durations, $matrixPoints, $endHintIndex)
+    ? $insertionRoute
+    : $nearestRoute;
+  $routeIndexes = improve_asymmetric_matrix_route_to_end($routeIndexes, $durations, $matrixPoints, $endHintIndex);
+  $orderedPoints = array_map(function($idx) use ($matrixPoints) { return $matrixPoints[$idx]; }, $routeIndexes);
+
+  $directionsPoints = array_merge([$start], $orderedPoints);
+  $directionsAttempt = call_mapbox_directions($matrixProfile, $directionsPoints, $token);
+  $directionsData = is_string($directionsAttempt['body']) ? json_decode($directionsAttempt['body'], true) : null;
+  if ($directionsAttempt['body'] === false || $directionsAttempt['httpCode'] < 200 || $directionsAttempt['httpCode'] >= 300 || !is_array($directionsData) || (($directionsData['code'] ?? '') !== 'Ok')) {
+    response_error_from_mapbox($directionsAttempt);
+  }
+
+  $route = $directionsData['routes'][0] ?? [];
+  $lastRouteIndex = count($routeIndexes) ? $routeIndexes[count($routeIndexes) - 1] : 0;
+  $distances = $matrixData['distances'] ?? [];
+  $exitDistance = isset($distances[$lastRouteIndex][$endHintIndex]) && is_numeric($distances[$lastRouteIndex][$endHintIndex])
+    ? (float)$distances[$lastRouteIndex][$endHintIndex]
+    : null;
+  $exitDuration = isset($durations[$lastRouteIndex][$endHintIndex]) && is_numeric($durations[$lastRouteIndex][$endHintIndex])
+    ? (float)$durations[$lastRouteIndex][$endHintIndex]
+    : null;
+
+  echo json_encode([
+    'ok' => true,
+    'profile' => $matrixProfile,
+    'method' => 'matrix-directions-road-end',
+    'allPointsPreserved' => true,
+    'roadAwareEnd' => true,
+    'orderedIds' => array_values(array_map(function($p) { return $p['id']; }, $orderedPoints)),
+    'waypoints' => array_values(array_map(function($p, $idx) {
+      return ['id' => $p['id'], 'waypoint_index' => $idx + 1, 'name' => '', 'location' => [$p['lng'], $p['lat']]];
+    }, $orderedPoints, array_keys($orderedPoints))),
+    'distance' => isset($route['distance']) ? (float)$route['distance'] : null,
+    'duration' => isset($route['duration']) ? (float)$route['duration'] : route_matrix_cost($routeIndexes, $durations, $matrixPoints),
+    'exitDistance' => $exitDistance,
+    'exitDuration' => $exitDuration,
+    'geometry' => $route['geometry'] ?? null,
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
 }
 
 // 全件保持時は、固定終点を外す前の総座標数で12座標の境界を判定する。

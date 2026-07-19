@@ -1408,7 +1408,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.65</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.66</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1459,7 +1459,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.65</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.66</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1469,8 +1469,8 @@
       <button id="menu-import-pickup" type="button">📦 集荷コースを選択</button>
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
-      <button id="menu-optimize-recommended" type="button">🧠 エリア相談 → おすすめ配送順（試験）</button>
-      <button id="menu-optimize-road-blocks" type="button">🗺 エリア相談 → 100件向け道路順（試験）</button>
+      <button id="menu-optimize-road-blocks" type="button">🗺 エリア相談 → 道路優先配送順（おすすめ・試験）</button>
+      <button id="menu-optimize-recommended" type="button">📐 エリア相談 → 直線距離で比較（道路未考慮）</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
@@ -1845,7 +1845,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.65';
+const APP_VERSION = 'v2026.06.24-test.66';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1880,6 +1880,7 @@ const DELIVERY_SYNC_DIRTY_KEY = 'rys-mapbox-test-delivery-sync-dirty-v1';
 const DELIVERY_SYNC_INTERVAL_MS = 10000;
 const DELIVERY_SYNC_PUSH_DEBOUNCE_MS = 3000;
 const DELIVERY_SYNC_API = '../api/delivery_sync.php';
+const ROAD_SEGMENT_API = '../api/route_segment.php';
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
 const SPOT_COMPLETION_PUSH_API = '../api/push_spot_completed.php';
@@ -2068,6 +2069,7 @@ let gsiOverlayVisible = localStorage.getItem(GSI_OVERLAY_KEY) !== '0';
 let listSearchQuery = '';
 let optimizedRouteOrderedIds = [];
 let nextSegmentUpdateId = 0;
+let nextSegmentFailureToastAt = 0;
 let recognition = null;
 let mapStyleLoaded = false;
 
@@ -4092,12 +4094,21 @@ function clearOptimizedRouteGeometry() {
 function clearNextSegmentLayer() {
   if (!map) return;
   nextSegmentUpdateId++;
+  removeNextSegmentLayer();
+  removeFollowingSegmentLayer();
+}
+
+function removeNextSegmentLayer() {
+  if (!map) return;
   if (map.getLayer(NEXT_SEGMENT_LAYER_ID)) map.removeLayer(NEXT_SEGMENT_LAYER_ID);
   if (map.getSource(NEXT_SEGMENT_SOURCE_ID)) map.removeSource(NEXT_SEGMENT_SOURCE_ID);
-  clearFollowingSegmentLayer();
 }
 
 function clearFollowingSegmentLayer() {
+  removeFollowingSegmentLayer();
+}
+
+function removeFollowingSegmentLayer() {
   if (!map) return;
   if (map.getLayer(FOLLOWING_SEGMENT_LAYER_ID)) map.removeLayer(FOLLOWING_SEGMENT_LAYER_ID);
   if (map.getSource(FOLLOWING_SEGMENT_SOURCE_ID)) map.removeSource(FOLLOWING_SEGMENT_SOURCE_ID);
@@ -4169,12 +4180,24 @@ function setFollowingSegmentGeometry(geometry) {
   addFollowingSegmentLayer();
 }
 
-async function fetchDrivingSegmentGeometry(start, destination, token) {
+async function fetchDrivingSegmentGeometry(start, destination) {
   try {
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start.lng},${start.lat};${destination.lng},${destination.lat}?geometries=geojson&steps=false&access_token=${encodeURIComponent(token)}`;
-    const res = await fetch(url);
+    const body = {
+      start: { lat: start.lat, lng: start.lng },
+      destination: { lat: destination.lat, lng: destination.lng }
+    };
+    if (Number.isFinite(start.heading)) body.heading = start.heading;
+    const res = await fetch(ROAD_SEGMENT_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
     const data = res.ok ? await res.json() : null;
-    return data && data.routes && data.routes[0] && data.routes[0].geometry || null;
+    const geometry = data && data.ok ? data.geometry : null;
+    if (!geometry || geometry.type !== 'LineString' || !Array.isArray(geometry.coordinates) || geometry.coordinates.length < 2) {
+      return null;
+    }
+    return geometry;
   } catch (e) {
     return null;
   }
@@ -4193,33 +4216,23 @@ async function updateNextSegmentHighlight() {
   if (!nextDelivery) { clearNextSegmentLayer(); return; }
 
   const start = getRouteStartPoint();
-
-  // Draw straight lines immediately so completing a stop updates both segments at once.
-  if (followingDelivery) {
-    setFollowingSegmentGeometry({
-      type: 'LineString',
-      coordinates: [[nextDelivery.lng, nextDelivery.lat], [followingDelivery.lng, followingDelivery.lat]]
-    });
-  } else {
-    clearFollowingSegmentLayer();
-  }
-  setNextSegmentGeometry({
-    type: 'LineString',
-    coordinates: [[start.lng, start.lat], [nextDelivery.lng, nextDelivery.lat]]
-  });
-
-  const token = mapboxConfig && mapboxConfig.mapboxAccessToken;
-  if (!token) return;
+  // 道路検索が失敗した直線を案内線に見せない。成功した道路形状だけ表示する。
+  removeNextSegmentLayer();
+  removeFollowingSegmentLayer();
 
   const [nextGeometry, followingGeometry] = await Promise.all([
-    fetchDrivingSegmentGeometry(start, nextDelivery, token),
+    fetchDrivingSegmentGeometry(start, nextDelivery),
     followingDelivery
-      ? fetchDrivingSegmentGeometry(nextDelivery, followingDelivery, token)
+      ? fetchDrivingSegmentGeometry(nextDelivery, followingDelivery)
       : Promise.resolve(null)
   ]);
   if (updateId !== nextSegmentUpdateId) return;
   if (followingGeometry) setFollowingSegmentGeometry(followingGeometry);
   if (nextGeometry) setNextSegmentGeometry(nextGeometry);
+  else if (Date.now() - nextSegmentFailureToastAt > 60000) {
+    nextSegmentFailureToastAt = Date.now();
+    showToast('道路に沿った案内線を取得できません。次の場所はナビで確認してください', true);
+  }
 }
 
 function updateAddrButton() {
@@ -8883,7 +8896,9 @@ function buildAreaPreservingRecommendedRoute(start, areaGroups) {
 function getRouteStartPoint() {
   if (userMarker) {
     const ll = userMarker.getLngLat();
-    return { lat: ll.lat, lng: ll.lng, label: '現在地' };
+    const start = { lat: ll.lat, lng: ll.lng, label: '現在地' };
+    if (lastKnownGps && Number.isFinite(lastKnownGps.heading)) start.heading = lastKnownGps.heading;
+    return start;
   }
   if (map) {
     const center = map.getCenter();
@@ -8999,7 +9014,7 @@ function runRecommendedRouteOrder({ start, routeItems, areaGroups, noLocationIte
   const savedDistance = Math.max(0, currentMetrics.distance - result.metrics.distance);
 
   confirmAndApplyRouteOrder({
-    title: 'エリアごとのおすすめ配送順（試験）',
+    title: 'エリアごとの直線距離比較（道路未考慮）',
     summary: `${start.label}から、指定した町名順を崩さず各エリア内の回り方を比較しました。\n` +
       `エリア順:\n${routeAreaOrderText(areaGroups)}\n\n` +
       `現在順: ${formatKm(currentMetrics.distance)} / 折返し目安 ${formatKm(currentMetrics.backtrackDistance)}\n` +
@@ -9012,7 +9027,7 @@ function runRecommendedRouteOrder({ start, routeItems, areaGroups, noLocationIte
     noLocationItems,
     completedItems,
     clearGeometry: true,
-    successMessage: `${modeLabel()}順をエリアごとのおすすめ順に並べ替えました`
+    successMessage: `${modeLabel()}順をエリアごとの直線距離順に並べ替えました`
   });
 }
 
@@ -9021,13 +9036,13 @@ function optimizeRecommendedRouteOrder() {
   const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
 
   if (routeItems.length < 2) {
-    showToast(`${modeLabel()}先が2件以上ある時におすすめ順を計算できます`, true);
+    showToast(`${modeLabel()}先が2件以上ある時に直線距離を比較できます`, true);
     return;
   }
 
   const start = getRouteStartPoint();
   openRouteAreaPlanner({
-    title: 'おすすめ配送順の相談',
+    title: '直線距離で比較するエリア順の相談',
     start,
     routeItems,
     planNote: '選んだエリア順を固定し、その中だけで距離と折り返しを比較します。',
@@ -9069,7 +9084,6 @@ const CAR_ROUTE_PROVIDERS = {
   }
 };
 
-const ROAD_BLOCK_MIN_ITEMS = 25;
 const ROAD_BLOCK_MAX_SIZE = 20;
 const ROAD_BLOCK_MAX_BLOCKS = 24;
 
@@ -9129,6 +9143,9 @@ async function requestCarRouteOptimization(provider, start, routeItems, options 
   bumpUsage(provider.usageKind);
   const requestBody = provider.buildRequestBody(start, routeItems);
   if (options.preserveAllPoints) requestBody.preserve_all_points = true;
+  if (options.endHint && Number.isFinite(options.endHint.lat) && Number.isFinite(options.endHint.lng)) {
+    requestBody.end_hint = { lat: options.endHint.lat, lng: options.endHint.lng };
+  }
   const res = await fetch(provider.endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -9150,13 +9167,17 @@ async function requestCarRouteOptimization(provider, start, routeItems, options 
   return { data, ordered };
 }
 
-function requestRoadBlockOptimization(provider, start, routeItems) {
-  return requestCarRouteOptimization(provider, start, routeItems, { preserveAllPoints: true });
+function requestRoadBlockOptimization(provider, start, routeItems, options = {}) {
+  return requestCarRouteOptimization(provider, start, routeItems, {
+    preserveAllPoints: true,
+    endHint: options.endHint || null
+  });
 }
 
 async function buildRoadBlockRoute(start, routeItems, provider, options = {}) {
   const requestOptimization = options.requestOptimization || requestRoadBlockOptimization;
   const onProgress = options.onProgress || (() => {});
+  const endHint = options.endHint || null;
   const blocks = splitRouteItemsIntoRoadBlocks(routeItems);
   if (blocks.length > ROAD_BLOCK_MAX_BLOCKS) {
     throw new Error(`道路ブロック順は最大${ROAD_BLOCK_MAX_SIZE * ROAD_BLOCK_MAX_BLOCKS}件まで対応しています`);
@@ -9168,7 +9189,9 @@ async function buildRoadBlockRoute(start, routeItems, provider, options = {}) {
   let orderedBlocks = blocks;
   if (hasBlockOrderCall) {
     onProgress({ current: 1, total: totalCalls, label: 'ブロック順' });
-    const blockOrderResult = await requestOptimization(provider, start, representatives);
+    const blockOrderResult = await requestOptimization(provider, start, representatives, {
+      endHint: representatives.length <= 23 ? endHint : null
+    });
     const blockByRepresentativeId = new Map(representatives.map((item, index) => [String(item.id), blocks[index]]));
     orderedBlocks = blockOrderResult.ordered
       .map(item => blockByRepresentativeId.get(String(item.id)))
@@ -9188,8 +9211,10 @@ async function buildRoadBlockRoute(start, routeItems, provider, options = {}) {
 
   for (let index = 0; index < orderedBlocks.length; index++) {
     const block = orderedBlocks[index];
+    const nextBlock = orderedBlocks[index + 1];
+    const blockEndHint = nextBlock ? routePoint(roadBlockRepresentative(nextBlock)) : endHint;
     onProgress({ current: index + (hasBlockOrderCall ? 2 : 1), total: totalCalls, label: `ブロック${index + 1}` });
-    const result = await requestOptimization(provider, currentStart, block);
+    const result = await requestOptimization(provider, currentStart, block, { endHint: blockEndHint });
     suggested.push(...result.ordered);
 
     const distance = result.data.distance === null || result.data.distance === undefined
@@ -9232,6 +9257,7 @@ async function buildRoadBlockRoute(start, routeItems, provider, options = {}) {
 
 async function buildAreaPriorityRoadBlockRoute(start, areaGroups, provider, options = {}) {
   const onProgress = options.onProgress || (() => {});
+  const requestOptimization = options.requestOptimization || requestRoadBlockOptimization;
   const totalCalls = areaRouteApiCallCount(areaGroups);
   const suggested = [];
   const areaSummaries = [];
@@ -9245,6 +9271,8 @@ async function buildAreaPriorityRoadBlockRoute(start, areaGroups, provider, opti
 
   for (let areaIndex = 0; areaIndex < areaGroups.length; areaIndex++) {
     const group = areaGroups[areaIndex];
+    const nextGroup = areaGroups[areaIndex + 1];
+    const areaEndHint = nextGroup ? routePoint(roadBlockRepresentative(nextGroup.items)) : null;
     let areaSuggested = [];
     let areaDistance = null;
     let areaDuration = null;
@@ -9256,6 +9284,8 @@ async function buildAreaPriorityRoadBlockRoute(start, areaGroups, provider, opti
       hasDuration = false;
     } else {
       const result = await buildRoadBlockRoute(currentStart, group.items, provider, {
+        endHint: areaEndHint,
+        requestOptimization,
         onProgress: progress => onProgress({
           current: completedCalls + progress.current,
           total: totalCalls,
@@ -9327,11 +9357,12 @@ async function runRoadBlockRouteOrder({ start, routeItems, areaGroups, noLocatio
     const durationText = result.totalDuration !== null ? formatDuration(result.totalDuration) : '';
 
     confirmAndApplyRouteOrder({
-      title: 'エリアごとの100件向け道路順（試験）',
+      title: '道路優先配送順（試験）',
       summary: `全${routeItems.length}件を町名ごとの${result.areaCount}エリアに分け、指定したエリア順を固定しました。\n` +
-        `各エリア内は20件以下の道路ブロックに分け、Mapboxの道路時間で並べています。\n` +
+        `件数に応じて20件以下の道路ブロックへ自動分割し、Mapboxの道路時間で並べています。\n` +
         `道路計算: ${result.apiCalls}段階 / 目安: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n` +
-        `大通り・線路・川による遠回りを道路時間へ反映し、町名の違う荷物を途中に混ぜません。\n\n` +
+        `次エリアへ移る道路時間も終点選びに加え、橋・線路・一方通行による遠回りを反映します。\n` +
+        `町名の違う荷物は途中に混ぜません。\n\n` +
         areaLines +
         (omittedAreas ? `\n...ほか ${omittedAreas}エリア` : '') +
         '\n\n横断回数を完全に保証するものではないため、実走行では次区間のナビも確認してください。',
@@ -9350,8 +9381,8 @@ async function runRoadBlockRouteOrder({ start, routeItems, areaGroups, noLocatio
 function optimizeRoadBlockRouteOrder() {
   closeModal('modal-menu');
   const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
-  if (routeItems.length < ROAD_BLOCK_MIN_ITEMS) {
-    showToast(`25件未満は「車向け 道路優先ルート」を使ってください`, true);
+  if (routeItems.length < 2) {
+    showToast(`${modeLabel()}先が2件以上ある時に道路順を計算できます`, true);
     return;
   }
 
@@ -9364,10 +9395,10 @@ function optimizeRoadBlockRouteOrder() {
   const initialGroups = buildDeliveryAreaGroups(routeItems);
   const apiCalls = areaRouteApiCallCount(initialGroups);
   openRouteAreaPlanner({
-    title: '100件向け道路順の相談',
+    title: '道路優先配送順の相談',
     start,
     routeItems,
-    planNote: `選んだエリア順を固定し、Mapboxで約${apiCalls}段階の道路計算を行います。処理には少し時間がかかります。`,
+    planNote: `選んだエリア順を固定し、Mapboxで約${apiCalls}段階の道路計算を行います。2件から100件程度まで同じ機能を使えます。`,
     onConfirm: areaGroups => runRoadBlockRouteOrder({
       start,
       routeItems,
@@ -9500,7 +9531,15 @@ function updateUserLocation(pos, moveMap = false) {
   }
 
   updateGpsStatus(pos);
-  lastKnownGps = { lat: latitude, lng: longitude };
+  const speed = Number(pos.coords.speed);
+  const accuracy = Number(pos.coords.accuracy);
+  const rawHeading = Number(pos.coords.heading);
+  const heading = Number.isFinite(rawHeading)
+      && Number.isFinite(speed) && speed >= 1.5
+      && (!Number.isFinite(accuracy) || accuracy <= 50)
+    ? ((rawHeading % 360) + 360) % 360
+    : null;
+  lastKnownGps = { lat: latitude, lng: longitude, heading, speed, accuracy };
   banchiSchedulePrefetch(longitude, latitude);
 
   const startupCenterAllowed = gpsInitialCenterStartedAt &&
