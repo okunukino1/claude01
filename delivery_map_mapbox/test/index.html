@@ -1515,7 +1515,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.70</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.71</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1570,7 +1570,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.70</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.71</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1959,7 +1959,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.70';
+const APP_VERSION = 'v2026.06.24-test.71';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -1996,6 +1996,8 @@ const DELIVERY_SYNC_INTERVAL_MS = 10000;
 const DELIVERY_SYNC_PUSH_DEBOUNCE_MS = 3000;
 const DELIVERY_SYNC_API = '../api/delivery_sync.php';
 const ROAD_SEGMENT_API = '../api/route_segment.php';
+const ROAD_FLOW_API = '../api/route_flow_test.php';
+const FLOW_GUIDANCE_MAX_WALK_METERS = 60;
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
 const MAPBOX_GEOCODING_API = 'https://api.mapbox.com/search/geocode/v6/forward';
@@ -2192,6 +2194,8 @@ let listSearchQuery = '';
 let optimizedRouteOrderedIds = [];
 let nextSegmentUpdateId = 0;
 let nextSegmentFailureToastAt = 0;
+let lastFlowGuidance = null;
+let lastFlowNoticeKey = '';
 let recognition = null;
 let mapStyleLoaded = false;
 
@@ -3475,6 +3479,10 @@ const NEXT_SEGMENT_SOURCE_ID = 'next-segment';
 const NEXT_SEGMENT_LAYER_ID = 'next-segment-line';
 const FOLLOWING_SEGMENT_SOURCE_ID = 'following-segment';
 const FOLLOWING_SEGMENT_LAYER_ID = 'following-segment-line';
+const FLOW_WALK_SOURCE_ID = 'flow-walk';
+const FLOW_WALK_LAYER_ID = 'flow-walk-line';
+const FLOW_STOP_SOURCE_ID = 'flow-stop';
+const FLOW_STOP_LAYER_ID = 'flow-stop-circle';
 
 function addNeighborhoodLayer(layer) {
   if (map.getLayer(layer.id)) return;
@@ -4255,6 +4263,8 @@ function clearNextSegmentLayer() {
   nextSegmentUpdateId++;
   removeNextSegmentLayer();
   removeFollowingSegmentLayer();
+  removeFlowGuidanceLayers();
+  lastFlowNoticeKey = '';
 }
 
 function removeNextSegmentLayer() {
@@ -4271,6 +4281,15 @@ function removeFollowingSegmentLayer() {
   if (!map) return;
   if (map.getLayer(FOLLOWING_SEGMENT_LAYER_ID)) map.removeLayer(FOLLOWING_SEGMENT_LAYER_ID);
   if (map.getSource(FOLLOWING_SEGMENT_SOURCE_ID)) map.removeSource(FOLLOWING_SEGMENT_SOURCE_ID);
+}
+
+function removeFlowGuidanceLayers() {
+  lastFlowGuidance = null;
+  if (!map) return;
+  if (map.getLayer(FLOW_STOP_LAYER_ID)) map.removeLayer(FLOW_STOP_LAYER_ID);
+  if (map.getSource(FLOW_STOP_SOURCE_ID)) map.removeSource(FLOW_STOP_SOURCE_ID);
+  if (map.getLayer(FLOW_WALK_LAYER_ID)) map.removeLayer(FLOW_WALK_LAYER_ID);
+  if (map.getSource(FLOW_WALK_SOURCE_ID)) map.removeSource(FLOW_WALK_SOURCE_ID);
 }
 
 function addNextSegmentLayer() {
@@ -4339,6 +4358,92 @@ function setFollowingSegmentGeometry(geometry) {
   addFollowingSegmentLayer();
 }
 
+function validRouteLineGeometry(geometry) {
+  return !!geometry && geometry.type === 'LineString' &&
+    Array.isArray(geometry.coordinates) && geometry.coordinates.length >= 2;
+}
+
+function addFlowWalkLayer() {
+  if (map.getLayer(FLOW_WALK_LAYER_ID)) return;
+  const layerDef = {
+    id: FLOW_WALK_LAYER_ID,
+    type: 'line',
+    source: FLOW_WALK_SOURCE_ID,
+    slot: 'top',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-color': '#111827',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3, 16, 5, 19, 7],
+      'line-dasharray': [0.8, 1.2],
+      'line-opacity': 0.9
+    }
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+  }
+}
+
+function addFlowStopLayer() {
+  if (map.getLayer(FLOW_STOP_LAYER_ID)) return;
+  const layerDef = {
+    id: FLOW_STOP_LAYER_ID,
+    type: 'circle',
+    source: FLOW_STOP_SOURCE_ID,
+    slot: 'top',
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 6, 16, 8, 19, 10],
+      'circle-color': '#fde047',
+      'circle-stroke-color': '#111827',
+      'circle-stroke-width': 3,
+      'circle-opacity': 0.98
+    }
+  };
+  try {
+    map.addLayer(layerDef);
+  } catch (e) {
+    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+  }
+}
+
+function setFlowGuidance(flow, deliveryId) {
+  removeFlowGuidanceLayers();
+  if (!map || !flow || !flow.stop ||
+      !Number.isFinite(Number(flow.stop.lat)) || !Number.isFinite(Number(flow.stop.lng))) return;
+
+  const walkingDistance = Number(flow.walkingDistance);
+  const showWalking = validRouteLineGeometry(flow.walkingGeometry) &&
+    Number.isFinite(walkingDistance) && walkingDistance >= 5;
+  const showStop = flow.mode === 'pass-by-walk' || showWalking;
+  if (!showStop) return;
+
+  if (showWalking) {
+    map.addSource(FLOW_WALK_SOURCE_ID, {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: flow.walkingGeometry, properties: {} }
+    });
+    addFlowWalkLayer();
+  }
+
+  map.addSource(FLOW_STOP_SOURCE_ID, {
+    type: 'geojson',
+    data: {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [Number(flow.stop.lng), Number(flow.stop.lat)] },
+      properties: {}
+    }
+  });
+  addFlowStopLayer();
+  lastFlowGuidance = {
+    deliveryId,
+    mode: flow.mode,
+    stop: { lat: Number(flow.stop.lat), lng: Number(flow.stop.lng) },
+    walkingDistance: Number.isFinite(walkingDistance) ? walkingDistance : null,
+    turnDegrees: Number.isFinite(Number(flow.turnDegrees)) ? Number(flow.turnDegrees) : null
+  };
+}
+
 async function fetchDrivingSegmentGeometry(start, destination) {
   try {
     const body = {
@@ -4353,10 +4458,33 @@ async function fetchDrivingSegmentGeometry(start, destination) {
     });
     const data = res.ok ? await res.json() : null;
     const geometry = data && data.ok ? data.geometry : null;
-    if (!geometry || geometry.type !== 'LineString' || !Array.isArray(geometry.coordinates) || geometry.coordinates.length < 2) {
-      return null;
-    }
+    if (!validRouteLineGeometry(geometry)) return null;
     return geometry;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchFlowAwareSegments(start, destination, following) {
+  try {
+    const body = {
+      start: { lat: start.lat, lng: start.lng },
+      destination: { lat: destination.lat, lng: destination.lng },
+      following: { lat: following.lat, lng: following.lng },
+      max_walk_m: FLOW_GUIDANCE_MAX_WALK_METERS
+    };
+    if (Number.isFinite(start.heading)) body.heading = start.heading;
+    const res = await fetch(ROAD_FLOW_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok || !data || !data.ok ||
+        !validRouteLineGeometry(data.orangeGeometry) ||
+        !validRouteLineGeometry(data.blueGeometry)) return null;
+    return data;
   } catch (e) {
     return null;
   }
@@ -4378,16 +4506,44 @@ async function updateNextSegmentHighlight() {
   // 道路検索が失敗した直線を案内線に見せない。成功した道路形状だけ表示する。
   removeNextSegmentLayer();
   removeFollowingSegmentLayer();
+  removeFlowGuidanceLayers();
 
-  const [nextGeometry, followingGeometry] = await Promise.all([
-    fetchDrivingSegmentGeometry(start, nextDelivery),
-    followingDelivery
-      ? fetchDrivingSegmentGeometry(nextDelivery, followingDelivery)
-      : Promise.resolve(null)
-  ]);
+  let nextGeometry = null;
+  let followingGeometry = null;
+  let flow = null;
+  if (followingDelivery) {
+    // 1番への到着と2番への出発を一体で計算する。
+    // 2番へ向かう自然な道路が1番の徒歩圏を通る時は、その道路上を停車候補にする。
+    flow = await fetchFlowAwareSegments(start, nextDelivery, followingDelivery);
+    if (flow) {
+      nextGeometry = flow.orangeGeometry;
+      followingGeometry = flow.blueGeometry;
+    } else {
+      // テスト専用APIが一時的に使えない場合も、従来の2本表示は維持する。
+      [nextGeometry, followingGeometry] = await Promise.all([
+        fetchDrivingSegmentGeometry(start, nextDelivery),
+        fetchDrivingSegmentGeometry(nextDelivery, followingDelivery)
+      ]);
+    }
+  } else {
+    nextGeometry = await fetchDrivingSegmentGeometry(start, nextDelivery);
+  }
   if (updateId !== nextSegmentUpdateId) return;
   if (followingGeometry) setFollowingSegmentGeometry(followingGeometry);
-  if (nextGeometry) setNextSegmentGeometry(nextGeometry);
+  if (nextGeometry) {
+    setNextSegmentGeometry(nextGeometry);
+    if (flow) {
+      setFlowGuidance(flow, nextDelivery.id);
+      const walkingDistance = Number(flow.walkingDistance);
+      if (flow.mode === 'pass-by-walk' && Number.isFinite(walkingDistance) && walkingDistance >= 5) {
+        const noticeKey = `${nextDelivery.id}|${Math.round(walkingDistance)}`;
+        if (noticeKey !== lastFlowNoticeKey) {
+          lastFlowNoticeKey = noticeKey;
+          showToast(`1番は流れを優先: 黄色の停車候補から徒歩約${Math.round(walkingDistance)}m`);
+        }
+      }
+    }
+  }
   else if (Date.now() - nextSegmentFailureToastAt > 60000) {
     nextSegmentFailureToastAt = Date.now();
     showToast('道路に沿った案内線を取得できません。次の場所はナビで確認してください', true);
@@ -9639,6 +9795,7 @@ const CAR_ROUTE_PROVIDERS = {
     summaryHead: 'Mapboxの道路ルート',
     buildRequestBody: (start, routeItems) => ({
       profile: 'mapbox/driving',
+      flow_priority: true,
       start: { lat: start.lat, lng: start.lng },
       points: routeItems.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }))
     }),
@@ -9934,6 +10091,7 @@ async function runRoadBlockRouteOrder({ start, routeItems, areaGroups, noLocatio
       title: '道路優先配送順（試験）',
       summary: `全${routeItems.length}件を町名ごとの${result.areaCount}エリアに分け、指定したエリア順を固定しました。\n` +
         `件数に応じて20件以下の道路ブロックへ自動分割し、Mapboxの道路時間で並べています。\n` +
+        `建物前への横付け固定より、次へ進みやすい車の流れを優先します。\n` +
         `道路計算: ${result.apiCalls}段階 / 目安: ${distanceText}${durationText ? ` / ${durationText}` : ''}\n` +
         `次エリアへ移る道路時間も終点選びに加え、橋・線路・一方通行による遠回りを反映します。\n` +
         `町名の違う荷物は途中に混ぜません。\n\n` +
@@ -9978,7 +10136,7 @@ function optimizeRoadBlockRouteOrder() {
     title: '道路優先配送順の相談',
     start,
     routeItems,
-    planNote: `選んだエリア順を固定し、Mapboxで約${apiCalls}段階の道路計算を行います。2件から100件程度まで同じ機能を使えます。`,
+    planNote: `選んだエリア順を固定し、Mapboxで約${apiCalls}段階の道路計算を行います。建物への横付け固定より、次へ進みやすい向きを優先します。2件から100件程度まで同じ機能を使えます。`,
     onConfirm: areaGroups => runRoadBlockRouteOrder({
       start,
       routeItems,
@@ -10029,12 +10187,16 @@ async function optimizeCarRouteOrderWith(providerKey) {
     const overflowNote = overflowItems.length
       ? `\n全${routeItems.length}件のうち現在地から近い24件を道路APIで最適化し、残り${overflowItems.length}件は後ろに近い順で続けます。`
       : '';
+    const flowNote = providerKey === 'mapbox'
+      ? '\n建物前への横付け固定より、次へ進みやすい車の流れを優先します。'
+      : '';
 
     confirmAndApplyRouteOrder({
       title: provider.title,
       summary: `${provider.summaryHead}で${modeLabel()}順を提案します。\n` +
         `始点: ${start.label}\n` +
         `目安距離: ${distanceText}${durationText ? ` / ${durationText}` : ''}` +
+        flowNote +
         overflowNote,
       suggested,
       noLocationItems,

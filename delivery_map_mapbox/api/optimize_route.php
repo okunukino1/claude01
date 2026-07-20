@@ -36,6 +36,7 @@ if (!is_array($input)) {
   exit;
 }
 $preserveAllPoints = !empty($input['preserve_all_points']);
+$flowPriority = !empty($input['flow_priority']);
 
 function valid_coord($value) {
   return is_numeric($value) && is_finite((float)$value);
@@ -403,7 +404,7 @@ function call_mapbox_matrix($profile, $points, $token) {
   return ['body' => $body, 'curlErr' => $curlErr, 'httpCode' => (int)$httpCode];
 }
 
-function call_mapbox_directions($profile, $points, $token) {
+function call_mapbox_directions($profile, $points, $token, $flowPriority = false) {
   $coordText = implode(';', array_map(function($p) {
     return rawurlencode((string)$p['lng']) . ',' . rawurlencode((string)$p['lat']);
   }, $points));
@@ -414,6 +415,7 @@ function call_mapbox_directions($profile, $points, $token) {
     'steps' => 'true',
     'language' => 'ja'
   ];
+  if ($flowPriority) $params['continue_straight'] = 'true';
   $url = 'https://api.mapbox.com/directions/v5/' . $profile . '/' . $coordText . '?' . http_build_query($params);
   $ch = curl_init($url);
   $headers = ['Accept: application/json'];
@@ -481,7 +483,7 @@ if ($endHint !== null) {
   $orderedPoints = array_map(function($idx) use ($matrixPoints) { return $matrixPoints[$idx]; }, $routeIndexes);
 
   $directionsPoints = array_merge([$start], $orderedPoints);
-  $directionsAttempt = call_mapbox_directions($matrixProfile, $directionsPoints, $token);
+  $directionsAttempt = call_mapbox_directions($matrixProfile, $directionsPoints, $token, $flowPriority);
   $directionsData = is_string($directionsAttempt['body']) ? json_decode($directionsAttempt['body'], true) : null;
   if ($directionsAttempt['body'] === false || $directionsAttempt['httpCode'] < 200 || $directionsAttempt['httpCode'] >= 300 || !is_array($directionsData) || (($directionsData['code'] ?? '') !== 'Ok')) {
     response_error_from_mapbox($directionsAttempt);
@@ -503,6 +505,7 @@ if ($endHint !== null) {
     'method' => 'matrix-directions-road-end',
     'allPointsPreserved' => true,
     'roadAwareEnd' => true,
+    'flowPriority' => $flowPriority,
     'orderedIds' => array_values(array_map(function($p) { return $p['id']; }, $orderedPoints)),
     'waypoints' => array_values(array_map(function($p, $idx) {
       return ['id' => $p['id'], 'waypoint_index' => $idx + 1, 'name' => '', 'location' => [$p['lng'], $p['lat']]];
@@ -543,7 +546,7 @@ if ($useMatrixRouting) {
   $routeIndexes = improve_matrix_route(nearest_neighbor_matrix_route($durations, $matrixPoints), $durations, $matrixPoints);
   $orderedPoints = array_map(function($idx) use ($matrixPoints) { return $matrixPoints[$idx]; }, $routeIndexes);
   $directionsPoints = array_merge([$start], $orderedPoints);
-  $directionsAttempt = call_mapbox_directions($profile, $directionsPoints, $token);
+  $directionsAttempt = call_mapbox_directions($profile, $directionsPoints, $token, $flowPriority);
   $directionsData = is_string($directionsAttempt['body']) ? json_decode($directionsAttempt['body'], true) : null;
   if ($directionsAttempt['body'] === false || $directionsAttempt['httpCode'] < 200 || $directionsAttempt['httpCode'] >= 300 || !is_array($directionsData) || (($directionsData['code'] ?? '') !== 'Ok')) {
     response_error_from_mapbox($directionsAttempt);
@@ -555,6 +558,7 @@ if ($useMatrixRouting) {
     'profile' => $profile,
     'method' => 'matrix-directions',
     'allPointsPreserved' => $preserveAllPoints,
+    'flowPriority' => $flowPriority,
     'orderedIds' => array_values(array_map(function($p) { return $p['id']; }, $orderedPoints)),
     'waypoints' => array_values(array_map(function($p, $idx) {
       return ['id' => $p['id'], 'waypoint_index' => $idx + 1, 'name' => '', 'location' => [$p['lng'], $p['lat']]];
@@ -566,12 +570,14 @@ if ($useMatrixRouting) {
   exit;
 }
 
-$attempt = call_mapbox_optimization($profile, $coordText, $token, true, count($orderedInput));
+$primaryUseCurb = !$flowPriority;
+$attempt = call_mapbox_optimization($profile, $coordText, $token, $primaryUseCurb, count($orderedInput));
 $data = is_string($attempt['body']) ? json_decode($attempt['body'], true) : null;
 
-// 縁側到着指定で失敗した場合は、到着側指定なしで再試行する。
+// 通常版は従来どおり縁側到着を優先する。テスト版の流れ優先時は
+// 横付け固定なしを先に試し、失敗した場合だけ従来指定へ戻す。
 if ($attempt['body'] === false || $attempt['httpCode'] < 200 || $attempt['httpCode'] >= 300 || !is_array($data) || (($data['code'] ?? '') !== 'Ok')) {
-  $fallback = call_mapbox_optimization($profile, $coordText, $token, false, count($orderedInput));
+  $fallback = call_mapbox_optimization($profile, $coordText, $token, !$primaryUseCurb, count($orderedInput));
   $fallbackData = is_string($fallback['body']) ? json_decode($fallback['body'], true) : null;
   if ($fallback['body'] !== false && $fallback['httpCode'] >= 200 && $fallback['httpCode'] < 300 && is_array($fallbackData) && (($fallbackData['code'] ?? '') === 'Ok')) {
     $attempt = $fallback;
@@ -630,6 +636,7 @@ $trip = $data['trips'][0] ?? [];
 echo json_encode([
   'ok' => true,
   'profile' => $profile,
+  'flowPriority' => $flowPriority,
   'orderedIds' => array_values(array_map(function($p) { return $p['id']; }, $positions)),
   'waypoints' => array_values($positions),
   'distance' => isset($trip['distance']) ? (float)$trip['distance'] : null,
