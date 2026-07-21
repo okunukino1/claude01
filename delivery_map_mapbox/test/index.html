@@ -1609,7 +1609,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.74</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.75</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1667,7 +1667,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.74</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.75</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2072,7 +2072,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.74';
+const APP_VERSION = 'v2026.06.24-test.75';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -6712,19 +6712,22 @@ function openEdit(id) {
   editingItemId = id;
   const d = deliveries.find(x => x.id === id);
   if (!d) return;
-  const immediateBatchReview = batchReviewEditingId === id;
+  const immediatePhotoReview = batchReviewEditingId === id;
+  const singlePhotoReview = immediatePhotoReview && batchReviewSourceById.get(id) === 'single';
   const reviewReasonText = (d.reviewReasons || []).join(' / ') || 'ピン位置を確認してください';
   const title = $('edit-modal-title');
   if (title) {
-    title.textContent = immediateBatchReview
+    title.textContent = immediatePhotoReview
       ? '伝票を確認・修正'
       : isOtherCoursePickup(d) ? '集荷先を編集' : '配送先を編集';
   }
   // 要確認バナーと伝票写真 (連写モードで要確認になったものは写真と見比べられる)
   const banner = $('edit-review-banner');
   if (banner) {
-    if (immediateBatchReview) {
-      banner.textContent = `❗連写を一時停止しました。写真と住所を確認して保存してください。理由: ${reviewReasonText}`;
+    if (immediatePhotoReview) {
+      banner.textContent = singlePhotoReview
+        ? `❗写真の処理結果を確認してください。写真と住所を確認して保存してください。理由: ${reviewReasonText}`
+        : `❗連写を一時停止しました。写真と住所を確認して保存してください。理由: ${reviewReasonText}`;
       banner.style.display = '';
     } else if (d.needsReview && !d.completed) {
       banner.textContent = `❗要確認: ${reviewReasonText}`;
@@ -6752,26 +6755,30 @@ function openEdit(id) {
   const doneBtn = $('btn-edit-done');
   doneBtn.textContent = d.completed ? '完了解除' : '完了';
   doneBtn.disabled = false;
-  doneBtn.hidden = immediateBatchReview;
+  doneBtn.hidden = immediatePhotoReview;
   const naviBtn = $('btn-edit-navi');
-  if (naviBtn) naviBtn.hidden = immediateBatchReview;
+  if (naviBtn) naviBtn.hidden = immediatePhotoReview;
   const deleteBtn = $('btn-edit-delete');
   const isPickupItem = isPickupStorageRecord(d);
-  deleteBtn.hidden = isPickupItem || immediateBatchReview;
-  deleteBtn.disabled = isPickupItem || immediateBatchReview;
+  deleteBtn.hidden = isPickupItem || immediatePhotoReview;
+  deleteBtn.disabled = isPickupItem || immediatePhotoReview;
   const cancelBtn = $('btn-edit-cancel');
-  if (cancelBtn) cancelBtn.textContent = immediateBatchReview ? '連写を終了' : 'キャンセル';
+  if (cancelBtn) cancelBtn.textContent = immediatePhotoReview
+    ? (singlePhotoReview ? '後で確認' : '連写を終了')
+    : 'キャンセル';
   openModal('modal-edit');
 }
 
 function cancelEditedItem() {
   const cancelledId = editingItemId;
-  const immediateBatchReview = !!cancelledId && batchReviewEditingId === cancelledId;
+  const immediatePhotoReview = !!cancelledId && batchReviewEditingId === cancelledId;
   closeModal('modal-edit');
   editingItemId = null;
-  if (!immediateBatchReview) return;
+  if (!immediatePhotoReview) return;
 
   batchReviewEditingId = null;
+  batchReviewSourceById.delete(cancelledId);
+  batchReviewQueue.forEach(id => batchReviewSourceById.delete(id));
   batchReviewQueue.length = 0;
   batchReviewResumeNativeCamera = false;
   if (batchPhotoMode) {
@@ -6814,7 +6821,7 @@ async function reGeocodeEditedItem() {
   const d = deliveries.find(x => x.id === editingItemId);
   if (!d) return;
   const editedId = editingItemId;
-  const immediateBatchReview = batchReviewEditingId === editedId;
+  const immediatePhotoReview = batchReviewEditingId === editedId;
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
   const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
@@ -6885,7 +6892,7 @@ async function reGeocodeEditedItem() {
   editingItemId = null;
   const message = result.approx ? '概算位置で更新しました' : '住所検索でピン位置を更新しました';
   showToast(locationSynced ? message : `${message}（固定位置の共有保存は未完了）`, !locationSynced);
-  if (immediateBatchReview) await finishImmediateBatchReview(editedId);
+  if (immediatePhotoReview) await finishImmediateBatchReview(editedId);
 }
 
 async function saveEditedItem() {
@@ -6893,7 +6900,7 @@ async function saveEditedItem() {
   const d = deliveries.find(x => x.id === editingItemId);
   if (!d) return;
   const editedId = editingItemId;
-  const immediateBatchReview = batchReviewEditingId === editedId;
+  const immediatePhotoReview = batchReviewEditingId === editedId;
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
   const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
@@ -6925,7 +6932,7 @@ async function saveEditedItem() {
     hideLoading();
     if (geocodeResult) {
       locationChanged = true;
-    } else if (immediateBatchReview) {
+    } else if (immediatePhotoReview) {
       showToast('住所が見つかりませんでした。伝票を見て住所を直してください', true);
       return;
     } else {
@@ -6976,7 +6983,7 @@ async function saveEditedItem() {
   closeModal('modal-edit');
   editingItemId = null;
   showToast(locationSynced ? '更新しました' : '更新しました（固定位置の共有保存は未完了）', !locationSynced);
-  if (immediateBatchReview) await finishImmediateBatchReview(editedId);
+  if (immediatePhotoReview) await finishImmediateBatchReview(editedId);
 }
 
 function deleteEditedItem() {
@@ -7689,14 +7696,23 @@ async function resolveDestinationAddress(ocrData, primaryAddress) {
 let batchPhotoMode = false;
 const batchStats = { pending: 0, added: 0, skipped: 0, failed: 0, review: 0, stacked: 0 };
 const batchReviewQueue = [];
+const batchReviewSourceById = new Map();
 let batchReviewEditingId = null;
 let batchReviewTransitioning = false;
 let batchReviewResumeNativeCamera = false;
+const singlePhotoQueue = [];
+let singlePhotoWorkerRunning = false;
+let singlePhotoPending = 0;
 
 function updateBatchPhotoUi() {
   const btn = $('btn-add-photo');
   if (btn) {
-    btn.textContent = '📷 1枚';
+    btn.textContent = singlePhotoPending > 0 ? `📷 1枚 (${singlePhotoPending})` : '📷 1枚';
+    const label = singlePhotoPending > 0
+      ? `1枚撮影。写真${singlePhotoPending}枚をバックグラウンド処理中`
+      : '1枚撮影';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
   }
   const batchBtn = $('btn-add-batch-photo');
   if (batchBtn) {
@@ -7743,6 +7759,12 @@ async function presentNextBatchReview() {
       if (deliveries.some(d => d.id === candidate && d.needsReview && !d.completed)) nextId = candidate;
     }
     if (nextId) {
+      const toast = $('toast');
+      if (toast) {
+        toast.classList.remove('show');
+        toast.style.display = 'none';
+        requestAnimationFrame(() => { toast.style.display = ''; });
+      }
       batchReviewEditingId = nextId;
       openEdit(nextId);
     }
@@ -7754,9 +7776,10 @@ async function presentNextBatchReview() {
   }
 }
 
-function queueImmediateBatchReview(id) {
+function queueImmediateBatchReview(id, options = {}) {
   if (!id || batchReviewEditingId === id || batchReviewQueue.includes(id)) return;
   if (nativeCameraOpen && !nativeCameraSingleShot) batchReviewResumeNativeCamera = true;
+  batchReviewSourceById.set(id, options.source === 'single' ? 'single' : 'batch');
   batchReviewQueue.push(id);
   presentNextBatchReview().catch(e => console.warn('batch review failed', e));
 }
@@ -7765,9 +7788,11 @@ async function finishImmediateBatchReview(id, options = {}) {
   if (batchReviewEditingId !== id) return;
   const resume = options.resume !== false;
   batchReviewEditingId = null;
+  batchReviewSourceById.delete(id);
   releaseReviewPhoto(id);
 
   if (!resume) {
+    batchReviewQueue.forEach(queuedId => batchReviewSourceById.delete(queuedId));
     batchReviewQueue.length = 0;
     batchReviewResumeNativeCamera = false;
     return;
@@ -7809,7 +7834,7 @@ function nativeCameraPlugin() {
 }
 
 let nativeCameraOpen = false;
-let nativeCameraSingleShot = false; // true = 1枚撮ったら閉じてプレビュー画面へ
+let nativeCameraSingleShot = false; // true = 1枚撮ったら閉じて地図へ戻り、裏でピン処理
 let nativeCaptureInFlight = false;
 let nativeCameraReadyTimer = null;
 let nativeCameraFeedbackTimer = null;
@@ -7971,6 +7996,7 @@ async function captureNativeBatchPhoto() {
   const shutter = $('native-camera-shutter');
   const singleShot = nativeCameraSingleShot;
   const startedAt = Date.now();
+  let completedSingleShot = false;
   nativeCaptureInFlight = true;
   if (shutter) shutter.disabled = true;
   beginNativeCaptureFeedback();
@@ -7981,9 +8007,11 @@ async function captureNativeBatchPhoto() {
     const blob = base64ToBlob(b64, 'image/jpeg');
     completeNativeCaptureFeedback();
     if (singleShot) {
-      // 1枚撮影モード: カメラを閉じて、いつものプレビュー→読み取りの流れへ
+      // 1枚撮影モード: 先に地図へ戻し、OCR・住所検索・ピン追加は裏で続ける
       await closeNativeBatchCamera();
-      openPhotoPreview(blob);
+      completedSingleShot = true;
+      nativeCaptureInFlight = false;
+      enqueueSinglePhotoForBackground(blob);
       return;
     }
     processBatchPhoto(blob, { immediateReview: true }); // awaitしない — カメラはそのまま次の撮影へ
@@ -7992,12 +8020,14 @@ async function captureNativeBatchPhoto() {
     showNativeCameraFeedback('撮影できませんでした', 900);
     showToast('撮影失敗: ' + ((e && e.message) || e), true);
   } finally {
-    const cooldown = Math.max(0, NATIVE_CAPTURE_MIN_INTERVAL_MS - (Date.now() - startedAt));
-    if (cooldown) await new Promise(resolve => setTimeout(resolve, cooldown));
-    nativeCaptureInFlight = false;
-    if (shutter) {
-      shutter.classList.remove('is-capturing');
-      shutter.disabled = !nativeCameraOpen;
+    if (!completedSingleShot) {
+      const cooldown = Math.max(0, NATIVE_CAPTURE_MIN_INTERVAL_MS - (Date.now() - startedAt));
+      if (cooldown) await new Promise(resolve => setTimeout(resolve, cooldown));
+      nativeCaptureInFlight = false;
+      if (shutter) {
+        shutter.classList.remove('is-capturing');
+        shutter.disabled = !nativeCameraOpen;
+      }
     }
   }
 }
@@ -8072,9 +8102,43 @@ function toggleBatchPhotoMode(options = {}) {
   setBatchPhotoMode(!batchPhotoMode, options);
 }
 
-async function processBatchPhoto(file, options = {}) {
-  batchStats.pending++;
+function enqueueSinglePhotoForBackground(file) {
+  if (!file) return;
+  singlePhotoQueue.push(file);
+  singlePhotoPending++;
   updateBatchPhotoUi();
+  showToast(`📷 写真を受け付けました。地図で次を撮れます（裏で処理中${singlePhotoPending}件）`);
+  drainSinglePhotoQueue().catch(e => console.warn('single photo queue failed', e));
+}
+
+async function drainSinglePhotoQueue() {
+  if (singlePhotoWorkerRunning) return;
+  singlePhotoWorkerRunning = true;
+  try {
+    while (singlePhotoQueue.length) {
+      const file = singlePhotoQueue.shift();
+      try {
+        await processBatchPhoto(file, {
+          immediateReview: true,
+          reviewSource: 'single',
+          trackBatchStats: false
+        });
+      } finally {
+        singlePhotoPending = Math.max(0, singlePhotoPending - 1);
+        updateBatchPhotoUi();
+      }
+    }
+  } finally {
+    singlePhotoWorkerRunning = false;
+  }
+}
+
+async function processBatchPhoto(file, options = {}) {
+  const trackBatchStats = options.trackBatchStats !== false;
+  if (trackBatchStats) {
+    batchStats.pending++;
+    updateBatchPhotoUi();
+  }
   try {
     // 向きが変でも自動で回転して読み取り直す
     const batchImageProfile = {
@@ -8112,7 +8176,7 @@ async function processBatchPhoto(file, options = {}) {
       saveDeliveries();
       renderMarkers();
       renderList();
-      batchStats.stacked++;
+      if (trackBatchStats) batchStats.stacked++;
       showToast(`📦 複数個口: ${address} (${dupActive.packageCount}個)`);
       return { status: 'stacked', id: dupActive.id, address };
     }
@@ -8149,22 +8213,27 @@ async function processBatchPhoto(file, options = {}) {
     if (reviewReasons.length > 0) {
       // 要確認: 伝票写真を保持して、編集画面で見比べられるようにする
       try { reviewPhotoUrls.set(newId, URL.createObjectURL(file)); } catch (e) {}
-      batchStats.review++;
-      showToast(`❗要確認: ${address} (${reviewReasons[0]})`, true);
-      if (options.immediateReview) queueImmediateBatchReview(newId);
+      if (trackBatchStats) batchStats.review++;
+      if (options.immediateReview) {
+        queueImmediateBatchReview(newId, { source: options.reviewSource });
+      } else {
+        showToast(`❗要確認: ${address} (${reviewReasons[0]})`, true);
+      }
       return { status: 'review', id: newId, address, reviewReasons };
     } else {
-      batchStats.added++;
+      if (trackBatchStats) batchStats.added++;
       showToast(`✅ 追加: ${address}${resolved.swapped ? ' (発送元側を除外)' : ''}${data.autoRotated ? ' (向き自動補正)' : ''}`);
       return { status: 'added', id: newId, address };
     }
   } catch (e) {
-    batchStats.failed++;
+    if (trackBatchStats) batchStats.failed++;
     showToast(`❌ 読み取り失敗 — その伝票を撮り直してください (${e.message})`, true);
     return { status: 'failed', error: (e && e.message) || String(e) };
   } finally {
-    batchStats.pending--;
-    updateBatchPhotoUi();
+    if (trackBatchStats) {
+      batchStats.pending--;
+      updateBatchPhotoUi();
+    }
   }
 }
 
@@ -11029,7 +11098,7 @@ $('file-photo').addEventListener('change', (e) => {
       }
     }, 300);
   } else {
-    openPhotoPreview(file);
+    enqueueSinglePhotoForBackground(file);
   }
 });
 $('menu-batch-photo').addEventListener('click', toggleBatchPhotoMode);
