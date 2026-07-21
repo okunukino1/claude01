@@ -597,6 +597,24 @@
     border-color: var(--accent);
     background: white;
   }
+  .list-search select {
+    flex: 0 1 140px;
+    width: 140px;
+    min-width: 116px;
+    min-height: 36px;
+    border: 1.5px solid #b8b29f;
+    border-radius: 6px;
+    padding: 0 6px;
+    font-size: 13px;
+    font-weight: 700;
+    background: #f7f5ec;
+    color: var(--ink);
+  }
+  .list-search select:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: white;
+  }
   .list-search .search-clear {
     width: 40px;
     min-height: 36px;
@@ -1515,7 +1533,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.72</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.73</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1558,6 +1576,9 @@
   </div>
   <div class="list-search" id="list-search">
     <input type="search" id="list-search-input" placeholder="🔍 リスト内検索（住所・名前・メモ・番号）" autocomplete="off" enterkeyhint="search" aria-label="リスト内検索">
+    <select id="list-time-window-filter" aria-label="時間指定で絞り込み">
+      <option value="">⏰ 全時間帯</option>
+    </select>
     <button class="search-clear" id="btn-list-search-clear" type="button" aria-label="検索をクリア">✕</button>
   </div>
   <div class="list-body" id="list-body"></div>
@@ -1570,7 +1591,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.72</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.73</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1959,7 +1980,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.72';
+const APP_VERSION = 'v2026.06.24-test.73';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2016,6 +2037,8 @@ const NATIVE_CAPTURE_MIN_INTERVAL_MS = 900;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
+const LIST_TIME_WINDOW_FILTER_TIMED = '__timed__';
+const LIST_TIME_WINDOW_FILTER_NONE = '__none__';
 const TIME_WINDOW_DEFAULTS = [
   { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
   { id: '14-16', label: '14時〜16時', keywords: '14時〜16時,14時～16時,14:00-16:00,14-16,14時から16時', color: '#a855f7' },
@@ -2192,6 +2215,7 @@ let gpsInitialCenterStartedAt = 0;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
 let gsiOverlayVisible = localStorage.getItem(GSI_OVERLAY_KEY) !== '0';
 let listSearchQuery = '';
+let listTimeWindowFilter = '';
 let optimizedRouteOrderedIds = [];
 let nextSegmentUpdateId = 0;
 let nextSegmentFailureToastAt = 0;
@@ -3084,6 +3108,7 @@ function updateModeUi() {
   });
   const title = document.querySelector('.list-header h2');
   if (title) title.textContent = `${modeLabel()}リスト`;
+  populateListTimeWindowFilter();
   updatePickupListTabs();
 }
 
@@ -3160,6 +3185,7 @@ function loadTimeWindowSettings() {
 
 function saveTimeWindowSettings(settings) {
   localStorage.setItem(TIME_WINDOW_SETTINGS_KEY, JSON.stringify(settings));
+  populateListTimeWindowFilter();
 }
 
 function normalizeTimeWindowOverride(value) {
@@ -3191,6 +3217,52 @@ function timeWindowForDelivery(d) {
   if (!override || override === 'none') return null;
   const settings = loadTimeWindowSettings();
   return settings.find(item => item.id === override) || null;
+}
+
+function timeWindowSearchValues(setting) {
+  if (!setting) return [];
+  const values = [setting.id, setting.label, ...timeWindowKeywords(setting)].filter(Boolean);
+  const normalized = normalizeTimeWindowText(values.join(','));
+  const range = normalized.match(/(\d{1,2})(?:時|:00)?-(\d{1,2})(?:時|:00)?/);
+  if (range) {
+    const start = Number(range[1]);
+    const end = Number(range[2]);
+    if (start >= 13 && start <= 23 && end >= 13 && end <= 24) {
+      const start12 = start - 12;
+      const end12 = end === 24 ? 12 : end - 12;
+      values.push(
+        `${start12}時〜${end12}時`,
+        `${start12}時～${end12}時`,
+        `${start12}時-${end12}時`,
+        `午後${start12}時〜午後${end12}時`
+      );
+    }
+  }
+  return [...new Set(values)];
+}
+
+function normalizeListTimeWindowFilter(value) {
+  const filter = String(value || '').trim();
+  if (!filter) return '';
+  if (filter === LIST_TIME_WINDOW_FILTER_TIMED || filter === LIST_TIME_WINDOW_FILTER_NONE) return filter;
+  return loadTimeWindowSettings().some(item => item.id === filter) ? filter : '';
+}
+
+function populateListTimeWindowFilter() {
+  const select = $('list-time-window-filter');
+  if (!select) return;
+  listTimeWindowFilter = normalizeListTimeWindowFilter(listTimeWindowFilter);
+  const options = [
+    '<option value="">⏰ 全時間帯</option>',
+    `<option value="${LIST_TIME_WINDOW_FILTER_TIMED}">時間指定あり</option>`,
+    `<option value="${LIST_TIME_WINDOW_FILTER_NONE}">指定なし</option>`,
+    ...loadTimeWindowSettings().map(item =>
+      `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`)
+  ];
+  select.innerHTML = options.join('');
+  select.value = listTimeWindowFilter;
+  select.style.display = appMode === 'delivery' ? '' : 'none';
+  updateListSearchUi();
 }
 
 function timeWindowSelectOptions(selectedId) {
@@ -5037,6 +5109,7 @@ function renderMarkers() {
   if (!map) return;
   const modeKey = LABEL_MODES[labelModeIndex].key;
   const searchQuery = currentListSearchQuery();
+  const timeWindowFilter = currentListTimeWindowFilter();
   const visibleDeliveries = deliveries.filter(isVisibleInCurrentMode);
   lastVisibleDeliveries = visibleDeliveries;
   const overlapInfo = buildMarkerOverlapInfo(visibleDeliveries);
@@ -5064,7 +5137,7 @@ function renderMarkers() {
       marker.setLngLat([d.lng, d.lat]);
     }
     const wrapper = marker.getElement();
-    wrapper.style.display = (searchQuery && !deliveryMatchesSearch(d, idx, searchQuery)) ? 'none' : '';
+    wrapper.style.display = deliveryMatchesListFilters(d, idx, searchQuery, timeWindowFilter) ? '' : 'none';
     updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap);
   });
 }
@@ -6063,9 +6136,15 @@ function currentListSearchQuery() {
   return normalizeSearchText(listSearchQuery);
 }
 
+function currentListTimeWindowFilter() {
+  return appMode === 'delivery' ? normalizeListTimeWindowFilter(listTimeWindowFilter) : '';
+}
+
 function deliveryMatchesSearch(d, idx, query) {
   if (!query) return true;
   const parts = [d.address, d.formatted, d.note, d.completedBy, displayNumber(d, idx)];
+  const timeWindow = timeWindowForDelivery(d);
+  if (timeWindow) parts.push(...timeWindowSearchValues(timeWindow));
   if (isPickupBackedDelivery(d)) {
     const disp = pickupListDisplay(d);
     if (disp) parts.push(disp.company, disp.detail);
@@ -6073,12 +6152,42 @@ function deliveryMatchesSearch(d, idx, query) {
   return normalizeSearchText(parts.filter(Boolean).join(' ')).includes(query);
 }
 
+function deliveryMatchesTimeWindowFilter(d, filter) {
+  if (!filter) return true;
+  const timeWindow = timeWindowForDelivery(d);
+  if (filter === LIST_TIME_WINDOW_FILTER_TIMED) return !!timeWindow;
+  if (filter === LIST_TIME_WINDOW_FILTER_NONE) return !timeWindow;
+  return !!timeWindow && timeWindow.id === filter;
+}
+
+function deliveryMatchesListFilters(d, idx, query, timeWindowFilter) {
+  return deliveryMatchesSearch(d, idx, query) &&
+    deliveryMatchesTimeWindowFilter(d, timeWindowFilter);
+}
+
+function hasActiveListFilters() {
+  return !!(currentListSearchQuery() || currentListTimeWindowFilter());
+}
+
+function updateListSearchUi() {
+  const box = $('list-search');
+  if (box) box.classList.toggle('has-query', hasActiveListFilters());
+}
+
 function setListSearchQuery(value) {
   const next = String(value || '');
   if (next === listSearchQuery) return;
   listSearchQuery = next;
-  const box = $('list-search');
-  if (box) box.classList.toggle('has-query', !!currentListSearchQuery());
+  updateListSearchUi();
+  renderList();
+  renderMarkers();
+}
+
+function setListTimeWindowFilter(value) {
+  const next = normalizeListTimeWindowFilter(value);
+  if (next === listTimeWindowFilter) return;
+  listTimeWindowFilter = next;
+  updateListSearchUi();
   renderList();
   renderMarkers();
 }
@@ -6086,9 +6195,11 @@ function setListSearchQuery(value) {
 function clearListSearch() {
   const input = $('list-search-input');
   if (input) input.value = '';
+  const timeWindowSelect = $('list-time-window-filter');
+  if (timeWindowSelect) timeWindowSelect.value = '';
   listSearchQuery = '';
-  const box = $('list-search');
-  if (box) box.classList.remove('has-query');
+  listTimeWindowFilter = '';
+  updateListSearchUi();
 }
 
 function renderList() {
@@ -6107,13 +6218,15 @@ function renderList() {
         .filter(entry => isVisibleInCurrentMode(entry.delivery));
 
   const query = currentListSearchQuery();
-  const searchedItems = query
-    ? listItems.filter(entry => deliveryMatchesSearch(entry.delivery, entry.index, query))
+  const timeWindowFilter = currentListTimeWindowFilter();
+  const hasFilters = !!(query || timeWindowFilter);
+  const searchedItems = hasFilters
+    ? listItems.filter(entry => deliveryMatchesListFilters(entry.delivery, entry.index, query, timeWindowFilter))
     : listItems;
 
   if (searchedItems.length === 0) {
-    const emptyMessage = query
-      ? `「${escapeHtml(listSearchQuery.trim())}」に一致する項目がありません`
+    const emptyMessage = hasFilters
+      ? '検索条件に一致する項目がありません'
       : appMode === 'pickup'
         ? (selectedPickupTab === PICKUP_LIST_TAB_SPOT ? 'スポット集荷はありません' : '定期集荷はありません')
         : '配送先がありません<br>下のボタンから追加してください';
@@ -6125,7 +6238,7 @@ function renderList() {
   const syncText = appMode === 'pickup' && pickupLastSyncedAt
     ? ` / 同期 ${formatTime(pickupLastSyncedAt)}`
     : '';
-  stat.textContent = query
+  stat.textContent = hasFilters
     ? `検索 ${searchedItems.length}件 / 全${listItems.length}件`
     : `${done}/${listItems.length}件 完了${syncText}`;
 
@@ -9271,7 +9384,8 @@ async function openPickupCourseFromNotification() {
 }
 
 function isRoutableDelivery(d) {
-  return d && !d.completed && Number.isFinite(Number(d.lat)) && Number.isFinite(Number(d.lng));
+  return !!(d && !d.completed && d.lat !== null && d.lat !== '' && d.lng !== null && d.lng !== '' &&
+    Number.isFinite(Number(d.lat)) && Number.isFinite(Number(d.lng)));
 }
 
 function routePoint(d) {
@@ -9784,23 +9898,42 @@ function shortRoutePreview(route) {
 }
 
 function collectRouteCandidates() {
+  const pendingItems = deliveries.filter(d => d && !d.completed);
+  const timeWindowItems = [];
+  const ordinaryItems = [];
+  pendingItems.forEach(item => {
+    if (timeWindowForDelivery(item)) timeWindowItems.push(item);
+    else ordinaryItems.push(item);
+  });
   return {
-    routeItems: deliveries.filter(isRoutableDelivery),
-    noLocationItems: deliveries.filter(d => d && !d.completed && !isRoutableDelivery(d)),
+    routeItems: ordinaryItems.filter(isRoutableDelivery),
+    timeWindowItems,
+    noLocationItems: ordinaryItems.filter(d => !isRoutableDelivery(d)),
     completedItems: deliveries.filter(d => d && d.completed)
   };
 }
 
-function buildRouteTailNote(noLocationItems, completedItems) {
+function buildRouteTailNote(timeWindowItems, noLocationItems, completedItems) {
   return [
+    timeWindowItems.length ? `時間指定 ${timeWindowItems.length}件はコース計算から外し、通常配送の後ろに残します。` : '',
     noLocationItems.length ? `位置未設定 ${noLocationItems.length}件は後ろに残します。` : '',
     completedItems.length ? `完了済み ${completedItems.length}件は最後に残します。` : ''
   ].filter(Boolean).join('\n');
 }
 
+function showInsufficientRouteCandidates(action, timeWindowItems) {
+  const subject = timeWindowItems.length
+    ? `時間指定を除いた${modeLabel()}先`
+    : `${modeLabel()}先`;
+  const note = timeWindowItems.length
+    ? `（時間指定 ${timeWindowItems.length}件はコース計算の対象外です）`
+    : '';
+  showToast(`${subject}が2件以上ある時に${action}できます${note}`, true);
+}
+
 // 並べ替え確定処理（おすすめ順・車用・Google車用で共通）
-function confirmAndApplyRouteOrder({ title, summary, suggested, noLocationItems, completedItems, geometry = null, clearGeometry = false, successMessage }) {
-  const tailNote = buildRouteTailNote(noLocationItems, completedItems);
+function confirmAndApplyRouteOrder({ title, summary, suggested, timeWindowItems = [], noLocationItems = [], completedItems = [], geometry = null, clearGeometry = false, successMessage }) {
+  const tailNote = buildRouteTailNote(timeWindowItems, noLocationItems, completedItems);
   showConfirm(
     title,
     summary + '\n\n' +
@@ -9809,7 +9942,7 @@ function confirmAndApplyRouteOrder({ title, summary, suggested, noLocationItems,
     (tailNote ? `\n\n${tailNote}` : '') +
     '\n\nこの順番に並べ替えますか？',
     () => {
-      deliveries = suggested.concat(noLocationItems, completedItems);
+      deliveries = suggested.concat(timeWindowItems, noLocationItems, completedItems);
       activeDeliveryId = suggested[0] ? suggested[0].id : null;
       const orderedIds = suggested.map(d => d.id);
       try {
@@ -9836,10 +9969,10 @@ function confirmAndApplyRouteOrder({ title, summary, suggested, noLocationItems,
 
 function optimizeRouteOrder() {
   closeModal('modal-menu');
-  const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
+  const { routeItems, timeWindowItems, noLocationItems, completedItems } = collectRouteCandidates();
 
   if (routeItems.length < 2) {
-    showToast(`${modeLabel()}先が2件以上ある時に並べ替えできます`, true);
+    showInsufficientRouteCandidates('並べ替え', timeWindowItems);
     return;
   }
 
@@ -9855,6 +9988,7 @@ function optimizeRouteOrder() {
       `目安距離: ${formatKm(originalDistance)} → ${formatKm(suggestedDistance)}` +
       (diff > 0 ? ` (${formatKm(diff)}短縮)` : ''),
     suggested,
+    timeWindowItems,
     noLocationItems,
     completedItems,
     clearGeometry: true,
@@ -9862,7 +9996,7 @@ function optimizeRouteOrder() {
   });
 }
 
-function runRecommendedRouteOrder({ start, routeItems, areaGroups, noLocationItems, completedItems }) {
+function runRecommendedRouteOrder({ start, routeItems, areaGroups, timeWindowItems, noLocationItems, completedItems }) {
   const result = buildAreaPreservingRecommendedRoute(start, areaGroups);
   const currentMetrics = routeQualityMetrics(start, routeItems);
   const unchanged = result.suggested.map(item => item.id).join('|') === routeItems.map(item => item.id).join('|');
@@ -9879,6 +10013,7 @@ function runRecommendedRouteOrder({ start, routeItems, areaGroups, noLocationIte
       (unchanged ? '\n現在の順番が最良候補でした。' : '') +
       '\n道路・一方通行・渋滞は未考慮です。実際の走行は各区間のナビで確認してください。',
     suggested: result.suggested,
+    timeWindowItems,
     noLocationItems,
     completedItems,
     clearGeometry: true,
@@ -9888,10 +10023,10 @@ function runRecommendedRouteOrder({ start, routeItems, areaGroups, noLocationIte
 
 function optimizeRecommendedRouteOrder() {
   closeModal('modal-menu');
-  const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
+  const { routeItems, timeWindowItems, noLocationItems, completedItems } = collectRouteCandidates();
 
   if (routeItems.length < 2) {
-    showToast(`${modeLabel()}先が2件以上ある時に直線距離を比較できます`, true);
+    showInsufficientRouteCandidates('直線距離を比較', timeWindowItems);
     return;
   }
 
@@ -9900,11 +10035,13 @@ function optimizeRecommendedRouteOrder() {
     title: '直線距離で比較するエリア順の相談',
     start,
     routeItems,
-    planNote: '選んだエリア順を固定し、その中だけで距離と折り返しを比較します。',
+    planNote: '選んだエリア順を固定し、その中だけで距離と折り返しを比較します。' +
+      (timeWindowItems.length ? ` 時間指定 ${timeWindowItems.length}件はコース計算から外します。` : ''),
     onConfirm: areaGroups => runRecommendedRouteOrder({
       start,
       routeItems,
       areaGroups,
+      timeWindowItems,
       noLocationItems,
       completedItems
     })
@@ -10196,7 +10333,7 @@ function roadBlockStopLabel(item) {
   return extractBuilding(item.note) || extractBanchi(item.address) || item.address || '配送先';
 }
 
-async function runRoadBlockRouteOrder({ start, routeItems, areaGroups, noLocationItems, completedItems }) {
+async function runRoadBlockRouteOrder({ start, routeItems, areaGroups, timeWindowItems, noLocationItems, completedItems }) {
   const provider = CAR_ROUTE_PROVIDERS.mapbox;
   showLoading('エリアごとの道路順を計算中...');
   try {
@@ -10224,6 +10361,7 @@ async function runRoadBlockRouteOrder({ start, routeItems, areaGroups, noLocatio
         (omittedAreas ? `\n...ほか ${omittedAreas}エリア` : '') +
         '\n\n横断回数を完全に保証するものではないため、実走行では次区間のナビも確認してください。',
       suggested: result.suggested,
+      timeWindowItems,
       noLocationItems,
       completedItems,
       clearGeometry: true,
@@ -10237,9 +10375,9 @@ async function runRoadBlockRouteOrder({ start, routeItems, areaGroups, noLocatio
 
 function optimizeRoadBlockRouteOrder() {
   closeModal('modal-menu');
-  const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
+  const { routeItems, timeWindowItems, noLocationItems, completedItems } = collectRouteCandidates();
   if (routeItems.length < 2) {
-    showToast(`${modeLabel()}先が2件以上ある時に道路順を計算できます`, true);
+    showInsufficientRouteCandidates('道路順を計算', timeWindowItems);
     return;
   }
 
@@ -10261,11 +10399,13 @@ function optimizeRoadBlockRouteOrder() {
     title: '道路優先配送順の相談',
     start,
     routeItems,
-    planNote: `選んだエリア順を固定し、Mapboxで約${apiCalls}段階の道路計算を行います。建物への横付け固定より、次へ進みやすい向きを優先します。2件から100件程度まで同じ機能を使えます。`,
+    planNote: `選んだエリア順を固定し、Mapboxで約${apiCalls}段階の道路計算を行います。建物への横付け固定より、次へ進みやすい向きを優先します。2件から100件程度まで同じ機能を使えます。` +
+      (timeWindowItems.length ? ` 時間指定 ${timeWindowItems.length}件はコース計算から外します。` : ''),
     onConfirm: areaGroups => runRoadBlockRouteOrder({
       start,
       routeItems,
       areaGroups,
+      timeWindowItems,
       noLocationItems,
       completedItems
     })
@@ -10276,10 +10416,10 @@ async function optimizeCarRouteOrderWith(providerKey) {
   const provider = CAR_ROUTE_PROVIDERS[providerKey];
   if (!provider) return;
   closeModal('modal-menu');
-  const { routeItems, noLocationItems, completedItems } = collectRouteCandidates();
+  const { routeItems, timeWindowItems, noLocationItems, completedItems } = collectRouteCandidates();
 
   if (routeItems.length < 2) {
-    showToast(`${modeLabel()}先が2件以上ある時に${provider.shortName}ルート検索できます`, true);
+    showInsufficientRouteCandidates(`${provider.shortName}ルート検索`, timeWindowItems);
     return;
   }
 
@@ -10324,6 +10464,7 @@ async function optimizeCarRouteOrderWith(providerKey) {
         flowNote +
         overflowNote,
       suggested,
+      timeWindowItems,
       noLocationItems,
       completedItems,
       geometry: data.geometry || null,
@@ -10764,6 +10905,9 @@ $('list-search-input').addEventListener('input', (e) => {
 });
 $('list-search-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') e.target.blur();
+});
+$('list-time-window-filter').addEventListener('change', (e) => {
+  setListTimeWindowFilter(e.target.value);
 });
 $('btn-list-search-clear').addEventListener('click', () => {
   clearListSearch();
