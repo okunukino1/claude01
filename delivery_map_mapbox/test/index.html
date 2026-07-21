@@ -536,6 +536,64 @@
   }
   body.placing-mode .placement-banner { display: block; }
 
+  .temporary-guidance-banner {
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--list-height) + var(--native-app-bottom-inset) + env(safe-area-inset-bottom) + 8px);
+    width: min(520px, calc(100vw - 16px));
+    transform: translateX(-50%);
+    z-index: 35;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 6px 7px 6px 10px;
+    border: 3px solid #f97316;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+    transition: bottom 0.25s ease;
+  }
+  body:not(.work-mode-delivery) .temporary-guidance-banner {
+    bottom: calc(var(--list-height) + var(--native-app-bottom-inset) + env(safe-area-inset-bottom) + 62px);
+  }
+  .temporary-guidance-banner[hidden] { display: none; }
+  .temporary-guidance-copy {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    line-height: 1.25;
+  }
+  .temporary-guidance-copy span {
+    color: #c2410c;
+    font-size: 10px;
+    font-weight: 800;
+  }
+  .temporary-guidance-copy strong {
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .temporary-guidance-banner button {
+    flex: 0 0 auto;
+    min-width: 40px;
+    min-height: 36px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .temporary-guidance-banner button:disabled { opacity: 0.5; }
+  #btn-temporary-guidance-clear {
+    background: #f97316;
+    color: #fff;
+  }
+
   /* ===== List section ===== */
   .list-section {
     position: fixed;
@@ -847,6 +905,40 @@
   border-color: #111827;
   box-shadow: 0 0 0 3px #fff, 0 0 0 6px #111827, 0 3px 7px rgba(0,0,0,0.45);
 }
+.delivery-marker.temporary-guidance .delivery-label {
+  border: 3px solid #f97316;
+  background: #fff7ed;
+}
+.delivery-pin .temporary-guidance-pin-badge {
+  position: absolute;
+  right: -12px;
+  bottom: 1px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border: 2px solid #fff;
+  border-radius: 5px;
+  background: #f97316;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  z-index: 5;
+  pointer-events: none;
+}
+.delivery-item.temporary-guidance:not(.done) {
+  background: #fff7ed;
+  box-shadow: inset 5px 0 0 #f97316;
+}
+.temporary-guidance-list-badge {
+  display: inline-block;
+  margin-top: 3px;
+  color: #c2410c;
+  font-size: 11px;
+  font-weight: 800;
+}
 .time-window-settings-list {
   display: flex;
   flex-direction: column;
@@ -1071,6 +1163,23 @@
   .modal-actions button.go {
     background: white;
     color: var(--ink);
+  }
+  .temporary-guidance-action {
+    width: 100%;
+    min-height: 44px;
+    margin-top: 12px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    background: #f97316;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .temporary-guidance-action.active {
+    background: #fff;
+    color: #c2410c;
+    border-color: #f97316;
   }
   .photo-preview {
     width: 100%;
@@ -1609,7 +1718,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.75</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.76</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1628,6 +1737,15 @@
 </div>
 
 <div class="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
+
+<div class="temporary-guidance-banner" id="temporary-guidance-banner" role="status" aria-live="polite" hidden>
+  <div class="temporary-guidance-copy">
+    <span>一時案内中</span>
+    <strong id="temporary-guidance-target"></strong>
+  </div>
+  <button id="btn-temporary-guidance-refresh" type="button" title="現在地から案内線を引き直す" aria-label="現在地から案内線を引き直す">↻</button>
+  <button id="btn-temporary-guidance-clear" type="button" title="元の配送コースへ戻す">↩ 戻す</button>
+</div>
 
 <div class="add-bar input-only-control">
   <button id="btn-add-photo" type="button">📷 1枚</button>
@@ -1667,7 +1785,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.75</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.76</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1993,6 +2111,7 @@
     <input type="time" id="edit-exact-time" step="300">
     <label>荷物の個数 (複数個口)</label>
     <input type="number" id="edit-package-count" min="1" step="1" inputmode="numeric">
+    <button class="temporary-guidance-action" id="btn-edit-temporary-guidance" type="button">➜ このピンへ一時案内</button>
     <div class="modal-actions">
       <button class="done" id="btn-edit-done" type="button">完了</button>
       <button class="go" id="btn-edit-navi" type="button">ナビ</button>
@@ -2072,7 +2191,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.75';
+const APP_VERSION = 'v2026.06.24-test.76';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2316,6 +2435,8 @@ let nextSegmentUpdateId = 0;
 let nextSegmentFailureToastAt = 0;
 let lastFlowGuidance = null;
 let lastFlowNoticeKey = '';
+let temporaryGuidanceTargetId = null;
+let temporaryGuidanceBusy = false;
 let recognition = null;
 let mapStyleLoaded = false;
 
@@ -2842,6 +2963,7 @@ function showCachedRegularPickupCourse(sheetName) {
     String(item.spotPickupDate || '').replace(/\D/g, '').slice(0, 8) === todayDigits
   ));
   if (cached.length === 0 && knownTodaySpots.length === 0) return false;
+  clearTemporaryGuidance({ resume: false, render: false, silent: true });
   deliveries = hideRegular ? [...knownTodaySpots] : [...cached, ...knownTodaySpots];
   activeDeliveryId = null;
   saveDeliveries();
@@ -3244,6 +3366,7 @@ async function switchAppMode(mode, showMessage = true, options = {}) {
   localStorage.setItem(APP_MODE_KEY, appMode);
   activeDeliveryId = null;
   clearListSearch();
+  clearTemporaryGuidance({ resume: false, render: false, silent: true });
   clearOptimizedRouteGeometry();
   loadDeliveries();
   renderMarkers();
@@ -4726,7 +4849,156 @@ async function fetchFlowAwareSegments(start, destination, following) {
   }
 }
 
+function temporaryGuidanceTarget() {
+  return temporaryGuidanceTargetId
+    ? deliveries.find(d => d.id === temporaryGuidanceTargetId) || null
+    : null;
+}
+
+function temporaryGuidanceTargetLabel(d) {
+  if (!d) return '';
+  const pickupDisplay = isPickupBackedDelivery(d) ? pickupListDisplay(d) : null;
+  if (pickupDisplay) {
+    return [pickupDisplay.company, pickupDisplay.detail].filter(Boolean).join(' / ');
+  }
+  return d.address || d.note || '指定したピン';
+}
+
+function nextOptimizedPendingDelivery() {
+  const deliveryById = new Map(deliveries.map(d => [d.id, d]));
+  return optimizedRouteOrderedIds
+    .map(id => deliveryById.get(id))
+    .find(d => d && !d.completed && d.lat != null && d.lng != null) || null;
+}
+
+function updateTemporaryGuidanceUi() {
+  const target = temporaryGuidanceTarget();
+  const active = !!target && !target.completed && target.lat != null && target.lng != null;
+  const banner = $('temporary-guidance-banner');
+  if (banner) banner.hidden = !active;
+  const targetLabel = $('temporary-guidance-target');
+  if (targetLabel) targetLabel.textContent = active ? temporaryGuidanceTargetLabel(target) : '';
+  const refreshBtn = $('btn-temporary-guidance-refresh');
+  if (refreshBtn) {
+    refreshBtn.disabled = !active || temporaryGuidanceBusy;
+    refreshBtn.textContent = temporaryGuidanceBusy ? '…' : '↻';
+  }
+
+  const editBtn = $('btn-edit-temporary-guidance');
+  if (editBtn && editingItemId) {
+    const editing = deliveries.find(d => d.id === editingItemId);
+    const immediatePhotoReview = batchReviewEditingId === editingItemId;
+    const canGuide = !!editing && !editing.completed && editing.lat != null && editing.lng != null && !immediatePhotoReview;
+    editBtn.hidden = !canGuide;
+    const editingIsTarget = canGuide && editing.id === temporaryGuidanceTargetId;
+    editBtn.classList.toggle('active', !!editingIsTarget);
+    editBtn.textContent = editingIsTarget ? '↩ 元のコースへ戻す' : '➜ このピンへ一時案内';
+  }
+}
+
+async function refreshTemporaryGuidanceLine(options = {}) {
+  const target = temporaryGuidanceTarget();
+  if (!map || !target || target.completed || target.lat == null || target.lng == null) return false;
+
+  const targetId = target.id;
+  const updateId = ++nextSegmentUpdateId;
+  temporaryGuidanceBusy = true;
+  updateTemporaryGuidanceUi();
+  removeNextSegmentLayer();
+  removeFollowingSegmentLayer();
+  removeFlowGuidanceLayers();
+  lastFlowNoticeKey = '';
+
+  const geometry = await fetchDrivingSegmentGeometry(getRouteStartPoint(), target);
+  if (updateId !== nextSegmentUpdateId || temporaryGuidanceTargetId !== targetId) return false;
+
+  temporaryGuidanceBusy = false;
+  updateTemporaryGuidanceUi();
+  if (!geometry) {
+    showToast('一時案内の道路線を取得できません。↻で再取得するかナビを使ってください', true);
+    return false;
+  }
+
+  setNextSegmentGeometry(geometry);
+  if (options.announce !== false) {
+    const message = options.refresh
+      ? '現在地から一時案内線を引き直しました'
+      : `一時案内を開始: ${temporaryGuidanceTargetLabel(target)}`;
+    showToast(message);
+  }
+  return true;
+}
+
+async function startTemporaryGuidance(id) {
+  const target = deliveries.find(d => d.id === id);
+  if (!target) return false;
+  if (target.completed) {
+    showToast('完了済みのピンは一時案内に指定できません', true);
+    return false;
+  }
+  if (target.lat == null || target.lng == null) {
+    showToast('位置がないため、このピンへ案内線を引けません', true);
+    return false;
+  }
+
+  temporaryGuidanceTargetId = target.id;
+  temporaryGuidanceBusy = false;
+  activeDeliveryId = target.id;
+  updateTemporaryGuidanceUi();
+  updateMarkerZIndexes();
+  renderMarkers();
+  renderList();
+  return refreshTemporaryGuidanceLine({ announce: true });
+}
+
+function clearTemporaryGuidance(options = {}) {
+  const hadGuidance = !!temporaryGuidanceTargetId;
+  temporaryGuidanceTargetId = null;
+  temporaryGuidanceBusy = false;
+  nextSegmentUpdateId++;
+  clearNextSegmentLayer();
+  updateTemporaryGuidanceUi();
+
+  const normalNext = nextOptimizedPendingDelivery();
+  if (normalNext) activeDeliveryId = normalNext.id;
+  if (options.render !== false) {
+    renderMarkers();
+    renderList();
+  }
+  if (options.resume !== false && optimizedRouteOrderedIds.length > 0) {
+    updateNextSegmentHighlight();
+  }
+  if (hadGuidance && options.silent !== true) {
+    showToast(normalNext ? '一時案内を解除し、元の配送コースへ戻しました' : '一時案内を解除しました');
+  }
+}
+
+function toggleEditedItemTemporaryGuidance() {
+  if (!editingItemId) return;
+  const id = editingItemId;
+  const clearing = temporaryGuidanceTargetId === id;
+  closeModal('modal-edit');
+  editingItemId = null;
+  if (clearing) {
+    clearTemporaryGuidance();
+  } else {
+    startTemporaryGuidance(id).catch(e => {
+      console.warn('temporary guidance failed', e);
+      showToast('一時案内を開始できませんでした', true);
+    });
+  }
+}
+
 async function updateNextSegmentHighlight() {
+  if (temporaryGuidanceTargetId) {
+    const target = temporaryGuidanceTarget();
+    if (target && !target.completed && target.lat != null && target.lng != null) {
+      return refreshTemporaryGuidanceLine({ announce: false });
+    }
+    temporaryGuidanceTargetId = null;
+    temporaryGuidanceBusy = false;
+    updateTemporaryGuidanceUi();
+  }
   const updateId = ++nextSegmentUpdateId;
   if (!map || optimizedRouteOrderedIds.length === 0) { clearNextSegmentLayer(); return; }
   const deliveryById = new Map(deliveries.map(d => [d.id, d]));
@@ -5055,6 +5327,7 @@ function displayNumber(d, idx) {
 }
 
 function markerZIndex(d, idx) {
+  if (d.id === temporaryGuidanceTargetId) return 110000;
   if (d.id === activeDeliveryId) return 100000;
   const priority = deliveries.length - idx;
   return (d.completed ? 1000 : 10000) + priority;
@@ -5169,6 +5442,8 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   wrapper.classList.toggle('review', !!d.needsReview && !d.completed);
   wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
   wrapper.classList.toggle('other-pickup', isOtherCoursePickup(d));
+  const isTemporaryGuidanceTarget = d.id === temporaryGuidanceTargetId;
+  wrapper.classList.toggle('temporary-guidance', isTemporaryGuidanceTarget);
   const timeInfo = deliveryTimeInfo(d);
   wrapper.classList.toggle('time-window', !!timeInfo.timeWindow);
   wrapper.classList.toggle('time-constrained', timeInfo.hasTime);
@@ -5183,7 +5458,7 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
     ? `${timeInfo.timeWindow ? timeInfo.timeWindow.id : 'exact'}:${timeInfo.color}:${timeInfo.exactTime}:${timeInfo.label}`
     : '';
   const pkgCount = Number(d.packageCount) || 1;
-  const contentSig = `${num}|${d.approx ? 1 : 0}|${d.needsReview && !d.completed ? 1 : 0}|${pkgCount}|${labelText}|${overlapCount}|${timeWindowSig}|${isOtherCoursePickup(d) ? 1 : 0}`;
+  const contentSig = `${num}|${d.approx ? 1 : 0}|${d.needsReview && !d.completed ? 1 : 0}|${pkgCount}|${labelText}|${overlapCount}|${timeWindowSig}|${isOtherCoursePickup(d) ? 1 : 0}|${isTemporaryGuidanceTarget ? 1 : 0}`;
   if (wrapper.dataset.contentSig === contentSig) return;
   wrapper.dataset.contentSig = contentSig;
 
@@ -5216,6 +5491,12 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
     pickupBadge.className = 'pickup-pin-badge';
     pickupBadge.textContent = '集';
     pin.appendChild(pickupBadge);
+  }
+  if (isTemporaryGuidanceTarget) {
+    const guidanceBadge = document.createElement('div');
+    guidanceBadge.className = 'temporary-guidance-pin-badge';
+    guidanceBadge.textContent = '案';
+    pin.appendChild(guidanceBadge);
   }
   if (pkgCount > 1) {
     const pkgBadge = document.createElement('div');
@@ -6510,6 +6791,7 @@ function renderList() {
       + (isSpotPickupDelivery(d) ? ' spot' : '')
       + (isOtherCoursePickup(d) ? ' other-pickup' : '')
       + (d.progressSyncFailed ? ' sync-pending' : '')
+      + (d.id === temporaryGuidanceTargetId ? ' temporary-guidance' : '')
       + (d.id === activeDeliveryId ? ' selected' : '');
     const pickupDisplay = isPickupBackedDelivery(d) ? pickupListDisplay(d) : null;
     const timeInfo = deliveryTimeInfo(d);
@@ -6532,6 +6814,7 @@ function renderList() {
                ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}`}
           ${pickupTypeBadge}
           ${timeWindowBadge}
+          ${d.id === temporaryGuidanceTargetId ? '<div><span class="temporary-guidance-list-badge">➜ 一時案内中</span></div>' : ''}
           ${(Number(d.packageCount) || 1) > 1 ? `<div><span class="package-badge-list">📦 ${Number(d.packageCount)}個口</span></div>` : ''}
           ${d.needsReview && !d.completed ? `<div><span class="review-badge">❗要確認: ${escapeHtml((d.reviewReasons || [])[0] || 'ピン位置を確認')}</span></div>` : ''}
         ${d.completedBy ? `<div class="note">集荷済: ${escapeHtml(d.completedBy)}${d.completedAtLabel ? ' ' + escapeHtml(d.completedAtLabel) : ''}</div>` : ''}
@@ -6596,7 +6879,11 @@ async function toggleDone(id) {
   renderList();
   syncPickupProgress(d, operatorName);
   if (nextCompleted && isPickupCompletionNotificationTarget(d)) notifySpotPickupCompleted(d, operatorName);
-  if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
+  if (nextCompleted && temporaryGuidanceTargetId === id) {
+    clearTemporaryGuidance();
+  } else if (optimizedRouteOrderedIds.length > 0) {
+    updateNextSegmentHighlight();
+  }
 }
 
 function openNavigation(id) {
@@ -6698,6 +6985,10 @@ async function commitPlacement() {
   renderMarkers();
   renderList();
 
+  if (temporaryGuidanceTargetId === d.id) {
+    refreshTemporaryGuidanceLine({ announce: false });
+  }
+
   showToast(locationSynced ? '位置を更新し、この住所の正しい位置を記憶しました' : '位置は更新しましたが固定位置の共有保存に失敗しました', !locationSynced);
 }
 
@@ -6766,6 +7057,7 @@ function openEdit(id) {
   if (cancelBtn) cancelBtn.textContent = immediatePhotoReview
     ? (singlePhotoReview ? '後で確認' : '連写を終了')
     : 'キャンセル';
+  updateTemporaryGuidanceUi();
   openModal('modal-edit');
 }
 
@@ -6813,7 +7105,11 @@ async function toggleEditedItemDone() {
   showToast(d.completed ? '完了にしました' : '未完了に戻しました');
   syncPickupProgress(d, operatorName);
   if (nextCompleted && isPickupCompletionNotificationTarget(d)) notifySpotPickupCompleted(d, operatorName);
-  if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
+  if (nextCompleted && temporaryGuidanceTargetId === editedId) {
+    clearTemporaryGuidance();
+  } else if (optimizedRouteOrderedIds.length > 0) {
+    updateNextSegmentHighlight();
+  }
 }
 
 async function reGeocodeEditedItem() {
@@ -6890,6 +7186,9 @@ async function reGeocodeEditedItem() {
   map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
   closeModal('modal-edit');
   editingItemId = null;
+  if (temporaryGuidanceTargetId === editedId) {
+    refreshTemporaryGuidanceLine({ announce: false });
+  }
   const message = result.approx ? '概算位置で更新しました' : '住所検索でピン位置を更新しました';
   showToast(locationSynced ? message : `${message}（固定位置の共有保存は未完了）`, !locationSynced);
   if (immediatePhotoReview) await finishImmediateBatchReview(editedId);
@@ -6982,6 +7281,9 @@ async function saveEditedItem() {
   }
   closeModal('modal-edit');
   editingItemId = null;
+  if (locationChanged && temporaryGuidanceTargetId === editedId) {
+    refreshTemporaryGuidanceLine({ announce: false });
+  }
   showToast(locationSynced ? '更新しました' : '更新しました（固定位置の共有保存は未完了）', !locationSynced);
   if (immediatePhotoReview) await finishImmediateBatchReview(editedId);
 }
@@ -6998,8 +7300,12 @@ function deleteEditedItem() {
     '削除の確認',
     `「${d.address}」を削除しますか？`,
     () => {
-      deliveries = deliveries.filter(x => x.id !== editingItemId);
-      if (activeDeliveryId === editingItemId) activeDeliveryId = null;
+      const deletedId = editingItemId;
+      deliveries = deliveries.filter(x => x.id !== deletedId);
+      if (activeDeliveryId === deletedId) activeDeliveryId = null;
+      if (temporaryGuidanceTargetId === deletedId) {
+        clearTemporaryGuidance({ render: false, silent: true });
+      }
       saveDeliveries();
       renderMarkers();
       renderList();
@@ -8309,6 +8615,7 @@ function clearCompleted() {
   showConfirm('完了分削除', `完了済み ${n} 件を削除しますか？`, () => {
     deliveries = deliveries.filter(d => !d.completed);
     if (activeDeliveryId && !deliveries.some(d => d.id === activeDeliveryId)) activeDeliveryId = null;
+    clearTemporaryGuidance({ resume: false, render: false, silent: true });
     clearOptimizedRouteGeometry();
     saveDeliveries();
     renderMarkers();
@@ -8323,6 +8630,7 @@ function clearAll() {
   showConfirm('全件クリア', `全 ${deliveries.length} 件を削除しますか？\nこの操作は取り消せません。`, () => {
     deliveries = [];
     activeDeliveryId = null;
+    clearTemporaryGuidance({ resume: false, render: false, silent: true });
     clearOptimizedRouteGeometry();
     saveDeliveries();
     renderMarkers();
@@ -9331,7 +9639,8 @@ function applyDeliverySyncRoute(route, items) {
   if (!orderedIds.length) {
     if (optimizedRouteOrderedIds.length) {
       optimizedRouteOrderedIds = [];
-      clearNextSegmentLayer();
+      if (temporaryGuidanceTargetId) refreshTemporaryGuidanceLine({ announce: false });
+      else clearNextSegmentLayer();
       return true;
     }
     return false;
@@ -9444,6 +9753,11 @@ async function pullDeliverySync() {
     const listChanged = JSON.stringify(merged) !== JSON.stringify(deliveries);
     if (listChanged || routeChanged) {
       deliveries = merged;
+      const temporaryTarget = temporaryGuidanceTarget();
+      if (temporaryGuidanceTargetId &&
+          (!temporaryTarget || temporaryTarget.completed || temporaryTarget.lat == null || temporaryTarget.lng == null)) {
+        clearTemporaryGuidance({ render: false, silent: true });
+      }
       deliverySyncApplyingRemote = true;
       try { saveDeliveries(); }
       finally { deliverySyncApplyingRemote = false; }
@@ -9571,6 +9885,7 @@ async function importPickupItems(items, replaceList, options = {}) {
       .filter(entry => entry[0])
   );
   if (replaceList) {
+    clearTemporaryGuidance({ resume: false, render: false, silent: true });
     deliveries = [];
     activeDeliveryId = null;
   }
@@ -10328,6 +10643,7 @@ function confirmAndApplyRouteOrder({ title, summary, suggested, timeWindowItems 
     (tailNote ? `\n\n${tailNote}` : '') +
     '\n\nこの順番に並べ替えますか？',
     () => {
+      clearTemporaryGuidance({ resume: false, render: false, silent: true });
       deliveries = suggested.concat(timeWindowItems, noLocationItems, completedItems);
       activeDeliveryId = suggested[0] ? suggested[0].id : null;
       const orderedIds = suggested.map(d => d.id);
@@ -11169,6 +11485,7 @@ $('btn-edit-cancel').addEventListener('click', cancelEditedItem);
 $('btn-edit-geocode').addEventListener('click', reGeocodeEditedItem);
 $('btn-edit-done').addEventListener('click', toggleEditedItemDone);
 $('btn-edit-navi').addEventListener('click', openEditedItemNavigation);
+$('btn-edit-temporary-guidance').addEventListener('click', toggleEditedItemTemporaryGuidance);
 $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 
 $('menu-center-user').addEventListener('click', centerOnUser);
@@ -11306,6 +11623,10 @@ $('btn-list-search-clear').addEventListener('click', () => {
   renderMarkers();
 });
 document.querySelector('.placement-banner').addEventListener('click', cancelPlacement);
+$('btn-temporary-guidance-refresh').addEventListener('click', () => {
+  refreshTemporaryGuidanceLine({ announce: true, refresh: true });
+});
+$('btn-temporary-guidance-clear').addEventListener('click', () => clearTemporaryGuidance());
 window.addEventListener('online', () => retryPendingPickupProgress({ silent: false }));
 window.addEventListener('beforeinstallprompt', event => {
   event.preventDefault();
