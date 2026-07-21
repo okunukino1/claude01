@@ -1515,7 +1515,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.71</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.72</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1570,7 +1570,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.71</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.72</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1959,7 +1959,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.71';
+const APP_VERSION = 'v2026.06.24-test.72';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2001,7 +2001,8 @@ const FLOW_GUIDANCE_MAX_WALK_METERS = 60;
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
 const MAPBOX_GEOCODING_API = 'https://api.mapbox.com/search/geocode/v6/forward';
-const MAPBOX_ADDRESS_MATCH_VERSION = 1;
+const MAPBOX_ADDRESS_MATCH_VERSION = 2;
+const ADDRESS_NORMALIZATION_VERSION = 2;
 const SPOT_COMPLETION_PUSH_API = '../api/push_spot_completed.php';
 const SPOT_PICKUP_PREFETCH_API = '../api/spot_pickups.php';
 const SHARED_GEOCODE_CACHE_RETRY_MS = 10 * 60 * 1000;
@@ -5114,40 +5115,56 @@ function cleanAddressForGeocoding(addr) {
   return a;
 }
 
-function normalizeKanjiDigitsForAddress(value) {
+function kanjiNumberTokenToArabic(value) {
   const map = { '〇': 0, '零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
-  return String(value || '').replace(/[〇零一二三四五六七八九十百千]+/g, token => {
-    if (!/[十百千]/.test(token)) {
-      return token.split('').map(ch => map[ch]).join('');
+  const token = String(value || '');
+  if (!/[十百千]/.test(token)) {
+    return token.split('').map(ch => Object.prototype.hasOwnProperty.call(map, ch) ? map[ch] : ch).join('');
+  }
+  let total = 0;
+  let current = 0;
+  for (const ch of token) {
+    if (Object.prototype.hasOwnProperty.call(map, ch)) {
+      current = map[ch];
+    } else if (ch === '千') {
+      total += (current || 1) * 1000;
+      current = 0;
+    } else if (ch === '百') {
+      total += (current || 1) * 100;
+      current = 0;
+    } else if (ch === '十') {
+      total += (current || 1) * 10;
+      current = 0;
     }
-    let total = 0;
-    let current = 0;
-    for (const ch of token) {
-      if (Object.prototype.hasOwnProperty.call(map, ch)) {
-        current = map[ch];
-      } else if (ch === '千') {
-        total += (current || 1) * 1000;
-        current = 0;
-      } else if (ch === '百') {
-        total += (current || 1) * 100;
-        current = 0;
-      } else if (ch === '十') {
-        total += (current || 1) * 10;
-        current = 0;
-      }
-    }
-    total += current;
-    return total ? String(total) : token;
-  });
+  }
+  total += current;
+  return total ? String(total) : token;
 }
 
-function canonicalAddressForCache(rawAddress) {
+function normalizeKanjiDigitsForAddress(value) {
+  const kanjiNumber = '[〇零一二三四五六七八九十百千]+';
+  let text = String(value || '');
+
+  // 町名に含まれる漢数字（西六郷・六本木・四谷・八重洲など）は保持し、
+  // 住所番号として明確な「丁目・番・号」の直前だけ算用数字へ変換する。
+  text = text.replace(new RegExp(`(${kanjiNumber})(?=\\s*丁目)`, 'g'), kanjiNumberTokenToArabic);
+  text = text.replace(new RegExp(`(${kanjiNumber})(?=\\s*番(?!町|街|館|丁))`, 'g'), kanjiNumberTokenToArabic);
+  text = text.replace(new RegExp(`(${kanjiNumber})(?=\\s*号(?!線|館|棟))`, 'g'), kanjiNumberTokenToArabic);
+
+  // 「西六郷一-二-三」のように丁目・番・号が省略された末尾表記も、
+  // ハイフンでつながる末尾の番号部分だけを変換する。
+  const trailingNumber = new RegExp(`([0-9〇零一二三四五六七八九十百千]+(?:\\s*[-のノ]\\s*[0-9〇零一二三四五六七八九十百千]+){1,3})\\s*$`);
+  return text.replace(trailingNumber, sequence =>
+    sequence.replace(/[〇零一二三四五六七八九十百千]+/g, kanjiNumberTokenToArabic));
+}
+
+function canonicalAddressForCacheWithNormalizer(rawAddress, normalizeKanjiNumbers) {
   let a = normalizeAddress(rawAddress || '');
   a = a.replace(/郵便番号[:：]?\s*/g, '');
   a = a.replace(/〒?\s*\d{3}\s*[-ー－‐―−]?\s*\d{4}\s*/g, '');
   a = a.replace(/\b\d{3}\s*[-ー－‐―−]\s*\d{4}\b/g, '');
   a = a.replace(/[一-鿿々ー]{1,15}\s*様\s*$/g, '');
-  a = normalizeKanjiDigitsForAddress(a);
+  a = normalizeKanjiNumbers(a);
   a = a.replace(/[‐－―ー−]/g, '-');
   a = a.replace(/(\d+)\s*丁目/g, '$1-');
   a = a.replace(/(\d+)\s*番地?/g, '$1-');
@@ -5161,6 +5178,15 @@ function canonicalAddressForCache(rawAddress) {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .toLowerCase();
+}
+
+function canonicalAddressForCache(rawAddress) {
+  return canonicalAddressForCacheWithNormalizer(rawAddress, normalizeKanjiDigitsForAddress);
+}
+
+function legacyCanonicalAddressForCache(rawAddress) {
+  return canonicalAddressForCacheWithNormalizer(rawAddress, value =>
+    String(value || '').replace(/[〇零一二三四五六七八九十百千]+/g, kanjiNumberTokenToArabic));
 }
 
 function cleanAddressForMapboxGeocoding(rawAddress) {
@@ -5780,6 +5806,93 @@ function setCachedGeocode(key, result) {
   persistGeocodeCache();
 }
 
+function needsRokugoPinRepair(delivery) {
+  if (!delivery || delivery.completed || appMode !== 'delivery') return false;
+  if (Number(delivery.addressNormalizationVersion || 0) >= ADDRESS_NORMALIZATION_VERSION) return false;
+  if (!/(?:西|仲|東|南)六郷/.test(normalizeAddress(delivery.address || ''))) return false;
+  const currentKey = canonicalAddressForCache(delivery.address || '');
+  const legacyKey = legacyCanonicalAddressForCache(delivery.address || '');
+  return !!currentKey && !!legacyKey && currentKey !== legacyKey;
+}
+
+async function repairExistingRokugoPins() {
+  const targets = deliveries.filter(needsRokugoPinRepair);
+  if (!targets.length) return { updated: 0, failed: 0 };
+
+  const legacySharedByKey = new Map();
+  let nextIndex = 0;
+  let completed = 0;
+  let updated = 0;
+  let failed = 0;
+
+  async function findLegacyManualResult(delivery, currentKey, legacyKey) {
+    const localLegacy = getCachedGeocode(legacyKey);
+    if (localLegacy && localLegacy.manual &&
+        canonicalAddressForCache(localLegacy.formatted || '') === currentKey) {
+      return localLegacy;
+    }
+
+    if (!legacySharedByKey.has(legacyKey)) {
+      legacySharedByKey.set(legacyKey, getSharedGeocodeCache(legacyKey).catch(() => null));
+    }
+    const sharedLegacy = await legacySharedByKey.get(legacyKey);
+    if (sharedLegacy && sharedLegacy.manual &&
+        canonicalAddressForCache(sharedLegacy.formatted || '') === currentKey) {
+      return sharedLegacy;
+    }
+    return null;
+  }
+
+  async function repairOne(delivery) {
+    const currentKey = canonicalAddressForCache(delivery.address || '');
+    const legacyKey = legacyCanonicalAddressForCache(delivery.address || '');
+    let result = await findLegacyManualResult(delivery, currentKey, legacyKey);
+    if (result) {
+      setCachedGeocode(currentKey, result);
+      saveSharedGeocodeCache(currentKey, delivery.address, result);
+    } else {
+      result = await geocodeAddress(delivery.address);
+    }
+    if (!result || !Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
+      failed++;
+      return;
+    }
+
+    delivery.lat = Number(result.lat);
+    delivery.lng = Number(result.lng);
+    delivery.approx = !!result.approx;
+    delivery.formatted = result.formatted || delivery.address;
+    delivery.addressNormalizationVersion = ADDRESS_NORMALIZATION_VERSION;
+    delivery.reviewReasons = validateDeliveryPlacement(
+      delivery.address,
+      result,
+      delivery.deliveryCourse || getSelectedDeliveryCourse()
+    );
+    delivery.needsReview = delivery.reviewReasons.length > 0;
+    delivery.updatedAt = Date.now();
+    updated++;
+  }
+
+  async function worker() {
+    while (nextIndex < targets.length) {
+      const delivery = targets[nextIndex++];
+      try {
+        await repairOne(delivery);
+      } catch (error) {
+        failed++;
+        console.warn('Rokugo pin repair failed', delivery.address, error);
+      } finally {
+        completed++;
+        showLoading(`六郷のピンを番地別に確認中 (${completed}/${targets.length})`);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(3, targets.length) }, () => worker()));
+  if (updated) saveDeliveries();
+  return { updated, failed };
+}
+
 // ピン位置の自動検証。読み間違い住所をGoogleが「別の実在住所」として
 // 自信満々に解決してしまうケースを、登録直後に機械的に検出する。
 // 戻り値: 怪しい理由の配列 (空なら問題なし)
@@ -5887,6 +6000,7 @@ async function insertDelivery({ address, note, deliveryCourse }) {
     lng: result.lng,
     approx: result.approx,
     formatted: result.formatted,
+    addressNormalizationVersion: ADDRESS_NORMALIZATION_VERSION,
     needsReview: reviewReasons.length > 0,
     reviewReasons,
     packageCount: 1,
@@ -6155,12 +6269,14 @@ async function commitPlacement() {
     lat: d.lat,
     lng: d.lng,
     approx: d.approx,
-    formatted: d.formatted
+    formatted: d.formatted,
+    addressNormalizationVersion: d.addressNormalizationVersion
   };
   d.lat = pendingPlacementCoord.lat;
   d.lng = pendingPlacementCoord.lng;
   d.approx = false;
   d.formatted = d.address || d.formatted || '';
+  d.addressNormalizationVersion = ADDRESS_NORMALIZATION_VERSION;
   saveDeliveries();
   renderMarkers();
   renderList();
@@ -6173,6 +6289,7 @@ async function commitPlacement() {
     d.lng = before.lng;
     d.approx = before.approx;
     d.formatted = before.formatted;
+    d.addressNormalizationVersion = before.addressNormalizationVersion;
     saveDeliveries();
     renderMarkers();
     renderList();
@@ -6322,6 +6439,7 @@ async function reGeocodeEditedItem() {
     lng: d.lng,
     approx: d.approx,
     formatted: d.formatted,
+    addressNormalizationVersion: d.addressNormalizationVersion,
     timeWindowId: d.timeWindowId
   };
 
@@ -6341,6 +6459,7 @@ async function reGeocodeEditedItem() {
   d.lng = result.lng;
   d.approx = result.approx;
   d.formatted = result.formatted;
+  d.addressNormalizationVersion = ADDRESS_NORMALIZATION_VERSION;
   d.needsReview = false; // ユーザーが再検索して確認した
   d.reviewReasons = [];
   d.updatedAt = Date.now();
@@ -6356,6 +6475,7 @@ async function reGeocodeEditedItem() {
     d.lng = before.lng;
     d.approx = before.approx;
     d.formatted = before.formatted;
+    d.addressNormalizationVersion = before.addressNormalizationVersion;
     d.timeWindowId = before.timeWindowId;
     saveDeliveries();
     renderMarkers();
@@ -6392,6 +6512,7 @@ async function saveEditedItem() {
     lng: d.lng,
     approx: d.approx,
     formatted: d.formatted,
+    addressNormalizationVersion: d.addressNormalizationVersion,
     timeWindowId: d.timeWindowId
   };
 
@@ -6420,6 +6541,7 @@ async function saveEditedItem() {
     d.lng = geocodeResult.lng;
     d.approx = geocodeResult.approx;
     d.formatted = geocodeResult.formatted;
+    d.addressNormalizationVersion = ADDRESS_NORMALIZATION_VERSION;
   }
   d.needsReview = false; // ユーザーが写真と内容を確認して保存した
   d.reviewReasons = [];
@@ -6438,6 +6560,8 @@ async function saveEditedItem() {
     d.lng = before.lng;
     d.approx = before.approx;
     d.formatted = before.formatted;
+    d.addressNormalizationVersion = before.addressNormalizationVersion;
+    d.timeWindowId = before.timeWindowId;
     saveDeliveries();
     renderMarkers();
     renderList();
@@ -7591,6 +7715,7 @@ async function processBatchPhoto(file, options = {}) {
       lng: result.lng,
       approx: result.approx,
       formatted: result.formatted,
+      addressNormalizationVersion: ADDRESS_NORMALIZATION_VERSION,
       needsReview: reviewReasons.length > 0,
       reviewReasons,
       packageCount: 1,
@@ -9197,7 +9322,7 @@ function routeAreaFromAddress(rawAddress) {
 
   text = text.replace(/^(?:大字|字)/, '');
   text = text.replace(/([〇零一二三四五六七八九十百千]+)(?=丁目)/g, value =>
-    normalizeKanjiDigitsForAddress(value));
+    kanjiNumberTokenToArabic(value));
   const townMatch = text.match(/^(.+?)(?=\d+(?:丁目|番地?|番|号|-|の|$)|$)/);
   let town = (townMatch ? townMatch[1] : text)
     .replace(/[、，,。].*$/, '')
@@ -10687,6 +10812,7 @@ document.addEventListener('visibilitychange', () => {
       showCachedRegularPickupCourse(selectedCourse);
     }
     await mapReady;
+    const rokugoPinRepair = await repairExistingRokugoPins();
     renderMarkers();
     renderList();
     updateGpsButton();
@@ -10694,6 +10820,16 @@ document.addEventListener('visibilitychange', () => {
     ensureGpsWatching();
     updateGpsButton();
     hideLoading();
+    if (rokugoPinRepair.updated || rokugoPinRepair.failed) {
+      const message = rokugoPinRepair.updated
+        ? `六郷のピンを${rokugoPinRepair.updated}件、番地別に更新しました`
+        : '六郷のピンを更新できませんでした。通信状態を確認してください';
+      const hasFailure = rokugoPinRepair.failed > 0;
+      window.setTimeout(() => showToast(
+        hasFailure ? `${message}（未更新 ${rokugoPinRepair.failed}件）` : message,
+        hasFailure
+      ), 400);
+    }
     warmupAppCaches();
     initDeliverySync();
     restartDeliverySyncTimer();
