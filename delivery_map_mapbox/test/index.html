@@ -135,6 +135,9 @@
     border-color: var(--spot-done-border);
     opacity: 0.6;
   }
+  .delivery-marker.other-pickup:not(.done) .delivery-pin .pin-shape {
+    background: #047857;
+  }
   /* 要確認ピン: 位置が怪しい可能性 — 赤リングで目立たせる */
   .delivery-marker.review .delivery-pin .pin-shape {
     box-shadow: 0 0 0 3px #e11d48, 0 2px 6px rgba(0,0,0,0.35);
@@ -161,6 +164,33 @@
     border: 1.5px solid #fff;
     box-shadow: 0 1px 3px rgba(0,0,0,0.35);
     z-index: 3;
+  }
+  .delivery-pin .time-pin-badge,
+  .delivery-pin .pickup-pin-badge {
+    position: absolute;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 4px;
+    border: 2px solid #fff;
+    border-radius: 5px;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 16px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.45);
+    z-index: 4;
+    pointer-events: none;
+  }
+  .delivery-pin .time-pin-badge {
+    top: -9px;
+    left: -12px;
+    background: #111827;
+  }
+  .delivery-pin .pickup-pin-badge {
+    left: -12px;
+    bottom: 1px;
+    background: #047857;
   }
   .package-badge-list {
     display: inline-block;
@@ -338,6 +368,24 @@
   }
   .delivery-marker.done .delivery-label .lbl-num { color: var(--done); }
   .delivery-label .lbl-bldg { font-weight: 600; }
+
+  .delivery-time-marker-label {
+    max-width: 180px;
+    margin-bottom: 4px;
+    padding: 3px 6px;
+    overflow: hidden;
+    border: 2px solid var(--time-window-color, #c026d3);
+    border-radius: 5px;
+    background: #111827;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    pointer-events: none;
+  }
 
   .overlap-count-label {
     position: absolute;
@@ -760,19 +808,44 @@
   display: inline-block;
   margin-top: 3px;
   padding: 2px 7px;
-  border-radius: 999px;
+  border: 2px solid #111827;
+  border-radius: 5px;
   background: var(--time-window-color, #a855f7);
   color: white;
   font-size: 10px;
   font-weight: 800;
   line-height: 1.35;
 }
-.delivery-item.time-window:not(.done) .num-badge {
+.pickup-type-badge {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 2px 7px;
+  border: 2px solid #064e3b;
+  border-radius: 5px;
+  background: #d1fae5;
+  color: #064e3b;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+.delivery-item.other-pickup:not(.done) {
+  box-shadow: inset 5px 0 0 #047857;
+}
+.delivery-item.other-pickup:not(.done) .num-badge {
+  background: #047857;
+}
+.delivery-item.time-constrained:not(.done) {
+  box-shadow: inset 5px 0 0 var(--time-window-color, #c026d3);
+}
+.delivery-item.time-constrained:not(.done) .num-badge {
   background: var(--time-window-color, #a855f7);
   color: white;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #111827;
 }
-.delivery-marker.time-window:not(.done) .delivery-pin .pin-shape {
-  background: var(--time-window-color, #a855f7);
+.delivery-marker.time-constrained:not(.done) .delivery-pin .pin-shape {
+  background: var(--time-window-color, #c026d3);
+  border-color: #111827;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 6px #111827, 0 3px 7px rgba(0,0,0,0.45);
 }
 .time-window-settings-list {
   display: flex;
@@ -925,6 +998,8 @@
   }
   .modal input[type=text],
   .modal input[type=tel],
+  .modal input[type=time],
+  .modal input[type=number],
   .modal select,
   .modal textarea {
     width: 100%;
@@ -1299,6 +1374,7 @@
   .modal input[type=tel],
   .modal input[type=password],
   .modal input[type=number],
+  .modal input[type=time],
   .modal select,
   .modal textarea { font-size: calc(15px * var(--text-scale)); }
   #usage-content { font-size: calc(13px * var(--text-scale)) !important; }
@@ -1533,7 +1609,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.73</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.74</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1591,7 +1667,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.73</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.74</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -1747,7 +1823,7 @@
   <div class="modal">
     <h3>時間指定設定</h3>
     <div class="modal-help">
-      時間帯の表示名とピン色を設定します。各配送先への時間指定は、詳細(編集)画面から手動で選択します。
+      時間帯の表示名とピン色を設定します。各配送先の時間帯と指定時刻は、詳細(編集)画面から手動で設定します。
     </div>
     <div id="time-window-settings-list" class="time-window-settings-list"></div>
     <button class="inline-action" id="btn-time-window-add" type="button">+ 時間帯を追加</button>
@@ -1829,7 +1905,14 @@
 
 <div class="modal-bg" id="modal-add">
   <div class="modal">
-    <h3>配送先を追加</h3>
+    <h3 id="add-modal-title">配送先を追加</h3>
+    <div id="add-delivery-kind-field" hidden>
+      <label for="add-delivery-kind">荷物の種類</label>
+      <select id="add-delivery-kind">
+        <option value="delivery">配送</option>
+        <option value="pickup">集荷</option>
+      </select>
+    </div>
     <div class="manual-address-builder" id="manual-address-builder" hidden>
       <h4 id="manual-address-builder-title">住所選択</h4>
       <div class="builder-grid">
@@ -1897,8 +1980,17 @@
     <button class="inline-action" id="btn-edit-geocode" type="button">住所再検索</button>
     <label>備考</label>
     <textarea id="edit-note"></textarea>
+    <div id="edit-delivery-kind-field" hidden>
+      <label for="edit-delivery-kind">荷物の種類</label>
+      <select id="edit-delivery-kind">
+        <option value="delivery">配送</option>
+        <option value="pickup">集荷</option>
+      </select>
+    </div>
     <label>時間指定</label>
     <select id="edit-time-window"></select>
+    <label for="edit-exact-time">指定時刻（任意）</label>
+    <input type="time" id="edit-exact-time" step="300">
     <label>荷物の個数 (複数個口)</label>
     <input type="number" id="edit-package-count" min="1" step="1" inputmode="numeric">
     <div class="modal-actions">
@@ -1980,7 +2072,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.73';
+const APP_VERSION = 'v2026.06.24-test.74';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
@@ -2036,9 +2128,12 @@ const NATIVE_CAMERA_FOCUS_WARMUP_MS = 700;
 const NATIVE_CAPTURE_MIN_INTERVAL_MS = 900;
 const APP_VERSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MARKER_TAP_SELECT_DELAY_MS = 420;
+const MARKER_LONG_PRESS_DELAY_MS = 650;
+const MARKER_LONG_PRESS_MOVE_TOLERANCE_PX = 12;
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
 const LIST_TIME_WINDOW_FILTER_TIMED = '__timed__';
 const LIST_TIME_WINDOW_FILTER_NONE = '__none__';
+const EXACT_TIME_DEFAULT_COLOR = '#c026d3';
 const TIME_WINDOW_DEFAULTS = [
   { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
   { id: '14-16', label: '14時〜16時', keywords: '14時〜16時,14時～16時,14:00-16:00,14-16,14時から16時', color: '#a855f7' },
@@ -2891,6 +2986,27 @@ function setSelectedDeliveryCourse(course) {
   localStorage.setItem(DELIVERY_COURSE_KEY, selectedDeliveryCourse);
 }
 
+function normalizeDeliveryKind(value, deliveryCourse) {
+  return deliveryCourse === OTHER_DELIVERY_COURSE && value === 'pickup' ? 'pickup' : 'delivery';
+}
+
+function isOtherCoursePickup(d) {
+  return !!(d &&
+    d.deliveryCourse === OTHER_DELIVERY_COURSE &&
+    normalizeDeliveryKind(d.deliveryKind, d.deliveryCourse) === 'pickup');
+}
+
+function updateAddDeliveryKindField() {
+  const field = $('add-delivery-kind-field');
+  const select = $('add-delivery-kind');
+  if (!field || !select) return;
+  const canChoose = appMode === 'delivery' && getSelectedDeliveryCourse() === OTHER_DELIVERY_COURSE;
+  field.hidden = !canChoose;
+  if (!canChoose) select.value = 'delivery';
+  const title = $('add-modal-title');
+  if (title) title.textContent = canChoose ? '配送・集荷先を追加' : '配送先を追加';
+}
+
 function deliveryCourseOptionValue(course) {
   return `${DELIVERY_COURSE_OPTION_PREFIX}${course}`;
 }
@@ -3217,6 +3333,53 @@ function timeWindowForDelivery(d) {
   if (!override || override === 'none') return null;
   const settings = loadTimeWindowSettings();
   return settings.find(item => item.id === override) || null;
+}
+
+function normalizeExactDeliveryTime(value) {
+  const normalized = String(value || '').trim().replace(/：/g, ':');
+  const match = normalized.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return '';
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return '';
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function exactTimeForDelivery(d) {
+  return normalizeExactDeliveryTime(d && d.exactTime);
+}
+
+function deliveryTimeInfo(d) {
+  const timeWindow = timeWindowForDelivery(d);
+  const exactTime = exactTimeForDelivery(d);
+  const labels = [];
+  if (timeWindow) labels.push(timeWindow.label);
+  if (exactTime) labels.push(timeWindow ? exactTime : `${exactTime}指定`);
+  return {
+    timeWindow,
+    exactTime,
+    hasTime: !!(timeWindow || exactTime),
+    label: labels.join(' / '),
+    color: timeWindow ? timeWindow.color : EXACT_TIME_DEFAULT_COLOR
+  };
+}
+
+function deliveryHasTimeConstraint(d) {
+  return deliveryTimeInfo(d).hasTime;
+}
+
+function exactTimeSearchValues(exactTime) {
+  const normalized = normalizeExactDeliveryTime(exactTime);
+  if (!normalized) return [];
+  const [hourText, minuteText] = normalized.split(':');
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  return [
+    normalized,
+    `${hour}:${minuteText}`,
+    minute === 0 ? `${hour}時` : `${hour}時${minute}分`,
+    `${hour}時指定`
+  ];
 }
 
 function timeWindowSearchValues(setting) {
@@ -5000,22 +5163,27 @@ function buildMarkerOverlapInfo(items = deliveries) {
 function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   const num = displayNumber(d, idx);
   wrapper.classList.add('delivery-marker');
+  wrapper.dataset.deliveryId = d.id || '';
   wrapper.classList.toggle('done', !!d.completed);
   wrapper.classList.toggle('approx', !!d.approx);
   wrapper.classList.toggle('review', !!d.needsReview && !d.completed);
   wrapper.classList.toggle('spot', !!isSpotPickupDelivery(d));
-  const timeWindow = timeWindowForDelivery(d);
-  wrapper.classList.toggle('time-window', !!timeWindow);
-  if (timeWindow) wrapper.style.setProperty('--time-window-color', timeWindow.color);
+  wrapper.classList.toggle('other-pickup', isOtherCoursePickup(d));
+  const timeInfo = deliveryTimeInfo(d);
+  wrapper.classList.toggle('time-window', !!timeInfo.timeWindow);
+  wrapper.classList.toggle('time-constrained', timeInfo.hasTime);
+  if (timeInfo.hasTime) wrapper.style.setProperty('--time-window-color', timeInfo.color);
   else wrapper.style.removeProperty('--time-window-color');
   wrapper.style.zIndex = String(markerZIndex(d, idx));
 
   // 中身に影響する値が前回 render と同じなら DOM 再構築をスキップ（差分更新）
   const labelText = buildLabelText(d, num, modeKey);
   const overlapCount = overlap && overlap.index === 0 ? overlap.count : 0;
-  const timeWindowSig = timeWindow ? `${timeWindow.id}:${timeWindow.color}` : '';
+  const timeWindowSig = timeInfo.hasTime
+    ? `${timeInfo.timeWindow ? timeInfo.timeWindow.id : 'exact'}:${timeInfo.color}:${timeInfo.exactTime}:${timeInfo.label}`
+    : '';
   const pkgCount = Number(d.packageCount) || 1;
-  const contentSig = `${num}|${d.approx ? 1 : 0}|${d.needsReview && !d.completed ? 1 : 0}|${pkgCount}|${labelText}|${overlapCount}|${timeWindowSig}`;
+  const contentSig = `${num}|${d.approx ? 1 : 0}|${d.needsReview && !d.completed ? 1 : 0}|${pkgCount}|${labelText}|${overlapCount}|${timeWindowSig}|${isOtherCoursePickup(d) ? 1 : 0}`;
   if (wrapper.dataset.contentSig === contentSig) return;
   wrapper.dataset.contentSig = contentSig;
 
@@ -5027,9 +5195,28 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
     wrapper.appendChild(lbl);
   }
 
+  if (timeInfo.hasTime) {
+    const timeLabel = document.createElement('div');
+    timeLabel.className = 'delivery-time-marker-label';
+    timeLabel.textContent = timeInfo.label;
+    wrapper.appendChild(timeLabel);
+  }
+
   const pin = document.createElement('div');
   pin.className = 'delivery-pin';
   pin.innerHTML = `<div class="pin-shape"></div><div class="pin-num">${escapeHtml(num)}${d.approx ? '?' : ''}</div>`;
+  if (timeInfo.hasTime) {
+    const timeBadge = document.createElement('div');
+    timeBadge.className = 'time-pin-badge';
+    timeBadge.textContent = '時';
+    pin.appendChild(timeBadge);
+  }
+  if (isOtherCoursePickup(d)) {
+    const pickupBadge = document.createElement('div');
+    pickupBadge.className = 'pickup-pin-badge';
+    pickupBadge.textContent = '集';
+    pin.appendChild(pickupBadge);
+  }
   if (pkgCount > 1) {
     const pkgBadge = document.createElement('div');
     pkgBadge.className = 'package-badge';
@@ -5074,6 +5261,18 @@ function scheduleMarkerTapSelect(id) {
 
 function createDeliveryMarker(d) {
   const wrapper = document.createElement('div');
+  wrapper.title = 'タップで編集、長押しで位置修正';
+  let longPressTimer = null;
+  let longPressPointerId = null;
+  let longPressStartX = 0;
+  let longPressStartY = 0;
+  let longPressTriggered = false;
+
+  const cancelLongPressTimer = () => {
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = null;
+    longPressPointerId = null;
+  };
 
   wrapper.addEventListener('pointerdown', (e) => {
     if (e.button != null && e.button !== 0) return;
@@ -5081,10 +5280,47 @@ function createDeliveryMarker(d) {
     if (pendingMarkerTapSelect && now - pendingMarkerTapSelect.startedAt <= MARKER_TAP_SELECT_DELAY_MS + 280) {
       clearPendingMarkerTapSelect(700);
     }
+    cancelLongPressTimer();
+    longPressTriggered = false;
+    longPressPointerId = e.pointerId;
+    longPressStartX = e.clientX;
+    longPressStartY = e.clientY;
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      if (longPressPointerId === null) return;
+      longPressTriggered = true;
+      clearPendingMarkerTapSelect(1000);
+      if (navigator.vibrate) navigator.vibrate(35);
+      startPlacement(d.id);
+    }, MARKER_LONG_PRESS_DELAY_MS);
+  });
+
+  wrapper.addEventListener('pointermove', (e) => {
+    if (longPressPointerId === null || e.pointerId !== longPressPointerId || longPressTriggered) return;
+    if (Math.hypot(e.clientX - longPressStartX, e.clientY - longPressStartY) >
+        MARKER_LONG_PRESS_MOVE_TOLERANCE_PX) {
+      cancelLongPressTimer();
+    }
+  });
+
+  wrapper.addEventListener('pointerup', (e) => {
+    const wasLongPress = longPressTriggered && e.pointerId === longPressPointerId;
+    cancelLongPressTimer();
+    if (wasLongPress) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   });
 
   wrapper.addEventListener('click', (e) => {
     if (e.button != null && e.button !== 0) return;
+    if (longPressTriggered) {
+      longPressTriggered = false;
+      e.preventDefault();
+      e.stopPropagation();
+      clearPendingMarkerTapSelect(1000);
+      return;
+    }
     if (Date.now() < suppressMarkerTapSelectUntil) return;
     if (e.detail && e.detail >= 2) {
       clearPendingMarkerTapSelect(700);
@@ -5093,8 +5329,15 @@ function createDeliveryMarker(d) {
     scheduleMarkerTapSelect(d.id);
   });
 
-  wrapper.addEventListener('dblclick', () => clearPendingMarkerTapSelect(700));
-  wrapper.addEventListener('pointercancel', () => clearPendingMarkerTapSelect(300));
+  wrapper.addEventListener('dblclick', () => {
+    cancelLongPressTimer();
+    clearPendingMarkerTapSelect(700);
+  });
+  wrapper.addEventListener('pointercancel', () => {
+    cancelLongPressTimer();
+    longPressTriggered = false;
+    clearPendingMarkerTapSelect(300);
+  });
   wrapper.addEventListener('contextmenu', (e) => e.preventDefault());
 
   return new mapboxgl.Marker({
@@ -6031,12 +6274,18 @@ function validateDeliveryPlacement(address, result, deliveryCourse = '') {
   return reasons;
 }
 
-async function addDelivery({ address, note, deliveryCourse }) {
+async function addDelivery({ address, note, deliveryCourse, deliveryKind = 'delivery' }) {
   if (!address) { showToast('住所が空です', true); return; }
 
+  const resolvedDeliveryCourse = deliveryCourse || (appMode === 'delivery' ? getSelectedDeliveryCourse() : '');
+  const resolvedDeliveryKind = normalizeDeliveryKind(deliveryKind, resolvedDeliveryCourse);
   // 同じ住所 = 複数個口。未完了の既存ピンがあれば個数を増やす
   const canon = canonicalAddressForCache(address);
-  const dupActive = canon ? deliveries.find(d => !d.completed && canonicalAddressForCache(d.address || '') === canon) : null;
+  const dupActive = canon ? deliveries.find(d =>
+    !d.completed &&
+    canonicalAddressForCache(d.address || '') === canon &&
+    isOtherCoursePickup(d) === (resolvedDeliveryKind === 'pickup')
+  ) : null;
   if (dupActive) {
     const current = Number(dupActive.packageCount) || 1;
     showConfirm(
@@ -6054,16 +6303,22 @@ async function addDelivery({ address, note, deliveryCourse }) {
     return;
   }
   // 完了済みと同じ住所は新しい配達として別ピンを立てる
-  await insertDelivery({ address, note, deliveryCourse });
+  await insertDelivery({
+    address,
+    note,
+    deliveryCourse: resolvedDeliveryCourse,
+    deliveryKind: resolvedDeliveryKind
+  });
 }
 
-async function insertDelivery({ address, note, deliveryCourse }) {
+async function insertDelivery({ address, note, deliveryCourse, deliveryKind = 'delivery' }) {
   showLoading('住所を検索中...');
   const result = await geocodeAddress(address);
   hideLoading();
   if (!result) { showToast('住所が見つかりませんでした', true); return; }
 
   const resolvedDeliveryCourse = deliveryCourse || (appMode === 'delivery' ? getSelectedDeliveryCourse() : '');
+  const resolvedDeliveryKind = normalizeDeliveryKind(deliveryKind, resolvedDeliveryCourse);
   const reviewReasons = validateDeliveryPlacement(address, result, resolvedDeliveryCourse);
   const d = {
     id: uid(),
@@ -6080,6 +6335,7 @@ async function insertDelivery({ address, note, deliveryCourse }) {
     completed: false,
     completedAt: null,
     deliveryCourse: resolvedDeliveryCourse,
+    deliveryKind: resolvedDeliveryKind,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -6143,8 +6399,11 @@ function currentListTimeWindowFilter() {
 function deliveryMatchesSearch(d, idx, query) {
   if (!query) return true;
   const parts = [d.address, d.formatted, d.note, d.completedBy, displayNumber(d, idx)];
-  const timeWindow = timeWindowForDelivery(d);
-  if (timeWindow) parts.push(...timeWindowSearchValues(timeWindow));
+  const timeInfo = deliveryTimeInfo(d);
+  if (timeInfo.timeWindow) parts.push(...timeWindowSearchValues(timeInfo.timeWindow));
+  if (timeInfo.exactTime) parts.push(...exactTimeSearchValues(timeInfo.exactTime));
+  if (timeInfo.label) parts.push(timeInfo.label);
+  if (isOtherCoursePickup(d)) parts.push('集荷');
   if (isPickupBackedDelivery(d)) {
     const disp = pickupListDisplay(d);
     if (disp) parts.push(disp.company, disp.detail);
@@ -6154,10 +6413,10 @@ function deliveryMatchesSearch(d, idx, query) {
 
 function deliveryMatchesTimeWindowFilter(d, filter) {
   if (!filter) return true;
-  const timeWindow = timeWindowForDelivery(d);
-  if (filter === LIST_TIME_WINDOW_FILTER_TIMED) return !!timeWindow;
-  if (filter === LIST_TIME_WINDOW_FILTER_NONE) return !timeWindow;
-  return !!timeWindow && timeWindow.id === filter;
+  const timeInfo = deliveryTimeInfo(d);
+  if (filter === LIST_TIME_WINDOW_FILTER_TIMED) return timeInfo.hasTime;
+  if (filter === LIST_TIME_WINDOW_FILTER_NONE) return !timeInfo.hasTime;
+  return !!timeInfo.timeWindow && timeInfo.timeWindow.id === filter;
 }
 
 function deliveryMatchesListFilters(d, idx, query, timeWindowFilter) {
@@ -6249,13 +6508,19 @@ function renderList() {
       + (d.approx ? ' approx' : '')
       + (d.needsReview && !d.completed ? ' review' : '')
       + (isSpotPickupDelivery(d) ? ' spot' : '')
+      + (isOtherCoursePickup(d) ? ' other-pickup' : '')
       + (d.progressSyncFailed ? ' sync-pending' : '')
       + (d.id === activeDeliveryId ? ' selected' : '');
     const pickupDisplay = isPickupBackedDelivery(d) ? pickupListDisplay(d) : null;
-    const timeWindow = timeWindowForDelivery(d);
-    const timeWindowClass = timeWindow ? ' time-window' : '';
-    const timeWindowStyle = timeWindow ? ` style="--time-window-color:${escapeHtml(timeWindow.color)}"` : '';
-    const timeWindowBadge = timeWindow ? `<div><span class="time-window-badge">${escapeHtml(timeWindow.label)}</span></div>` : '';
+    const timeInfo = deliveryTimeInfo(d);
+    const timeWindowClass = timeInfo.hasTime ? ' time-constrained' : '';
+    const timeWindowStyle = timeInfo.hasTime ? ` style="--time-window-color:${escapeHtml(timeInfo.color)}"` : '';
+    const timeWindowBadge = timeInfo.hasTime
+      ? `<div><span class="time-window-badge">時 ${escapeHtml(timeInfo.label)}</span></div>`
+      : '';
+    const pickupTypeBadge = isOtherCoursePickup(d)
+      ? '<div><span class="pickup-type-badge">集荷</span></div>'
+      : '';
     return `
       <div class="${cls}${timeWindowClass}" data-id="${d.id}"${timeWindowStyle}>
         <div class="num-badge">${escapeHtml(num)}${d.approx ? '?' : ''}</div>
@@ -6265,6 +6530,7 @@ function renderList() {
                <div class="pickup-detail">${escapeHtml(pickupDisplay.detail)}</div>`
             : `<div class="addr">${escapeHtml(d.address)}</div>
                ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}`}
+          ${pickupTypeBadge}
           ${timeWindowBadge}
           ${(Number(d.packageCount) || 1) > 1 ? `<div><span class="package-badge-list">📦 ${Number(d.packageCount)}個口</span></div>` : ''}
           ${d.needsReview && !d.completed ? `<div><span class="review-badge">❗要確認: ${escapeHtml((d.reviewReasons || [])[0] || 'ピン位置を確認')}</span></div>` : ''}
@@ -6449,7 +6715,11 @@ function openEdit(id) {
   const immediateBatchReview = batchReviewEditingId === id;
   const reviewReasonText = (d.reviewReasons || []).join(' / ') || 'ピン位置を確認してください';
   const title = $('edit-modal-title');
-  if (title) title.textContent = immediateBatchReview ? '伝票を確認・修正' : '配送先を編集';
+  if (title) {
+    title.textContent = immediateBatchReview
+      ? '伝票を確認・修正'
+      : isOtherCoursePickup(d) ? '集荷先を編集' : '配送先を編集';
+  }
   // 要確認バナーと伝票写真 (連写モードで要確認になったものは写真と見比べられる)
   const banner = $('edit-review-banner');
   if (banner) {
@@ -6473,6 +6743,12 @@ function openEdit(id) {
   $('edit-note').value = d.note || '';
   $('edit-package-count').value = String(Number(d.packageCount) || 1);
   populateTimeWindowSelect($('edit-time-window'), d.timeWindowId || '');
+  $('edit-exact-time').value = exactTimeForDelivery(d);
+  const kindField = $('edit-delivery-kind-field');
+  const kindSelect = $('edit-delivery-kind');
+  const canChooseKind = d.deliveryCourse === OTHER_DELIVERY_COURSE && !isPickupStorageRecord(d);
+  if (kindField) kindField.hidden = !canChooseKind;
+  if (kindSelect) kindSelect.value = isOtherCoursePickup(d) ? 'pickup' : 'delivery';
   const doneBtn = $('btn-edit-done');
   doneBtn.textContent = d.completed ? '完了解除' : '完了';
   doneBtn.disabled = false;
@@ -6542,6 +6818,8 @@ async function reGeocodeEditedItem() {
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
   const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
+  const newExactTime = normalizeExactDeliveryTime($('edit-exact-time').value);
+  const newDeliveryKind = normalizeDeliveryKind($('edit-delivery-kind').value, d.deliveryCourse);
   if (!newAddr) { showToast('住所を入力してください', true); return; }
   if (isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
 
@@ -6553,7 +6831,9 @@ async function reGeocodeEditedItem() {
     approx: d.approx,
     formatted: d.formatted,
     addressNormalizationVersion: d.addressNormalizationVersion,
-    timeWindowId: d.timeWindowId
+    timeWindowId: d.timeWindowId,
+    exactTime: d.exactTime,
+    deliveryKind: d.deliveryKind
   };
 
   showLoading('住所を再検索中...');
@@ -6568,6 +6848,8 @@ async function reGeocodeEditedItem() {
   d.address = newAddr;
   d.note = newNote;
   d.timeWindowId = newTimeWindowId;
+  d.exactTime = newExactTime;
+  d.deliveryKind = newDeliveryKind;
   d.lat = result.lat;
   d.lng = result.lng;
   d.approx = result.approx;
@@ -6590,6 +6872,8 @@ async function reGeocodeEditedItem() {
     d.formatted = before.formatted;
     d.addressNormalizationVersion = before.addressNormalizationVersion;
     d.timeWindowId = before.timeWindowId;
+    d.exactTime = before.exactTime;
+    d.deliveryKind = before.deliveryKind;
     saveDeliveries();
     renderMarkers();
     renderList();
@@ -6613,6 +6897,8 @@ async function saveEditedItem() {
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
   const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
+  const newExactTime = normalizeExactDeliveryTime($('edit-exact-time').value);
+  const newDeliveryKind = normalizeDeliveryKind($('edit-delivery-kind').value, d.deliveryCourse);
   const newPkgCount = Math.max(1, parseInt($('edit-package-count').value, 10) || 1);
   if (!newAddr) { showToast('住所を入力してください', true); return; }
 
@@ -6626,7 +6912,9 @@ async function saveEditedItem() {
     approx: d.approx,
     formatted: d.formatted,
     addressNormalizationVersion: d.addressNormalizationVersion,
-    timeWindowId: d.timeWindowId
+    timeWindowId: d.timeWindowId,
+    exactTime: d.exactTime,
+    deliveryKind: d.deliveryKind
   };
 
   let locationChanged = false;
@@ -6648,6 +6936,8 @@ async function saveEditedItem() {
   d.address = locationChanged ? newAddr : d.address;
   d.note = newNote;
   d.timeWindowId = newTimeWindowId;
+  d.exactTime = newExactTime;
+  d.deliveryKind = newDeliveryKind;
   d.packageCount = newPkgCount;
   if (geocodeResult) {
     d.lat = geocodeResult.lat;
@@ -6675,6 +6965,8 @@ async function saveEditedItem() {
     d.formatted = before.formatted;
     d.addressNormalizationVersion = before.addressNormalizationVersion;
     d.timeWindowId = before.timeWindowId;
+    d.exactTime = before.exactTime;
+    d.deliveryKind = before.deliveryKind;
     saveDeliveries();
     renderMarkers();
     renderList();
@@ -7071,6 +7363,9 @@ function updateManualAddressBuilder({ apply = false } = {}) {
 function openManualAddModal() {
   $('add-address').value = '';
   $('add-note').value = '';
+  const kindSelect = $('add-delivery-kind');
+  if (kindSelect) kindSelect.value = 'delivery';
+  updateAddDeliveryKindField();
   updateManualAddressBuilder({ apply: !!currentManualAddressProfile() });
   openModal('modal-add');
 }
@@ -7089,6 +7384,9 @@ function startVoiceInput() {
     const split = splitAddressAndBuilding(transcript);
     $('add-address').value = split.address;
     $('add-note').value = split.note;
+    const kindSelect = $('add-delivery-kind');
+    if (kindSelect) kindSelect.value = 'delivery';
+    updateAddDeliveryKindField();
     openModal('modal-add');
   };
   recognition.onerror = (e) => {
@@ -7326,6 +7624,9 @@ async function readPendingPhoto() {
     hideLoading();
     $('add-address').value = resolved.address;
     $('add-note').value = note;
+    const kindSelect = $('add-delivery-kind');
+    if (kindSelect) kindSelect.value = 'delivery';
+    updateAddDeliveryKindField();
     openModal('modal-add');
     if (resolved.swapped) {
       showToast('現在地に近い方をお届け先として採用しました (発送元側を除外)');
@@ -7800,7 +8101,10 @@ async function processBatchPhoto(file, options = {}) {
     // (連写中に確認ダイアログは出さない。完了済みしか無ければ新規ピン)
     const canon = canonicalAddressForCache(address);
     const dupActive = canon
-      ? deliveries.find(d => !d.completed && canonicalAddressForCache(d.address || '') === canon)
+      ? deliveries.find(d =>
+          !d.completed &&
+          !isOtherCoursePickup(d) &&
+          canonicalAddressForCache(d.address || '') === canon)
       : null;
     if (dupActive) {
       dupActive.packageCount = (Number(dupActive.packageCount) || 1) + 1;
@@ -7835,6 +8139,7 @@ async function processBatchPhoto(file, options = {}) {
       completed: false,
       completedAt: null,
       deliveryCourse: resolvedDeliveryCourse,
+      deliveryKind: 'delivery',
       createdAt: Date.now(),
       updatedAt: Date.now()
     });
@@ -9410,6 +9715,7 @@ function distanceMeters(a, b) {
 
 const ROUTE_AREA_UNKNOWN_KEY = '__route_area_unknown__';
 const ROUTE_AREA_UNKNOWN_LABEL = 'エリア不明';
+const ROUTE_AREA_FARTHEST_KEY = '__route_area_farthest__';
 
 function routeAreaFromAddress(rawAddress) {
   let text = normalizeAddress(rawAddress || '')
@@ -9493,6 +9799,16 @@ function routeAreaEntryDistance(point, group) {
 }
 
 function orderRouteAreaGroups(start, groups, preferredFirstKey = '') {
+  let resolvedFirstKey = preferredFirstKey;
+  if (preferredFirstKey === ROUTE_AREA_FARTHEST_KEY) {
+    const knownGroups = groups.filter(group => group.key !== ROUTE_AREA_UNKNOWN_KEY);
+    const candidates = knownGroups.length ? knownGroups : groups;
+    const farthest = candidates.reduce((best, group) =>
+      routeAreaEntryDistance(start, group) > routeAreaEntryDistance(start, best) ? group : best,
+    candidates[0]);
+    resolvedFirstKey = farthest ? farthest.key : '';
+  }
+
   const remaining = groups.slice();
   const ordered = [];
   let current = start;
@@ -9500,8 +9816,8 @@ function orderRouteAreaGroups(start, groups, preferredFirstKey = '') {
   while (remaining.length) {
     let candidates = remaining;
     let selectedIndex = -1;
-    if (ordered.length === 0 && preferredFirstKey) {
-      selectedIndex = remaining.findIndex(group => group.key === preferredFirstKey);
+    if (ordered.length === 0 && resolvedFirstKey) {
+      selectedIndex = remaining.findIndex(group => group.key === resolvedFirstKey);
     }
     if (selectedIndex < 0) {
       const known = remaining.filter(group => group.key !== ROUTE_AREA_UNKNOWN_KEY);
@@ -9538,6 +9854,7 @@ function renderRouteAreaPlanner() {
   if (state.groups.length > 1) {
     const select = $('route-area-first');
     select.innerHTML = '<option value="">現在地から近いエリアを自動選択</option>' +
+      `<option value="${ROUTE_AREA_FARTHEST_KEY}">現在地から遠いエリアを自動選択</option>` +
       state.originalGroups.map(group =>
         `<option value="${escapeHtml(group.key)}">${escapeHtml(group.label)}（${group.items.length}件）</option>`
       ).join('');
@@ -9902,7 +10219,7 @@ function collectRouteCandidates() {
   const timeWindowItems = [];
   const ordinaryItems = [];
   pendingItems.forEach(item => {
-    if (timeWindowForDelivery(item)) timeWindowItems.push(item);
+    if (deliveryHasTimeConstraint(item)) timeWindowItems.push(item);
     else ordinaryItems.push(item);
   });
   return {
@@ -10745,6 +11062,11 @@ $('btn-add-confirm').addEventListener('click', () => {
   const address = $('add-address').value.trim();
   const note = $('add-note').value.trim();
   if (!address) { showToast('住所を入力してください', true); return; }
+  const deliveryCourse = appMode === 'delivery' ? getSelectedDeliveryCourse() : '';
+  const deliveryKind = normalizeDeliveryKind(
+    $('add-delivery-kind') ? $('add-delivery-kind').value : 'delivery',
+    deliveryCourse
+  );
   const continuous = $('add-continuous') && $('add-continuous').checked;
   if (continuous) {
     // 連続入力: モーダルを開いたまま次の入力に備える
@@ -10765,7 +11087,7 @@ $('btn-add-confirm').addEventListener('click', () => {
   } else {
     closeModal('modal-add');
   }
-  addDelivery({ address, note, deliveryCourse: appMode === 'delivery' ? getSelectedDeliveryCourse() : '' });
+  addDelivery({ address, note, deliveryCourse, deliveryKind });
 });
 // 連続入力の設定を記憶する
 $('add-continuous').checked = localStorage.getItem('rys-mapbox-test-continuous-add') === '1';
