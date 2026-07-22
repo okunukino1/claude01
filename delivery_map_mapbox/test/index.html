@@ -30,6 +30,7 @@
     --list-height: 50dvh;
     --list-collapsed-height: 46px;
     --native-app-bottom-inset: 0px;
+    --input-bar-height: 98px;
     --text-scale: 1;
   }
   body.list-collapsed { --list-height: var(--list-collapsed-height); }
@@ -198,6 +199,21 @@
     font-weight: 700;
     font-size: 11px;
   }
+  .package-type-list-badge {
+    display: inline-block;
+    max-width: 100%;
+    margin-top: 3px;
+    padding: 2px 6px;
+    overflow: hidden;
+    border: 1px solid #0f766e;
+    border-radius: 4px;
+    background: #ecfdf5;
+    color: #115e59;
+    font-size: 11px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   /* ネイティブ連写カメラ (Capacitorアプリ内)。
      カメラ映像はWebViewの背後にあるため、開いている間は
      ページ全体を透過にし、操作UIとトーストだけを見せる。 */
@@ -227,11 +243,25 @@
     padding: calc(10px + env(safe-area-inset-top)) 12px 12px;
     background: linear-gradient(rgba(0,0,0,0.55), transparent);
   }
+  .native-camera-status-copy {
+    min-width: 0;
+  }
   #native-camera-stats {
     color: #fff;
     font-weight: 700;
     font-size: 13px;
     text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  }
+  #native-camera-package-type {
+    max-width: min(68vw, 360px);
+    margin-top: 3px;
+    overflow: hidden;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+    white-space: nowrap;
   }
   #native-camera-close {
     background: rgba(255,255,255,0.92);
@@ -555,7 +585,7 @@
     transition: bottom 0.25s ease;
   }
   body:not(.work-mode-delivery) .temporary-guidance-banner {
-    bottom: calc(var(--list-height) + var(--native-app-bottom-inset) + env(safe-area-inset-bottom) + 62px);
+    bottom: calc(var(--list-height) + var(--native-app-bottom-inset) + env(safe-area-inset-bottom) + var(--input-bar-height) + 8px);
   }
   .temporary-guidance-banner[hidden] { display: none; }
   .temporary-guidance-copy {
@@ -1027,12 +1057,53 @@
     bottom: calc(var(--list-height) + env(safe-area-inset-bottom) + var(--native-app-bottom-inset));
     left: 0; right: 0;
     z-index: 25;
-    display: flex; gap: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
     padding: 6px 8px;
     background: var(--ink);
     transition: bottom 0.25s ease;
   }
-  .add-bar button {
+  .capture-package-type {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) 34px;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+  }
+  .capture-package-type label {
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .capture-package-type input {
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    padding: 5px 8px;
+    border: 1px solid #fff;
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    font-size: 13px;
+  }
+  .capture-package-type button {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid #fff;
+    border-radius: 6px;
+    background: transparent;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 800;
+  }
+  .add-bar-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .add-bar-actions button {
     flex: 1;
     background: var(--accent);
     color: white;
@@ -1043,12 +1114,12 @@
     cursor: pointer;
     min-height: 42px;
   }
-  .add-bar button.secondary {
+  .add-bar-actions button.secondary {
     background: white;
     color: var(--ink);
     border-color: var(--paper);
   }
-  .add-bar button.on {
+  .add-bar-actions button.on {
     background: var(--accent);
     color: white;
     border-color: var(--paper);
@@ -1212,6 +1283,108 @@
     color: var(--ink);
     font-weight: 700;
     cursor: pointer;
+  }
+  .edit-photo-panel {
+    margin: 4px 0 12px;
+    padding: 8px;
+    border: 1px solid #c9c2ad;
+    border-radius: 8px;
+    background: #f7f4e7;
+  }
+  .edit-photo-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+    color: var(--ink);
+    font-size: 12px;
+  }
+  .edit-photo-image-button {
+    display: flex;
+    width: 100%;
+    height: min(32dvh, 270px);
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 6px;
+    background: #111;
+    cursor: zoom-in;
+  }
+  .edit-photo-image-button img {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+  .edit-photo-nav {
+    display: grid;
+    grid-template-columns: 44px 1fr 44px;
+    align-items: center;
+    gap: 8px;
+    margin-top: 7px;
+  }
+  .edit-photo-nav button {
+    min-height: 36px;
+    border: 1px solid var(--ink);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    font-size: 22px;
+    font-weight: 800;
+  }
+  .edit-photo-nav button:disabled { opacity: 0.35; }
+  .edit-photo-nav span {
+    color: var(--ink-soft);
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+  }
+  #modal-delivery-photo { z-index: 140; padding: 8px; }
+  .delivery-photo-viewer {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: calc(100dvh - 16px);
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #050505;
+  }
+  .delivery-photo-viewer img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+  .delivery-photo-viewer-controls {
+    position: absolute;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    left: 10px;
+    display: grid;
+    grid-template-columns: 48px 1fr 48px 54px;
+    align-items: center;
+    gap: 8px;
+  }
+  .delivery-photo-viewer-controls button {
+    min-height: 44px;
+    border: 1px solid #fff;
+    border-radius: 6px;
+    background: rgba(17,24,39,0.88);
+    color: #fff;
+    font-size: 22px;
+    font-weight: 800;
+  }
+  .delivery-photo-viewer-controls button:disabled { opacity: 0.35; }
+  .delivery-photo-viewer-controls span {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+    text-align: center;
+    text-shadow: 0 1px 2px #000;
   }
   .menu-list button {
     display: block;
@@ -1718,7 +1891,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.76</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.77</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1748,11 +1921,19 @@
 </div>
 
 <div class="add-bar input-only-control">
-  <button id="btn-add-photo" type="button">📷 1枚</button>
-  <button id="btn-add-batch-photo" type="button" class="secondary">📸 連写</button>
-  <button id="btn-add-voice" type="button" class="secondary">🎤 音声</button>
-  <button id="btn-add-manual" type="button" class="secondary">✏️ 手入力</button>
+  <div class="capture-package-type">
+    <label for="capture-package-type">次の荷物</label>
+    <input type="text" id="capture-package-type" list="package-type-suggestions" placeholder="種類（例: 段ボール・封筒）" autocomplete="off">
+    <button id="btn-clear-capture-package-type" type="button" title="荷物の種類を消す" aria-label="荷物の種類を消す">✕</button>
+  </div>
+  <div class="add-bar-actions">
+    <button id="btn-add-photo" type="button">📷 1枚</button>
+    <button id="btn-add-batch-photo" type="button" class="secondary">📸 連写</button>
+    <button id="btn-add-voice" type="button" class="secondary">🎤 音声</button>
+    <button id="btn-add-manual" type="button" class="secondary">✏️ 手入力</button>
+  </div>
 </div>
+<datalist id="package-type-suggestions"></datalist>
 
 <div class="list-section">
   <div class="list-header" id="list-header">
@@ -1769,7 +1950,7 @@
     <button class="pickup-list-tab" id="pickup-tab-spot" type="button" role="tab" data-pickup-list-tab="spot" aria-selected="false">スポット集荷 <span class="tab-count" id="pickup-tab-spot-count"></span></button>
   </div>
   <div class="list-search" id="list-search">
-    <input type="search" id="list-search-input" placeholder="🔍 リスト内検索（住所・名前・メモ・番号）" autocomplete="off" enterkeyhint="search" aria-label="リスト内検索">
+    <input type="search" id="list-search-input" placeholder="🔍 住所・名前・荷物種類・番号" autocomplete="off" enterkeyhint="search" aria-label="リスト内検索">
     <select id="list-time-window-filter" aria-label="時間指定で絞り込み">
       <option value="">⏰ 全時間帯</option>
     </select>
@@ -1785,7 +1966,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.76</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.77</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2025,7 +2206,7 @@
   <div class="modal">
     <h3 id="add-modal-title">配送先を追加</h3>
     <div id="add-delivery-kind-field" hidden>
-      <label for="add-delivery-kind">荷物の種類</label>
+      <label for="add-delivery-kind">作業内容</label>
       <select id="add-delivery-kind">
         <option value="delivery">配送</option>
         <option value="pickup">集荷</option>
@@ -2056,6 +2237,8 @@
     <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
     <label>備考 (建物名・部屋番号など)</label>
     <textarea id="add-note" placeholder="○○ビル 5F"></textarea>
+    <label for="add-package-type">荷物の種類（任意）</label>
+    <input type="text" id="add-package-type" list="package-type-suggestions" placeholder="例: 段ボール・封筒・クール便" autocomplete="off">
     <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;">
       <input type="checkbox" id="add-continuous" style="width:auto;margin:0;"> 連続入力（追加後も開いたまま）
     </label>
@@ -2090,16 +2273,29 @@
   <div class="modal">
     <h3 id="edit-modal-title">配送先を編集</h3>
     <div id="edit-review-banner" style="display:none;background:#fef2f2;border:1px solid #e11d48;border-radius:8px;padding:8px 10px;margin:4px 0 8px;color:#be123c;font-size:12px;font-weight:700;"></div>
-    <div id="edit-photo-wrap" style="display:none;margin:4px 0 8px;">
-      <img id="edit-photo" alt="伝票写真" style="max-width:100%;max-height:min(32vh,260px);border-radius:8px;display:block;margin:0 auto;object-fit:contain;">
+    <div class="edit-photo-panel" id="edit-photo-wrap" hidden>
+      <div class="edit-photo-heading">
+        <strong>伝票写真</strong>
+        <span id="edit-photo-count"></span>
+      </div>
+      <button class="edit-photo-image-button" id="btn-edit-photo-open" type="button" title="写真を拡大">
+        <img id="edit-photo" alt="伝票写真">
+      </button>
+      <div class="edit-photo-nav" id="edit-photo-nav" hidden>
+        <button id="btn-edit-photo-prev" type="button" title="前の写真" aria-label="前の写真">‹</button>
+        <span id="edit-photo-position"></span>
+        <button id="btn-edit-photo-next" type="button" title="次の写真" aria-label="次の写真">›</button>
+      </div>
     </div>
     <label>住所</label>
     <input type="text" id="edit-address">
     <button class="inline-action" id="btn-edit-geocode" type="button">住所再検索</button>
     <label>備考</label>
     <textarea id="edit-note"></textarea>
+    <label for="edit-package-type">荷物の種類（任意）</label>
+    <input type="text" id="edit-package-type" list="package-type-suggestions" placeholder="例: 段ボール・封筒・クール便" autocomplete="off">
     <div id="edit-delivery-kind-field" hidden>
-      <label for="edit-delivery-kind">荷物の種類</label>
+      <label for="edit-delivery-kind">作業内容</label>
       <select id="edit-delivery-kind">
         <option value="delivery">配送</option>
         <option value="pickup">集荷</option>
@@ -2118,6 +2314,18 @@
       <button class="danger" id="btn-edit-delete" type="button">削除</button>
       <button class="cancel" id="btn-edit-cancel" type="button">キャンセル</button>
       <button class="primary" id="btn-edit-save" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-delivery-photo">
+  <div class="delivery-photo-viewer">
+    <img id="delivery-photo-viewer-img" alt="伝票写真の拡大表示">
+    <div class="delivery-photo-viewer-controls">
+      <button id="btn-delivery-photo-prev" type="button" title="前の写真" aria-label="前の写真">‹</button>
+      <span id="delivery-photo-viewer-position"></span>
+      <button id="btn-delivery-photo-next" type="button" title="次の写真" aria-label="次の写真">›</button>
+      <button id="btn-delivery-photo-close" type="button" title="閉じる" aria-label="写真を閉じる">✕</button>
     </div>
   </div>
 </div>
@@ -2179,7 +2387,10 @@
   <div class="native-camera-guide" aria-hidden="true"></div>
   <div id="native-camera-capture-feedback" role="status" aria-live="polite"></div>
   <div class="native-camera-top">
-    <div id="native-camera-stats">📸 連続撮影</div>
+    <div class="native-camera-status-copy">
+      <div id="native-camera-stats">📸 連続撮影</div>
+      <div id="native-camera-package-type"></div>
+    </div>
     <button id="native-camera-close" type="button">✕ 終了</button>
   </div>
   <div class="native-camera-bottom">
@@ -2191,8 +2402,14 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.76';
+const APP_VERSION = 'v2026.06.24-test.77';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
+const PACKAGE_TYPE_HISTORY_KEY = 'rys-mapbox-test-package-type-history-v1';
+const DELIVERY_PHOTO_DB_NAME = 'rys-mapbox-test-delivery-photos-v1';
+const DELIVERY_PHOTO_DB_VERSION = 1;
+const DELIVERY_PHOTO_STORE = 'photos';
+const DELIVERY_PHOTO_MAX_SIZE = 1600;
+const DELIVERY_PHOTO_QUALITY = 0.82;
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2416,10 +2633,19 @@ let pickupLastSpotTouchAt = 0;
 let pendingPhotoFile = null;
 let pendingPhotoUrl = '';
 let pendingPhotoRotation = 0;
+let pendingPhotoPackageType = '';
+let pendingAddPhoto = null;
 let pendingOcrJob = null;      // { rotation, controller, promise } — プレビュー表示中に先行実行するOCR
 let pendingOcrRestartTimer = null;
 let lastKnownGps = null;       // { lat, lng } — 要確認ピン判定に使う最新GPS
-const reviewPhotoUrls = new Map(); // 要確認ピンの伝票写真 (id -> objectURL, セッション中のみ)
+const reviewPhotoUrls = new Map(); // IndexedDB保存失敗時の要確認写真フォールバック
+let deliveryPhotoDbPromise = null;
+let deliveryPhotoPersistenceRequested = false;
+let deliveryPhotoStorageWarningShown = false;
+let editPhotoEntries = [];
+let editPhotoIndex = 0;
+let editPhotoLoadToken = 0;
+let pendingFilePhotoContext = null;
 
 let gpsWatchId = null;
 let gpsActive = false;
@@ -2813,6 +3039,261 @@ function uid() {
     return crypto.randomUUID();
   }
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function normalizePackageType(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[\t\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
+function combinePackageTypes(currentValue, addedValue) {
+  const current = normalizePackageType(currentValue);
+  const added = normalizePackageType(addedValue);
+  if (!current) return added;
+  if (!added) return current;
+  const values = current.split(/\s+\/\s+/).map(normalizePackageType).filter(Boolean);
+  if (!values.some(value => value.toLowerCase() === added.toLowerCase())) values.push(added);
+  return values.join(' / ').slice(0, 160);
+}
+
+function savedPackageTypeHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PACKAGE_TYPE_HISTORY_KEY) || '[]');
+    return Array.isArray(saved) ? saved.map(normalizePackageType).filter(Boolean).slice(0, 30) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function refreshPackageTypeSuggestions() {
+  const datalist = $('package-type-suggestions');
+  if (!datalist) return;
+  const values = [];
+  const seen = new Set();
+  [...savedPackageTypeHistory(), ...deliveries.map(d => d && d.packageType)].forEach(raw => {
+    const value = normalizePackageType(raw);
+    const key = value.toLowerCase();
+    if (!value || seen.has(key)) return;
+    seen.add(key);
+    values.push(value);
+  });
+  datalist.innerHTML = values.slice(0, 30)
+    .map(value => `<option value="${escapeHtml(value)}"></option>`)
+    .join('');
+}
+
+function rememberPackageType(value) {
+  const normalized = normalizePackageType(value);
+  if (!normalized) return;
+  const next = [normalized, ...savedPackageTypeHistory().filter(item => item.toLowerCase() !== normalized.toLowerCase())]
+    .slice(0, 30);
+  localStorage.setItem(PACKAGE_TYPE_HISTORY_KEY, JSON.stringify(next));
+  refreshPackageTypeSuggestions();
+}
+
+function capturePackageTypeValue() {
+  return normalizePackageType($('capture-package-type') ? $('capture-package-type').value : '');
+}
+
+function openDeliveryPhotoDb() {
+  if (!('indexedDB' in window)) return Promise.reject(new Error('この端末は写真保存に対応していません'));
+  if (deliveryPhotoDbPromise) return deliveryPhotoDbPromise;
+  deliveryPhotoDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(DELIVERY_PHOTO_DB_NAME, DELIVERY_PHOTO_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      const store = db.objectStoreNames.contains(DELIVERY_PHOTO_STORE)
+        ? request.transaction.objectStore(DELIVERY_PHOTO_STORE)
+        : db.createObjectStore(DELIVERY_PHOTO_STORE, { keyPath: 'id' });
+      if (!store.indexNames.contains('deliveryId')) store.createIndex('deliveryId', 'deliveryId', { unique: false });
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+    request.onerror = () => reject(request.error || new Error('写真保存領域を開けませんでした'));
+    request.onblocked = () => reject(new Error('写真保存領域の更新がブロックされました'));
+  }).catch(error => {
+    deliveryPhotoDbPromise = null;
+    throw error;
+  });
+  return deliveryPhotoDbPromise;
+}
+
+async function requestDeliveryPhotoPersistence() {
+  if (deliveryPhotoPersistenceRequested) return;
+  deliveryPhotoPersistenceRequested = true;
+  try {
+    if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
+  } catch (e) {}
+}
+
+async function archiveDeliveryPhoto(deliveryId, file, rotation = 0) {
+  if (!deliveryId || !file) return null;
+  const blob = await compressImage(file, DELIVERY_PHOTO_MAX_SIZE, DELIVERY_PHOTO_QUALITY, rotation);
+  const db = await openDeliveryPhotoDb();
+  const record = {
+    id: uid(),
+    deliveryId,
+    blob,
+    createdAt: Date.now()
+  };
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(DELIVERY_PHOTO_STORE, 'readwrite');
+    transaction.objectStore(DELIVERY_PHOTO_STORE).put(record);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('伝票写真を保存できませんでした'));
+    transaction.onabort = () => reject(transaction.error || new Error('伝票写真の保存を中止しました'));
+  });
+  requestDeliveryPhotoPersistence();
+  return record.id;
+}
+
+function addReviewPhotoFallback(deliveryId, file) {
+  if (!deliveryId || !file) return;
+  try {
+    const urls = reviewPhotoUrls.get(deliveryId) || [];
+    urls.push(URL.createObjectURL(file));
+    reviewPhotoUrls.set(deliveryId, urls);
+  } catch (e) {}
+}
+
+async function persistDeliveryPhoto(deliveryId, file, rotation = 0) {
+  if (!deliveryId || !file) return false;
+  try {
+    await archiveDeliveryPhoto(deliveryId, file, rotation);
+    return true;
+  } catch (e) {
+    console.warn('delivery photo save failed', e);
+    addReviewPhotoFallback(deliveryId, file);
+    if (!deliveryPhotoStorageWarningShown) {
+      deliveryPhotoStorageWarningShown = true;
+    }
+    return false;
+  }
+}
+
+async function loadDeliveryPhotoRecords(deliveryId) {
+  if (!deliveryId) return [];
+  const db = await openDeliveryPhotoDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(DELIVERY_PHOTO_STORE, 'readonly');
+    const index = transaction.objectStore(DELIVERY_PHOTO_STORE).index('deliveryId');
+    const records = [];
+    const request = index.openCursor(IDBKeyRange.only(deliveryId));
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      records.push(cursor.value);
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error || new Error('伝票写真を読み込めませんでした'));
+    transaction.oncomplete = () => resolve(records.sort((a, b) => Number(a.createdAt) - Number(b.createdAt)));
+    transaction.onerror = () => reject(transaction.error || new Error('伝票写真を読み込めませんでした'));
+  });
+}
+
+async function deleteDeliveryPhotos(deliveryIds) {
+  const ids = new Set((Array.isArray(deliveryIds) ? deliveryIds : [deliveryIds]).filter(Boolean));
+  if (!ids.size) return;
+  ids.forEach(releaseReviewPhoto);
+  let db;
+  try { db = await openDeliveryPhotoDb(); }
+  catch (e) { return; }
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(DELIVERY_PHOTO_STORE, 'readwrite');
+    const request = transaction.objectStore(DELIVERY_PHOTO_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      if (cursor.value && ids.has(cursor.value.deliveryId)) cursor.delete();
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error || new Error('伝票写真を削除できませんでした'));
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('伝票写真を削除できませんでした'));
+  });
+}
+
+function clearEditPhotoEntries() {
+  editPhotoLoadToken++;
+  editPhotoEntries.forEach(entry => {
+    if (entry.ownedUrl && entry.url) {
+      try { URL.revokeObjectURL(entry.url); } catch (e) {}
+    }
+  });
+  editPhotoEntries = [];
+  editPhotoIndex = 0;
+  const wrap = $('edit-photo-wrap');
+  if (wrap) wrap.hidden = true;
+  const image = $('edit-photo');
+  if (image) image.removeAttribute('src');
+  const viewer = $('delivery-photo-viewer-img');
+  if (viewer) viewer.removeAttribute('src');
+  closeModal('modal-delivery-photo');
+}
+
+function renderEditPhoto() {
+  const count = editPhotoEntries.length;
+  const wrap = $('edit-photo-wrap');
+  if (!wrap) return;
+  if (!count) {
+    wrap.hidden = true;
+    return;
+  }
+  editPhotoIndex = Math.max(0, Math.min(editPhotoIndex, count - 1));
+  const entry = editPhotoEntries[editPhotoIndex];
+  wrap.hidden = false;
+  $('edit-photo').src = entry.url;
+  $('edit-photo-count').textContent = count === 1 ? '1枚' : `${count}枚`;
+  $('edit-photo-position').textContent = `${editPhotoIndex + 1} / ${count}`;
+  $('edit-photo-nav').hidden = count <= 1;
+  $('btn-edit-photo-prev').disabled = editPhotoIndex === 0;
+  $('btn-edit-photo-next').disabled = editPhotoIndex >= count - 1;
+  const viewer = $('delivery-photo-viewer-img');
+  if (viewer && $('modal-delivery-photo').classList.contains('show')) viewer.src = entry.url;
+  $('delivery-photo-viewer-position').textContent = `${editPhotoIndex + 1} / ${count}`;
+  $('btn-delivery-photo-prev').disabled = editPhotoIndex === 0;
+  $('btn-delivery-photo-next').disabled = editPhotoIndex >= count - 1;
+}
+
+async function loadEditDeliveryPhotos(deliveryId) {
+  clearEditPhotoEntries();
+  const token = editPhotoLoadToken;
+  let records = [];
+  try { records = await loadDeliveryPhotoRecords(deliveryId); }
+  catch (e) { console.warn('delivery photo load failed', e); }
+  if (token !== editPhotoLoadToken || editingItemId !== deliveryId) return;
+  const entries = records
+    .filter(record => record && record.blob)
+    .map(record => ({ url: URL.createObjectURL(record.blob), ownedUrl: true }));
+  const fallbackUrls = reviewPhotoUrls.get(deliveryId) || [];
+  fallbackUrls.forEach(url => entries.push({ url, ownedUrl: false }));
+  editPhotoEntries = entries;
+  editPhotoIndex = 0;
+  renderEditPhoto();
+}
+
+function moveEditPhoto(delta) {
+  if (!editPhotoEntries.length) return;
+  editPhotoIndex = Math.max(0, Math.min(editPhotoEntries.length - 1, editPhotoIndex + delta));
+  renderEditPhoto();
+}
+
+function openEditPhotoViewer() {
+  if (!editPhotoEntries.length) return;
+  $('delivery-photo-viewer-img').src = editPhotoEntries[editPhotoIndex].url;
+  openModal('modal-delivery-photo');
+  renderEditPhoto();
+}
+
+function closeEditPhotoViewer() {
+  closeModal('modal-delivery-photo');
 }
 
 function updateAppVersionLabels() {
@@ -6555,11 +7036,12 @@ function validateDeliveryPlacement(address, result, deliveryCourse = '') {
   return reasons;
 }
 
-async function addDelivery({ address, note, deliveryCourse, deliveryKind = 'delivery' }) {
+async function addDelivery({ address, note, packageType = '', photo = null, deliveryCourse, deliveryKind = 'delivery' }) {
   if (!address) { showToast('住所が空です', true); return; }
 
   const resolvedDeliveryCourse = deliveryCourse || (appMode === 'delivery' ? getSelectedDeliveryCourse() : '');
   const resolvedDeliveryKind = normalizeDeliveryKind(deliveryKind, resolvedDeliveryCourse);
+  const normalizedPackageType = normalizePackageType(packageType);
   // 同じ住所 = 複数個口。未完了の既存ピンがあれば個数を増やす
   const canon = canonicalAddressForCache(address);
   const dupActive = canon ? deliveries.find(d =>
@@ -6572,13 +7054,23 @@ async function addDelivery({ address, note, deliveryCourse, deliveryKind = 'deli
     showConfirm(
       '複数個口の荷物',
       `「${dupActive.address}」は既に登録済みです。\n荷物の個数を ${current} → ${current + 1} 個に増やしますか？`,
-      () => {
+      async () => {
         dupActive.packageCount = current + 1;
+        dupActive.packageType = combinePackageTypes(dupActive.packageType, normalizedPackageType);
         dupActive.updatedAt = Date.now();
+        rememberPackageType(normalizedPackageType);
         saveDeliveries();
         renderMarkers();
         renderList();
-        showToast(`📦 ${dupActive.address} を${dupActive.packageCount}個口にしました`);
+        const photoSaved = !photo || !photo.file
+          ? true
+          : await persistDeliveryPhoto(dupActive.id, photo.file, photo.rotation || 0);
+        showToast(
+          photoSaved
+            ? `📦 ${dupActive.address} を${dupActive.packageCount}個口にしました`
+            : `📦 個数は更新しましたが、伝票写真を保存できませんでした`,
+          !photoSaved
+        );
       }
     );
     return;
@@ -6587,12 +7079,14 @@ async function addDelivery({ address, note, deliveryCourse, deliveryKind = 'deli
   await insertDelivery({
     address,
     note,
+    packageType: normalizedPackageType,
+    photo,
     deliveryCourse: resolvedDeliveryCourse,
     deliveryKind: resolvedDeliveryKind
   });
 }
 
-async function insertDelivery({ address, note, deliveryCourse, deliveryKind = 'delivery' }) {
+async function insertDelivery({ address, note, packageType = '', photo = null, deliveryCourse, deliveryKind = 'delivery' }) {
   showLoading('住所を検索中...');
   const result = await geocodeAddress(address);
   hideLoading();
@@ -6605,6 +7099,7 @@ async function insertDelivery({ address, note, deliveryCourse, deliveryKind = 'd
     id: uid(),
     address,
     note: note || '',
+    packageType: normalizePackageType(packageType),
     lat: result.lat,
     lng: result.lng,
     approx: result.approx,
@@ -6622,11 +7117,17 @@ async function insertDelivery({ address, note, deliveryCourse, deliveryKind = 'd
   };
   deliveries.push(d);
   activeDeliveryId = d.id;
+  rememberPackageType(d.packageType);
   saveDeliveries();
   renderMarkers();
   renderList();
+  const photoSaved = !photo || !photo.file
+    ? true
+    : await persistDeliveryPhoto(d.id, photo.file, photo.rotation || 0);
   map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
-  if (d.needsReview) {
+  if (!photoSaved) {
+    showToast('ピンは追加しましたが、伝票写真を保存できませんでした', true);
+  } else if (d.needsReview) {
     showToast(`❗要確認: ${reviewReasons.join(' / ')} — ピン位置を確認してください`, true);
   } else {
     showToast(result.sharedCache ? '保存済み位置から追加しました' : '配送先を追加しました');
@@ -6679,7 +7180,7 @@ function currentListTimeWindowFilter() {
 
 function deliveryMatchesSearch(d, idx, query) {
   if (!query) return true;
-  const parts = [d.address, d.formatted, d.note, d.completedBy, displayNumber(d, idx)];
+  const parts = [d.address, d.formatted, d.note, d.packageType, d.completedBy, displayNumber(d, idx)];
   const timeInfo = deliveryTimeInfo(d);
   if (timeInfo.timeWindow) parts.push(...timeWindowSearchValues(timeInfo.timeWindow));
   if (timeInfo.exactTime) parts.push(...exactTimeSearchValues(timeInfo.exactTime));
@@ -6814,6 +7315,7 @@ function renderList() {
                ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}`}
           ${pickupTypeBadge}
           ${timeWindowBadge}
+          ${d.packageType ? `<div><span class="package-type-list-badge">荷物: ${escapeHtml(d.packageType)}</span></div>` : ''}
           ${d.id === temporaryGuidanceTargetId ? '<div><span class="temporary-guidance-list-badge">➜ 一時案内中</span></div>' : ''}
           ${(Number(d.packageCount) || 1) > 1 ? `<div><span class="package-badge-list">📦 ${Number(d.packageCount)}個口</span></div>` : ''}
           ${d.needsReview && !d.completed ? `<div><span class="review-badge">❗要確認: ${escapeHtml((d.reviewReasons || [])[0] || 'ピン位置を確認')}</span></div>` : ''}
@@ -7000,6 +7502,7 @@ function cancelPlacement() {
 }
 
 function openEdit(id) {
+  clearEditPhotoEntries();
   editingItemId = id;
   const d = deliveries.find(x => x.id === id);
   if (!d) return;
@@ -7027,14 +7530,9 @@ function openEdit(id) {
       banner.style.display = 'none';
     }
   }
-  const photoWrap = $('edit-photo-wrap');
-  const photoUrl = reviewPhotoUrls.get(id);
-  if (photoWrap) {
-    photoWrap.style.display = photoUrl ? '' : 'none';
-    if (photoUrl) $('edit-photo').src = photoUrl;
-  }
   $('edit-address').value = d.address;
   $('edit-note').value = d.note || '';
+  $('edit-package-type').value = d.packageType || '';
   $('edit-package-count').value = String(Number(d.packageCount) || 1);
   populateTimeWindowSelect($('edit-time-window'), d.timeWindowId || '');
   $('edit-exact-time').value = exactTimeForDelivery(d);
@@ -7059,12 +7557,14 @@ function openEdit(id) {
     : 'キャンセル';
   updateTemporaryGuidanceUi();
   openModal('modal-edit');
+  loadEditDeliveryPhotos(id);
 }
 
 function cancelEditedItem() {
   const cancelledId = editingItemId;
   const immediatePhotoReview = !!cancelledId && batchReviewEditingId === cancelledId;
   closeModal('modal-edit');
+  clearEditPhotoEntries();
   editingItemId = null;
   if (!immediatePhotoReview) return;
 
@@ -7084,6 +7584,7 @@ async function toggleEditedItemDone() {
   if (!editingItemId) return;
   const d = deliveries.find(x => x.id === editingItemId);
   if (!d) return;
+  const editedId = editingItemId;
   const nextCompleted = !d.completed;
   const operatorName = nextCompleted && isPickupBackedDelivery(d) ? await ensureOperatorName() : '';
   if (nextCompleted && isPickupBackedDelivery(d) && !operatorName) {
@@ -7101,6 +7602,7 @@ async function toggleEditedItemDone() {
   renderMarkers();
   renderList();
   closeModal('modal-edit');
+  clearEditPhotoEntries();
   editingItemId = null;
   showToast(d.completed ? '完了にしました' : '未完了に戻しました');
   syncPickupProgress(d, operatorName);
@@ -7120,6 +7622,7 @@ async function reGeocodeEditedItem() {
   const immediatePhotoReview = batchReviewEditingId === editedId;
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
+  const newPackageType = normalizePackageType($('edit-package-type').value);
   const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
   const newExactTime = normalizeExactDeliveryTime($('edit-exact-time').value);
   const newDeliveryKind = normalizeDeliveryKind($('edit-delivery-kind').value, d.deliveryCourse);
@@ -7129,6 +7632,7 @@ async function reGeocodeEditedItem() {
   const before = {
     address: d.address,
     note: d.note,
+    packageType: d.packageType,
     lat: d.lat,
     lng: d.lng,
     approx: d.approx,
@@ -7150,6 +7654,7 @@ async function reGeocodeEditedItem() {
 
   d.address = newAddr;
   d.note = newNote;
+  d.packageType = newPackageType;
   d.timeWindowId = newTimeWindowId;
   d.exactTime = newExactTime;
   d.deliveryKind = newDeliveryKind;
@@ -7169,6 +7674,7 @@ async function reGeocodeEditedItem() {
   if (!locationSynced && isRegularPickupBackedDelivery(d)) {
     d.address = before.address;
     d.note = before.note;
+    d.packageType = before.packageType;
     d.lat = before.lat;
     d.lng = before.lng;
     d.approx = before.approx;
@@ -7184,7 +7690,9 @@ async function reGeocodeEditedItem() {
     return;
   }
   map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
+  rememberPackageType(d.packageType);
   closeModal('modal-edit');
+  clearEditPhotoEntries();
   editingItemId = null;
   if (temporaryGuidanceTargetId === editedId) {
     refreshTemporaryGuidanceLine({ announce: false });
@@ -7202,6 +7710,7 @@ async function saveEditedItem() {
   const immediatePhotoReview = batchReviewEditingId === editedId;
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
+  const newPackageType = normalizePackageType($('edit-package-type').value);
   const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
   const newExactTime = normalizeExactDeliveryTime($('edit-exact-time').value);
   const newDeliveryKind = normalizeDeliveryKind($('edit-delivery-kind').value, d.deliveryCourse);
@@ -7213,6 +7722,7 @@ async function saveEditedItem() {
   const before = {
     address: d.address,
     note: d.note,
+    packageType: d.packageType,
     lat: d.lat,
     lng: d.lng,
     approx: d.approx,
@@ -7241,6 +7751,7 @@ async function saveEditedItem() {
 
   d.address = locationChanged ? newAddr : d.address;
   d.note = newNote;
+  d.packageType = newPackageType;
   d.timeWindowId = newTimeWindowId;
   d.exactTime = newExactTime;
   d.deliveryKind = newDeliveryKind;
@@ -7265,6 +7776,7 @@ async function saveEditedItem() {
   if (!locationSynced && isRegularPickupBackedDelivery(d)) {
     d.address = before.address;
     d.note = before.note;
+    d.packageType = before.packageType;
     d.lat = before.lat;
     d.lng = before.lng;
     d.approx = before.approx;
@@ -7279,7 +7791,9 @@ async function saveEditedItem() {
     showToast('管理者確認に失敗したため、住所変更を取り消しました', true);
     return;
   }
+  rememberPackageType(d.packageType);
   closeModal('modal-edit');
+  clearEditPhotoEntries();
   editingItemId = null;
   if (locationChanged && temporaryGuidanceTargetId === editedId) {
     refreshTemporaryGuidanceLine({ announce: false });
@@ -7306,10 +7820,12 @@ function deleteEditedItem() {
       if (temporaryGuidanceTargetId === deletedId) {
         clearTemporaryGuidance({ render: false, silent: true });
       }
+      deleteDeliveryPhotos(deletedId).catch(e => console.warn('delivery photo delete failed', e));
       saveDeliveries();
       renderMarkers();
       renderList();
       closeModal('modal-edit');
+      clearEditPhotoEntries();
       editingItemId = null;
       showToast('削除しました');
     }
@@ -7674,8 +8190,10 @@ function updateManualAddressBuilder({ apply = false } = {}) {
 }
 
 function openManualAddModal() {
+  pendingAddPhoto = null;
   $('add-address').value = '';
   $('add-note').value = '';
+  $('add-package-type').value = capturePackageTypeValue();
   const kindSelect = $('add-delivery-kind');
   if (kindSelect) kindSelect.value = 'delivery';
   updateAddDeliveryKindField();
@@ -7697,6 +8215,8 @@ function startVoiceInput() {
     const split = splitAddressAndBuilding(transcript);
     $('add-address').value = split.address;
     $('add-note').value = split.note;
+    pendingAddPhoto = null;
+    $('add-package-type').value = capturePackageTypeValue();
     const kindSelect = $('add-delivery-kind');
     if (kindSelect) kindSelect.value = 'delivery';
     updateAddDeliveryKindField();
@@ -7715,6 +8235,7 @@ function resetPhotoPreviewState() {
   pendingPhotoFile = null;
   pendingPhotoUrl = '';
   pendingPhotoRotation = 0;
+  pendingPhotoPackageType = '';
   const img = $('photo-preview-img');
   if (img) {
     img.removeAttribute('src');
@@ -7814,11 +8335,12 @@ function cancelPendingPhotoOcr() {
   pendingOcrJob = null;
 }
 
-function openPhotoPreview(file) {
+function openPhotoPreview(file, packageType = capturePackageTypeValue()) {
   if (!file) return;
   resetPhotoPreviewState();
   cancelPendingPhotoOcr();
   pendingPhotoFile = file;
+  pendingPhotoPackageType = normalizePackageType(packageType);
   pendingPhotoUrl = URL.createObjectURL(file);
   pendingPhotoRotation = 0;
   $('photo-preview-img').src = pendingPhotoUrl;
@@ -7935,8 +8457,12 @@ async function readPendingPhoto() {
     // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
     const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address || '');
     hideLoading();
+    const photoForDelivery = { file: pendingPhotoFile, rotation: pendingPhotoRotation };
+    const packageTypeForDelivery = pendingPhotoPackageType;
     $('add-address').value = resolved.address;
     $('add-note').value = note;
+    $('add-package-type').value = packageTypeForDelivery;
+    pendingAddPhoto = photoForDelivery;
     const kindSelect = $('add-delivery-kind');
     if (kindSelect) kindSelect.value = 'delivery';
     updateAddDeliveryKindField();
@@ -8041,14 +8567,19 @@ function updateBatchPhotoUi() {
     if (batchStats.failed) parts.push(`失敗${batchStats.failed}`);
     nativeStats.textContent = parts.join(' / ');
   }
+  const nativePackageType = $('native-camera-package-type');
+  if (nativePackageType) {
+    const packageType = capturePackageTypeValue();
+    nativePackageType.textContent = packageType ? `荷物: ${packageType}` : '荷物: 未入力';
+  }
 }
 
 function releaseReviewPhoto(id) {
-  const photoUrl = reviewPhotoUrls.get(id);
-  if (photoUrl) {
+  const photoUrls = reviewPhotoUrls.get(id) || [];
+  photoUrls.forEach(photoUrl => {
     try { URL.revokeObjectURL(photoUrl); } catch (e) {}
-    reviewPhotoUrls.delete(id);
-  }
+  });
+  reviewPhotoUrls.delete(id);
 }
 
 async function presentNextBatchReview() {
@@ -8095,7 +8626,6 @@ async function finishImmediateBatchReview(id, options = {}) {
   const resume = options.resume !== false;
   batchReviewEditingId = null;
   batchReviewSourceById.delete(id);
-  releaseReviewPhoto(id);
 
   if (!resume) {
     batchReviewQueue.forEach(queuedId => batchReviewSourceById.delete(queuedId));
@@ -8272,11 +8802,10 @@ async function openNativeBatchCamera(options = {}) {
   if (ui) ui.style.display = 'flex';
   resetNativeCaptureFeedback();
   armNativeCameraShutter();
+  updateBatchPhotoUi();
   if (nativeCameraSingleShot) {
     const stats = $('native-camera-stats');
     if (stats) stats.textContent = '📷 伝票を撮影してください (1枚)';
-  } else {
-    updateBatchPhotoUi();
   }
   return true;
 }
@@ -8301,6 +8830,7 @@ async function captureNativeBatchPhoto() {
   if (!plugin || !nativeCameraOpen || nativeCaptureInFlight) return;
   const shutter = $('native-camera-shutter');
   const singleShot = nativeCameraSingleShot;
+  const packageType = capturePackageTypeValue();
   const startedAt = Date.now();
   let completedSingleShot = false;
   nativeCaptureInFlight = true;
@@ -8317,10 +8847,10 @@ async function captureNativeBatchPhoto() {
       await closeNativeBatchCamera();
       completedSingleShot = true;
       nativeCaptureInFlight = false;
-      enqueueSinglePhotoForBackground(blob);
+      enqueueSinglePhotoForBackground(blob, { packageType });
       return;
     }
-    processBatchPhoto(blob, { immediateReview: true }); // awaitしない — カメラはそのまま次の撮影へ
+    processBatchPhoto(blob, { immediateReview: true, packageType }); // awaitしない — カメラはそのまま次の撮影へ
   } catch (e) {
     if (shutter) shutter.classList.remove('is-capturing');
     showNativeCameraFeedback('撮影できませんでした', 900);
@@ -8349,12 +8879,13 @@ async function importPhotosFromGallery(files) {
     review: batchStats.review,
     failed: batchStats.failed
   };
+  const packageType = capturePackageTypeValue();
   showToast(`📥 ${list.length}枚の写真を読み込み開始（裏で処理します）`);
   let next = 0;
   const worker = async () => {
     while (next < list.length) {
       const file = list[next++];
-      await processBatchPhoto(file);
+      await processBatchPhoto(file, { packageType });
     }
   };
   await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker)); // 4並列で待ち時間を短縮
@@ -8408,12 +8939,16 @@ function toggleBatchPhotoMode(options = {}) {
   setBatchPhotoMode(!batchPhotoMode, options);
 }
 
-function enqueueSinglePhotoForBackground(file) {
+function enqueueSinglePhotoForBackground(file, options = {}) {
   if (!file) return;
-  singlePhotoQueue.push(file);
+  const packageType = normalizePackageType(options.packageType);
+  singlePhotoQueue.push({
+    file,
+    packageType
+  });
   singlePhotoPending++;
   updateBatchPhotoUi();
-  showToast(`📷 写真を受け付けました。地図で次を撮れます（裏で処理中${singlePhotoPending}件）`);
+  showToast(`📷 写真を受け付けました${packageType ? `（荷物: ${packageType}）` : ''}。地図で次を撮れます（裏で処理中${singlePhotoPending}件）`);
   drainSinglePhotoQueue().catch(e => console.warn('single photo queue failed', e));
 }
 
@@ -8422,11 +8957,12 @@ async function drainSinglePhotoQueue() {
   singlePhotoWorkerRunning = true;
   try {
     while (singlePhotoQueue.length) {
-      const file = singlePhotoQueue.shift();
+      const queued = singlePhotoQueue.shift();
       try {
-        await processBatchPhoto(file, {
+        await processBatchPhoto(queued.file, {
           immediateReview: true,
           reviewSource: 'single',
+          packageType: queued.packageType,
           trackBatchStats: false
         });
       } finally {
@@ -8441,6 +8977,7 @@ async function drainSinglePhotoQueue() {
 
 async function processBatchPhoto(file, options = {}) {
   const trackBatchStats = options.trackBatchStats !== false;
+  const packageType = normalizePackageType(options.packageType);
   if (trackBatchStats) {
     batchStats.pending++;
     updateBatchPhotoUi();
@@ -8466,6 +9003,7 @@ async function processBatchPhoto(file, options = {}) {
     // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
     const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address);
     const address = resolved.address;
+    const photoRotation = Number(data.autoRotated) || 0;
 
     // 同じ住所 = 複数個口。未完了の既存ピンの個数を自動で増やす
     // (連写中に確認ダイアログは出さない。完了済みしか無ければ新規ピン)
@@ -8478,12 +9016,20 @@ async function processBatchPhoto(file, options = {}) {
       : null;
     if (dupActive) {
       dupActive.packageCount = (Number(dupActive.packageCount) || 1) + 1;
+      dupActive.packageType = combinePackageTypes(dupActive.packageType, packageType);
       dupActive.updatedAt = Date.now();
+      rememberPackageType(packageType);
       saveDeliveries();
       renderMarkers();
       renderList();
+      const photoSaved = await persistDeliveryPhoto(dupActive.id, file, photoRotation);
       if (trackBatchStats) batchStats.stacked++;
-      showToast(`📦 複数個口: ${address} (${dupActive.packageCount}個)`);
+      showToast(
+        photoSaved
+          ? `📦 複数個口: ${address} (${dupActive.packageCount}個)`
+          : `📦 個数は更新しましたが、伝票写真を保存できませんでした`,
+        !photoSaved
+      );
       return { status: 'stacked', id: dupActive.id, address };
     }
 
@@ -8498,6 +9044,7 @@ async function processBatchPhoto(file, options = {}) {
       id: newId,
       address,
       note,
+      packageType,
       lat: result.lat,
       lng: result.lng,
       approx: result.approx,
@@ -8513,22 +9060,30 @@ async function processBatchPhoto(file, options = {}) {
       createdAt: Date.now(),
       updatedAt: Date.now()
     });
+    rememberPackageType(packageType);
     saveDeliveries();
     renderMarkers();
     renderList();
+    const photoSaved = await persistDeliveryPhoto(newId, file, photoRotation);
     if (reviewReasons.length > 0) {
-      // 要確認: 伝票写真を保持して、編集画面で見比べられるようにする
-      try { reviewPhotoUrls.set(newId, URL.createObjectURL(file)); } catch (e) {}
       if (trackBatchStats) batchStats.review++;
       if (options.immediateReview) {
         queueImmediateBatchReview(newId, { source: options.reviewSource });
       } else {
-        showToast(`❗要確認: ${address} (${reviewReasons[0]})`, true);
+        showToast(
+          `❗要確認: ${address} (${reviewReasons[0]})${photoSaved ? '' : ' / 写真保存失敗'}`,
+          true
+        );
       }
       return { status: 'review', id: newId, address, reviewReasons };
     } else {
       if (trackBatchStats) batchStats.added++;
-      showToast(`✅ 追加: ${address}${resolved.swapped ? ' (発送元側を除外)' : ''}${data.autoRotated ? ' (向き自動補正)' : ''}`);
+      showToast(
+        photoSaved
+          ? `✅ 追加: ${address}${resolved.swapped ? ' (発送元側を除外)' : ''}${data.autoRotated ? ' (向き自動補正)' : ''}`
+          : `ピンは追加しましたが、伝票写真を保存できませんでした`,
+        !photoSaved
+      );
       return { status: 'added', id: newId, address };
     }
   } catch (e) {
@@ -8599,7 +9154,8 @@ function copyListToClipboard() {
   const text = deliveries.map((d, i) => {
     const mark = d.completed ? '✓' : '○';
     const pkg = (Number(d.packageCount) || 1) > 1 ? ` 📦${d.packageCount}個口` : '';
-    return `${mark} ${i + 1}. ${d.address}${pkg}${d.note ? ' / ' + d.note : ''}`;
+    const type = d.packageType ? ` / 荷物: ${d.packageType}` : '';
+    return `${mark} ${i + 1}. ${d.address}${pkg}${type}${d.note ? ' / ' + d.note : ''}`;
   }).join('\n');
   navigator.clipboard.writeText(text).then(
     () => showToast('リストをコピーしました'),
@@ -8613,7 +9169,9 @@ function clearCompleted() {
   if (n === 0) { showToast('完了済みの配送先がありません'); return; }
   closeModal('modal-menu');
   showConfirm('完了分削除', `完了済み ${n} 件を削除しますか？`, () => {
+    const deletedIds = deliveries.filter(d => d.completed).map(d => d.id);
     deliveries = deliveries.filter(d => !d.completed);
+    deleteDeliveryPhotos(deletedIds).catch(e => console.warn('delivery photo delete failed', e));
     if (activeDeliveryId && !deliveries.some(d => d.id === activeDeliveryId)) activeDeliveryId = null;
     clearTemporaryGuidance({ resume: false, render: false, silent: true });
     clearOptimizedRouteGeometry();
@@ -8628,7 +9186,9 @@ function clearAll() {
   if (deliveries.length === 0) { showToast('配送先がありません'); return; }
   closeModal('modal-menu');
   showConfirm('全件クリア', `全 ${deliveries.length} 件を削除しますか？\nこの操作は取り消せません。`, () => {
+    const deletedIds = deliveries.map(d => d.id);
     deliveries = [];
+    deleteDeliveryPhotos(deletedIds).catch(e => console.warn('delivery photo delete failed', e));
     activeDeliveryId = null;
     clearTemporaryGuidance({ resume: false, render: false, silent: true });
     clearOptimizedRouteGeometry();
@@ -8722,10 +9282,12 @@ function importDeliveriesFromOtherApp() {
     `現在のMapbox版のリスト (${deliveries.length}件) は置き換えられます。\n` +
     `取り込みますか？`,
     () => {
+      const previousIds = new Set(deliveries.map(d => d.id).filter(Boolean));
       const imported = chosen.data.map(d => ({
         id: d.id || uid(),
         address: d.address || '',
         note: d.note || d.building || d.recipient || '',
+        packageType: normalizePackageType(d.packageType || ''),
         lat: d.lat,
         lng: d.lng,
         approx: !!d.approx,
@@ -8742,6 +9304,9 @@ function importDeliveriesFromOtherApp() {
       })).filter(d => d.lat != null && d.lng != null);
 
       deliveries = imported;
+      const importedIds = new Set(imported.map(d => d.id));
+      deleteDeliveryPhotos([...previousIds].filter(id => !importedIds.has(id)))
+        .catch(e => console.warn('delivery photo delete failed', e));
       saveDeliveries();
       renderMarkers();
       renderList();
@@ -9752,7 +10317,14 @@ async function pullDeliverySync() {
     const routeChanged = applyDeliverySyncRoute(snapshot.route, merged);
     const listChanged = JSON.stringify(merged) !== JSON.stringify(deliveries);
     if (listChanged || routeChanged) {
+      const mergedIds = new Set(merged.map(item => item && item.id).filter(Boolean));
+      const removedIds = authoritative
+        ? deliveries.map(item => item && item.id).filter(id => id && !mergedIds.has(id))
+        : [];
       deliveries = merged;
+      if (removedIds.length) {
+        deleteDeliveryPhotos(removedIds).catch(e => console.warn('delivery photo delete failed', e));
+      }
       const temporaryTarget = temporaryGuidanceTarget();
       if (temporaryGuidanceTargetId &&
           (!temporaryTarget || temporaryTarget.completed || temporaryTarget.lat == null || temporaryTarget.lng == null)) {
@@ -11375,6 +11947,7 @@ $('btn-north').addEventListener('click', () => {
 
 async function startSinglePhotoCapture() {
   setBatchPhotoMode(false, { summary: false, toast: false });
+  pendingFilePhotoContext = { packageType: capturePackageTypeValue() };
   if (nativeCameraPlugin()) {
     const opened = await openNativeBatchCamera({ singleShot: true });
     if (opened) return;
@@ -11385,6 +11958,7 @@ async function startSinglePhotoCapture() {
 
 async function startBatchPhotoCapture() {
   setBatchPhotoMode(true, { toast: false });
+  pendingFilePhotoContext = { packageType: capturePackageTypeValue() };
   if (nativeCameraPlugin()) {
     const opened = await openNativeBatchCamera({ singleShot: false });
     if (opened) return;
@@ -11402,10 +11976,12 @@ document.addEventListener('visibilitychange', () => {
 });
 $('file-photo').addEventListener('change', (e) => {
   const file = e.target.files && e.target.files[0];
+  const photoContext = pendingFilePhotoContext || { packageType: capturePackageTypeValue() };
+  pendingFilePhotoContext = null;
   e.target.value = '';
   if (!file) return;
   if (batchPhotoMode) {
-    processBatchPhoto(file, { immediateReview: true }); // 裏で処理 (待たない)
+    processBatchPhoto(file, { immediateReview: true, packageType: photoContext.packageType }); // 裏で処理 (待たない)
     // 続けて次の伝票を撮れるよう、すぐカメラを開き直す。
     // 端末側がブロックした場合は「📸連写」を再タップすれば同じ。
     setTimeout(() => {
@@ -11414,7 +11990,7 @@ $('file-photo').addEventListener('change', (e) => {
       }
     }, 300);
   } else {
-    enqueueSinglePhotoForBackground(file);
+    enqueueSinglePhotoForBackground(file, photoContext);
   }
 });
 $('menu-batch-photo').addEventListener('click', toggleBatchPhotoMode);
@@ -11432,6 +12008,13 @@ $('btn-photo-rotate-left').addEventListener('click', () => rotatePendingPhoto(-9
 $('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(90));
 $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
 $('btn-photo-read').addEventListener('click', readPendingPhoto);
+$('capture-package-type').addEventListener('input', updateBatchPhotoUi);
+$('capture-package-type').addEventListener('change', () => rememberPackageType(capturePackageTypeValue()));
+$('btn-clear-capture-package-type').addEventListener('click', () => {
+  $('capture-package-type').value = '';
+  $('capture-package-type').focus();
+  updateBatchPhotoUi();
+});
 $('btn-add-voice').addEventListener('click', startVoiceInput);
 $('btn-add-manual').addEventListener('click', openManualAddModal);
 $('btn-add-confirm').addEventListener('click', () => {
@@ -11446,6 +12029,9 @@ $('btn-add-confirm').addEventListener('click', () => {
   }
   const address = $('add-address').value.trim();
   const note = $('add-note').value.trim();
+  const packageType = normalizePackageType($('add-package-type').value);
+  const photo = pendingAddPhoto;
+  pendingAddPhoto = null;
   if (!address) { showToast('住所を入力してください', true); return; }
   const deliveryCourse = appMode === 'delivery' ? getSelectedDeliveryCourse() : '';
   const deliveryKind = normalizeDeliveryKind(
@@ -11472,7 +12058,7 @@ $('btn-add-confirm').addEventListener('click', () => {
   } else {
     closeModal('modal-add');
   }
-  addDelivery({ address, note, deliveryCourse, deliveryKind });
+  addDelivery({ address, note, packageType, photo, deliveryCourse, deliveryKind });
 });
 // 連続入力の設定を記憶する
 $('add-continuous').checked = localStorage.getItem('rys-mapbox-test-continuous-add') === '1';
@@ -11487,6 +12073,12 @@ $('btn-edit-done').addEventListener('click', toggleEditedItemDone);
 $('btn-edit-navi').addEventListener('click', openEditedItemNavigation);
 $('btn-edit-temporary-guidance').addEventListener('click', toggleEditedItemTemporaryGuidance);
 $('btn-edit-delete').addEventListener('click', deleteEditedItem);
+$('btn-edit-photo-open').addEventListener('click', openEditPhotoViewer);
+$('btn-edit-photo-prev').addEventListener('click', () => moveEditPhoto(-1));
+$('btn-edit-photo-next').addEventListener('click', () => moveEditPhoto(1));
+$('btn-delivery-photo-prev').addEventListener('click', () => moveEditPhoto(-1));
+$('btn-delivery-photo-next').addEventListener('click', () => moveEditPhoto(1));
+$('btn-delivery-photo-close').addEventListener('click', closeEditPhotoViewer);
 
 $('menu-center-user').addEventListener('click', centerOnUser);
 $('menu-toggle-mode').addEventListener('click', toggleAppMode);
@@ -11662,6 +12254,8 @@ document.addEventListener('visibilitychange', () => {
     mapboxConfig = await loadMapboxConfig();
     const mapReady = initMap();
     loadDeliveries();
+    refreshPackageTypeSuggestions();
+    updateBatchPhotoUi();
     if (appMode === 'pickup') {
       const selectedCourse = getSelectedPickupSheet();
       saveRegularPickupCache(selectedCourse, deliveries);
