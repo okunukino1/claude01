@@ -1174,6 +1174,26 @@
     margin-bottom: 12px;
   }
   .modal textarea { min-height: 60px; resize: vertical; }
+  .edit-review-banner {
+    display: none;
+    border: 1px solid #e11d48;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin: 4px 0 8px;
+    background: #fef2f2;
+    color: #be123c;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+  .edit-review-banner.processing {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+  .modal label[hidden] {
+    display: none !important;
+  }
   .inline-action {
     width: 100%;
     min-height: 38px;
@@ -1891,7 +1911,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.77</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.78</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1922,9 +1942,9 @@
 
 <div class="add-bar input-only-control">
   <div class="capture-package-type">
-    <label for="capture-package-type">次の荷物</label>
-    <input type="text" id="capture-package-type" list="package-type-suggestions" placeholder="種類（例: 段ボール・封筒）" autocomplete="off">
-    <button id="btn-clear-capture-package-type" type="button" title="荷物の種類を消す" aria-label="荷物の種類を消す">✕</button>
+    <label for="capture-package-type">事前入力</label>
+    <input type="text" id="capture-package-type" list="package-type-suggestions" placeholder="撮影後にも入力できます" autocomplete="off">
+    <button id="btn-clear-capture-package-type" type="button" title="荷物情報を消す" aria-label="荷物情報を消す">✕</button>
   </div>
   <div class="add-bar-actions">
     <button id="btn-add-photo" type="button">📷 1枚</button>
@@ -1950,7 +1970,7 @@
     <button class="pickup-list-tab" id="pickup-tab-spot" type="button" role="tab" data-pickup-list-tab="spot" aria-selected="false">スポット集荷 <span class="tab-count" id="pickup-tab-spot-count"></span></button>
   </div>
   <div class="list-search" id="list-search">
-    <input type="search" id="list-search-input" placeholder="🔍 住所・名前・荷物種類・番号" autocomplete="off" enterkeyhint="search" aria-label="リスト内検索">
+    <input type="search" id="list-search-input" placeholder="🔍 住所・名前・荷物情報・番号" autocomplete="off" enterkeyhint="search" aria-label="リスト内検索">
     <select id="list-time-window-filter" aria-label="時間指定で絞り込み">
       <option value="">⏰ 全時間帯</option>
     </select>
@@ -1966,7 +1986,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.77</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.78</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2237,8 +2257,8 @@
     <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
     <label>備考 (建物名・部屋番号など)</label>
     <textarea id="add-note" placeholder="○○ビル 5F"></textarea>
-    <label for="add-package-type">荷物の種類（任意）</label>
-    <input type="text" id="add-package-type" list="package-type-suggestions" placeholder="例: 段ボール・封筒・クール便" autocomplete="off">
+    <label for="add-package-type">荷物情報（箱・袋・メーカーなど、任意）</label>
+    <input type="text" id="add-package-type" list="package-type-suggestions" placeholder="例: 箱・ヤマト、袋・Amazon" autocomplete="off">
     <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;">
       <input type="checkbox" id="add-continuous" style="width:auto;margin:0;"> 連続入力（追加後も開いたまま）
     </label>
@@ -2272,7 +2292,7 @@
 <div class="modal-bg" id="modal-edit">
   <div class="modal">
     <h3 id="edit-modal-title">配送先を編集</h3>
-    <div id="edit-review-banner" style="display:none;background:#fef2f2;border:1px solid #e11d48;border-radius:8px;padding:8px 10px;margin:4px 0 8px;color:#be123c;font-size:12px;font-weight:700;"></div>
+    <div class="edit-review-banner" id="edit-review-banner"></div>
     <div class="edit-photo-panel" id="edit-photo-wrap" hidden>
       <div class="edit-photo-heading">
         <strong>伝票写真</strong>
@@ -2287,13 +2307,13 @@
         <button id="btn-edit-photo-next" type="button" title="次の写真" aria-label="次の写真">›</button>
       </div>
     </div>
-    <label>住所</label>
+    <label for="edit-address">住所</label>
     <input type="text" id="edit-address">
     <button class="inline-action" id="btn-edit-geocode" type="button">住所再検索</button>
-    <label>備考</label>
+    <label for="edit-note">備考</label>
     <textarea id="edit-note"></textarea>
-    <label for="edit-package-type">荷物の種類（任意）</label>
-    <input type="text" id="edit-package-type" list="package-type-suggestions" placeholder="例: 段ボール・封筒・クール便" autocomplete="off">
+    <label for="edit-package-type">荷物情報（箱・袋・メーカーなど、任意）</label>
+    <input type="text" id="edit-package-type" list="package-type-suggestions" placeholder="例: 箱・ヤマト、袋・Amazon" autocomplete="off">
     <div id="edit-delivery-kind-field" hidden>
       <label for="edit-delivery-kind">作業内容</label>
       <select id="edit-delivery-kind">
@@ -2301,11 +2321,11 @@
         <option value="pickup">集荷</option>
       </select>
     </div>
-    <label>時間指定</label>
+    <label for="edit-time-window">時間指定</label>
     <select id="edit-time-window"></select>
     <label for="edit-exact-time">指定時刻（任意）</label>
     <input type="time" id="edit-exact-time" step="300">
-    <label>荷物の個数 (複数個口)</label>
+    <label for="edit-package-count">荷物の個数 (複数個口)</label>
     <input type="number" id="edit-package-count" min="1" step="1" inputmode="numeric">
     <button class="temporary-guidance-action" id="btn-edit-temporary-guidance" type="button">➜ このピンへ一時案内</button>
     <div class="modal-actions">
@@ -2402,7 +2422,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.77';
+const APP_VERSION = 'v2026.06.24-test.78';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_HISTORY_KEY = 'rys-mapbox-test-package-type-history-v1';
 const DELIVERY_PHOTO_DB_NAME = 'rys-mapbox-test-delivery-photos-v1';
@@ -2646,6 +2666,7 @@ let editPhotoEntries = [];
 let editPhotoIndex = 0;
 let editPhotoLoadToken = 0;
 let pendingFilePhotoContext = null;
+let activeSinglePhotoEditorSession = null;
 
 let gpsWatchId = null;
 let gpsActive = false;
@@ -7501,8 +7522,151 @@ function cancelPlacement() {
   showToast('位置修正をキャンセル');
 }
 
+function setEditFieldVisible(id, visible) {
+  const field = $(id);
+  if (field) {
+    field.hidden = !visible;
+    field.disabled = !visible;
+  }
+  const label = document.querySelector(`#modal-edit label[for="${id}"]`);
+  if (label) label.hidden = !visible;
+}
+
+function setEditModalProcessingLayout(processing) {
+  ['edit-address', 'edit-note', 'edit-time-window', 'edit-exact-time', 'edit-package-count']
+    .forEach(id => setEditFieldVisible(id, !processing));
+  const geocodeBtn = $('btn-edit-geocode');
+  if (geocodeBtn) {
+    geocodeBtn.hidden = processing;
+    geocodeBtn.disabled = processing;
+  }
+  if (processing) {
+    $('edit-delivery-kind-field').hidden = true;
+    $('btn-edit-done').hidden = true;
+    $('btn-edit-navi').hidden = true;
+    $('btn-edit-delete').hidden = true;
+    $('btn-edit-temporary-guidance').hidden = true;
+    $('btn-edit-cancel').textContent = '閉じる';
+    $('btn-edit-save').textContent = '住所処理中…';
+    $('btn-edit-save').disabled = true;
+  } else {
+    $('btn-edit-save').textContent = '保存';
+    $('btn-edit-save').disabled = false;
+  }
+}
+
+function resetEditModalScroll() {
+  requestAnimationFrame(() => {
+    const panel = document.querySelector('#modal-edit > .modal');
+    if (panel) panel.scrollTop = 0;
+  });
+}
+
+function openSinglePhotoProcessingEditor(session) {
+  if (!session || !session.file) return;
+  clearEditPhotoEntries();
+  editingItemId = null;
+  activeSinglePhotoEditorSession = session;
+  session.cancelled = false;
+
+  const title = $('edit-modal-title');
+  if (title) title.textContent = '荷物情報を入力';
+  const banner = $('edit-review-banner');
+  if (banner) {
+    banner.classList.add('processing');
+    banner.textContent = '住所とピンをバックグラウンドで作成中です。伝票写真を見ながら、先に箱・袋・メーカー名などを入力してください。';
+    banner.style.display = 'block';
+  }
+
+  setEditModalProcessingLayout(true);
+  $('edit-address').value = '写真から住所を読み取り中...';
+  $('edit-note').value = '';
+  $('edit-package-type').value = session.initialPackageType || '';
+  $('edit-package-count').value = '1';
+  populateTimeWindowSelect($('edit-time-window'), '');
+  $('edit-exact-time').value = '';
+
+  try {
+    editPhotoEntries = [{ url: URL.createObjectURL(session.file), ownedUrl: true }];
+  } catch (e) {
+    editPhotoEntries = [];
+  }
+  editPhotoIndex = 0;
+  renderEditPhoto();
+  openModal('modal-edit');
+  resetEditModalScroll();
+  setTimeout(() => {
+    if (activeSinglePhotoEditorSession === session) $('edit-package-type').focus();
+  }, 80);
+}
+
+function applyInitialSinglePhotoMetadata(session, result) {
+  const packageType = normalizePackageType(session && session.initialPackageType);
+  if (!packageType || !result || !result.id) return;
+  const d = deliveries.find(item => item.id === result.id);
+  if (!d) return;
+  const next = result.status === 'stacked'
+    ? combinePackageTypes(d.packageType, packageType)
+    : packageType;
+  if (next === d.packageType) return;
+  d.packageType = next;
+  d.updatedAt = Date.now();
+  rememberPackageType(packageType);
+  saveDeliveries();
+  renderMarkers();
+  renderList();
+}
+
+function finishSinglePhotoEditorSession(session, result) {
+  session.result = result;
+  const editorIsOpen = activeSinglePhotoEditorSession === session;
+  if (!result || result.status === 'failed' || !result.id) {
+    if (!editorIsOpen) return;
+    const banner = $('edit-review-banner');
+    if (banner) {
+      banner.classList.remove('processing');
+      banner.textContent = '住所を読み取れませんでした。この画面を閉じて、伝票をもう一度撮影してください。';
+      banner.style.display = 'block';
+    }
+    $('edit-modal-title').textContent = '読み取りできませんでした';
+    $('btn-edit-save').textContent = '読み取り失敗';
+    $('btn-edit-save').disabled = true;
+    return;
+  }
+
+  if (!editorIsOpen) {
+    applyInitialSinglePhotoMetadata(session, result);
+    if (result.status === 'review') {
+      queueImmediateBatchReview(result.id, { source: 'single' });
+    }
+    return;
+  }
+
+  const draftPackageType = normalizePackageType($('edit-package-type').value);
+  const restoreFocus = document.activeElement === $('edit-package-type');
+  activeSinglePhotoEditorSession = null;
+  if (result.status === 'review') {
+    batchReviewSourceById.set(result.id, 'single');
+    batchReviewEditingId = result.id;
+  }
+  openEdit(result.id);
+  const d = deliveries.find(item => item.id === result.id);
+  $('edit-package-type').value = result.status === 'stacked' && d
+    ? combinePackageTypes(d.packageType, draftPackageType)
+    : draftPackageType;
+  if (restoreFocus) {
+    setTimeout(() => {
+      const input = $('edit-package-type');
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }, 0);
+  }
+}
+
 function openEdit(id) {
   clearEditPhotoEntries();
+  activeSinglePhotoEditorSession = null;
+  setEditModalProcessingLayout(false);
   editingItemId = id;
   const d = deliveries.find(x => x.id === id);
   if (!d) return;
@@ -7518,14 +7682,15 @@ function openEdit(id) {
   // 要確認バナーと伝票写真 (連写モードで要確認になったものは写真と見比べられる)
   const banner = $('edit-review-banner');
   if (banner) {
+    banner.classList.remove('processing');
     if (immediatePhotoReview) {
       banner.textContent = singlePhotoReview
         ? `❗写真の処理結果を確認してください。写真と住所を確認して保存してください。理由: ${reviewReasonText}`
         : `❗連写を一時停止しました。写真と住所を確認して保存してください。理由: ${reviewReasonText}`;
-      banner.style.display = '';
+      banner.style.display = 'block';
     } else if (d.needsReview && !d.completed) {
       banner.textContent = `❗要確認: ${reviewReasonText}`;
-      banner.style.display = '';
+      banner.style.display = 'block';
     } else {
       banner.style.display = 'none';
     }
@@ -7557,16 +7722,37 @@ function openEdit(id) {
     : 'キャンセル';
   updateTemporaryGuidanceUi();
   openModal('modal-edit');
+  resetEditModalScroll();
   loadEditDeliveryPhotos(id);
 }
 
 function cancelEditedItem() {
+  if (activeSinglePhotoEditorSession) {
+    const session = activeSinglePhotoEditorSession;
+    const failed = session.result && session.result.status === 'failed';
+    session.cancelled = true;
+    activeSinglePhotoEditorSession = null;
+    closeModal('modal-edit');
+    clearEditPhotoEntries();
+    editingItemId = null;
+    showToast(
+      failed
+        ? '読み取りに失敗しました。伝票をもう一度撮影してください'
+        : '写真の処理は続けています。ピンが立った後でも荷物情報を編集できます',
+      failed
+    );
+    presentQueuedPhotoReviewIfIdle();
+    return;
+  }
   const cancelledId = editingItemId;
   const immediatePhotoReview = !!cancelledId && batchReviewEditingId === cancelledId;
   closeModal('modal-edit');
   clearEditPhotoEntries();
   editingItemId = null;
-  if (!immediatePhotoReview) return;
+  if (!immediatePhotoReview) {
+    presentQueuedPhotoReviewIfIdle();
+    return;
+  }
 
   batchReviewEditingId = null;
   batchReviewSourceById.delete(cancelledId);
@@ -7612,6 +7798,7 @@ async function toggleEditedItemDone() {
   } else if (optimizedRouteOrderedIds.length > 0) {
     updateNextSegmentHighlight();
   }
+  presentQueuedPhotoReviewIfIdle();
 }
 
 async function reGeocodeEditedItem() {
@@ -7700,9 +7887,14 @@ async function reGeocodeEditedItem() {
   const message = result.approx ? '概算位置で更新しました' : '住所検索でピン位置を更新しました';
   showToast(locationSynced ? message : `${message}（固定位置の共有保存は未完了）`, !locationSynced);
   if (immediatePhotoReview) await finishImmediateBatchReview(editedId);
+  else presentQueuedPhotoReviewIfIdle();
 }
 
 async function saveEditedItem() {
+  if (activeSinglePhotoEditorSession) {
+    showToast('住所とピンを処理中です。完了すると保存できるようになります');
+    return;
+  }
   if (!editingItemId) return;
   const d = deliveries.find(x => x.id === editingItemId);
   if (!d) return;
@@ -7800,6 +7992,7 @@ async function saveEditedItem() {
   }
   showToast(locationSynced ? '更新しました' : '更新しました（固定位置の共有保存は未完了）', !locationSynced);
   if (immediatePhotoReview) await finishImmediateBatchReview(editedId);
+  else presentQueuedPhotoReviewIfIdle();
 }
 
 function deleteEditedItem() {
@@ -7828,6 +8021,7 @@ function deleteEditedItem() {
       clearEditPhotoEntries();
       editingItemId = null;
       showToast('削除しました');
+      presentQueuedPhotoReviewIfIdle();
     }
   );
 }
@@ -8570,7 +8764,7 @@ function updateBatchPhotoUi() {
   const nativePackageType = $('native-camera-package-type');
   if (nativePackageType) {
     const packageType = capturePackageTypeValue();
-    nativePackageType.textContent = packageType ? `荷物: ${packageType}` : '荷物: 未入力';
+    nativePackageType.textContent = packageType ? `荷物: ${packageType}` : '荷物情報は撮影後に入力';
   }
 }
 
@@ -8583,6 +8777,7 @@ function releaseReviewPhoto(id) {
 }
 
 async function presentNextBatchReview() {
+  if (activeSinglePhotoEditorSession || $('modal-edit').classList.contains('show')) return;
   if (batchReviewEditingId || batchReviewTransitioning || !batchReviewQueue.length) return;
   batchReviewTransitioning = true;
   let nextId = null;
@@ -8611,6 +8806,12 @@ async function presentNextBatchReview() {
   if (!batchReviewEditingId && batchReviewQueue.length) {
     presentNextBatchReview().catch(e => console.warn('next batch review failed', e));
   }
+}
+
+function presentQueuedPhotoReviewIfIdle() {
+  if (activeSinglePhotoEditorSession || editingItemId || $('modal-edit').classList.contains('show')) return;
+  if (!batchReviewQueue.length) return;
+  presentNextBatchReview().catch(e => console.warn('queued photo review failed', e));
 }
 
 function queueImmediateBatchReview(id, options = {}) {
@@ -8843,7 +9044,7 @@ async function captureNativeBatchPhoto() {
     const blob = base64ToBlob(b64, 'image/jpeg');
     completeNativeCaptureFeedback();
     if (singleShot) {
-      // 1枚撮影モード: 先に地図へ戻し、OCR・住所検索・ピン追加は裏で続ける
+      // 1枚撮影モード: カメラを閉じて荷物情報画面を開き、OCR・住所検索は裏で続ける
       await closeNativeBatchCamera();
       completedSingleShot = true;
       nativeCaptureInFlight = false;
@@ -8941,14 +9142,20 @@ function toggleBatchPhotoMode(options = {}) {
 
 function enqueueSinglePhotoForBackground(file, options = {}) {
   if (!file) return;
-  const packageType = normalizePackageType(options.packageType);
+  const session = {
+    id: uid(),
+    file,
+    initialPackageType: normalizePackageType(options.packageType),
+    cancelled: false,
+    result: null
+  };
   singlePhotoQueue.push({
     file,
-    packageType
+    session
   });
   singlePhotoPending++;
   updateBatchPhotoUi();
-  showToast(`📷 写真を受け付けました${packageType ? `（荷物: ${packageType}）` : ''}。地図で次を撮れます（裏で処理中${singlePhotoPending}件）`);
+  openSinglePhotoProcessingEditor(session);
   drainSinglePhotoQueue().catch(e => console.warn('single photo queue failed', e));
 }
 
@@ -8959,12 +9166,14 @@ async function drainSinglePhotoQueue() {
     while (singlePhotoQueue.length) {
       const queued = singlePhotoQueue.shift();
       try {
-        await processBatchPhoto(queued.file, {
+        const result = await processBatchPhoto(queued.file, {
           immediateReview: true,
           reviewSource: 'single',
-          packageType: queued.packageType,
+          packageType: '',
+          deferImmediateReview: true,
           trackBatchStats: false
         });
+        finishSinglePhotoEditorSession(queued.session, result);
       } finally {
         singlePhotoPending = Math.max(0, singlePhotoPending - 1);
         updateBatchPhotoUi();
@@ -9067,13 +9276,15 @@ async function processBatchPhoto(file, options = {}) {
     const photoSaved = await persistDeliveryPhoto(newId, file, photoRotation);
     if (reviewReasons.length > 0) {
       if (trackBatchStats) batchStats.review++;
-      if (options.immediateReview) {
+      if (options.immediateReview && !options.deferImmediateReview) {
         queueImmediateBatchReview(newId, { source: options.reviewSource });
       } else {
-        showToast(
-          `❗要確認: ${address} (${reviewReasons[0]})${photoSaved ? '' : ' / 写真保存失敗'}`,
-          true
-        );
+        if (!options.deferImmediateReview) {
+          showToast(
+            `❗要確認: ${address} (${reviewReasons[0]})${photoSaved ? '' : ' / 写真保存失敗'}`,
+            true
+          );
+        }
       }
       return { status: 'review', id: newId, address, reviewReasons };
     } else {
