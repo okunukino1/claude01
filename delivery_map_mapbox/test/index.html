@@ -1058,50 +1058,14 @@
     left: 0; right: 0;
     z-index: 25;
     display: flex;
-    flex-direction: column;
-    gap: 5px;
     padding: 6px 8px;
     background: var(--ink);
     transition: bottom 0.25s ease;
   }
-  .capture-package-type {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) 34px;
-    align-items: center;
-    gap: 6px;
-    min-height: 34px;
-  }
-  .capture-package-type label {
-    color: #fff;
-    font-size: 11px;
-    font-weight: 800;
-    white-space: nowrap;
-  }
-  .capture-package-type input {
-    width: 100%;
-    min-width: 0;
-    height: 34px;
-    padding: 5px 8px;
-    border: 1px solid #fff;
-    border-radius: 6px;
-    background: #fff;
-    color: var(--ink);
-    font-size: 13px;
-  }
-  .capture-package-type button {
-    width: 34px;
-    height: 34px;
-    padding: 0;
-    border: 1px solid #fff;
-    border-radius: 6px;
-    background: transparent;
-    color: #fff;
-    font-size: 15px;
-    font-weight: 800;
-  }
   .add-bar-actions {
     display: flex;
     gap: 6px;
+    width: 100%;
   }
   .add-bar-actions button {
     flex: 1;
@@ -1174,6 +1138,29 @@
     margin-bottom: 12px;
   }
   .modal textarea { min-height: 60px; resize: vertical; }
+  .edit-time-group {
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1.5px solid #c0bca8;
+    border-radius: 6px;
+    background: #f8f7f2;
+  }
+  .edit-time-group > label {
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .edit-time-group select,
+  .edit-time-group input[type=time] {
+    margin-bottom: 8px;
+    background: #fff;
+  }
+  .edit-time-group input[type=time] {
+    margin-bottom: 0;
+  }
+  .edit-exact-time-field {
+    padding-top: 2px;
+  }
   .edit-review-banner {
     display: none;
     border: 1px solid #e11d48;
@@ -1254,6 +1241,22 @@
   .modal-actions button.go {
     background: white;
     color: var(--ink);
+  }
+  @media (max-width: 480px) {
+    #modal-edit .modal-actions {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 6px;
+    }
+    #modal-edit .modal-actions button {
+      min-width: 0;
+    }
+    #modal-edit .modal-actions button:nth-child(-n+3) {
+      grid-column: span 2;
+    }
+    #modal-edit .modal-actions button:nth-child(n+4) {
+      grid-column: span 3;
+    }
   }
   .temporary-guidance-action {
     width: 100%;
@@ -1911,7 +1914,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.80</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.81</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1941,18 +1944,12 @@
 </div>
 
 <div class="add-bar input-only-control">
-  <div class="capture-package-type">
-    <label for="capture-package-type">事前入力</label>
-    <input type="text" id="capture-package-type" list="package-type-suggestions" placeholder="撮影後にも入力できます" autocomplete="off">
-    <button id="btn-clear-capture-package-type" type="button" title="荷物情報を消す" aria-label="荷物情報を消す">✕</button>
-  </div>
   <div class="add-bar-actions">
     <button id="btn-add-photo" type="button">📷 1枚</button>
     <button id="btn-add-batch-photo" type="button" class="secondary">📸 連写</button>
     <button id="btn-add-manual" type="button" class="secondary">✏️ 手入力</button>
   </div>
 </div>
-<datalist id="package-type-suggestions"></datalist>
 
 <div class="list-section">
   <div class="list-header" id="list-header">
@@ -1985,7 +1982,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.80</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.81</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2256,8 +2253,10 @@
     <input type="text" id="add-address" placeholder="東京都中央区日本橋..." autocomplete="off">
     <label>備考 (建物名・部屋番号など)</label>
     <textarea id="add-note" placeholder="○○ビル 5F"></textarea>
-    <label for="add-package-type">荷物情報（箱・袋・メーカーなど、任意）</label>
-    <input type="text" id="add-package-type" list="package-type-suggestions" placeholder="例: 箱・ヤマト、袋・Amazon" autocomplete="off">
+    <label for="add-package-type">荷物情報（任意）</label>
+    <select id="add-package-type">
+      <option value="">選択してください</option>
+    </select>
     <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;">
       <input type="checkbox" id="add-continuous" style="width:auto;margin:0;"> 連続入力（追加後も開いたまま）
     </label>
@@ -2311,8 +2310,10 @@
     <button class="inline-action" id="btn-edit-geocode" type="button">住所再検索</button>
     <label for="edit-note">備考</label>
     <textarea id="edit-note"></textarea>
-    <label for="edit-package-type">荷物情報（箱・袋・メーカーなど、任意）</label>
-    <input type="text" id="edit-package-type" list="package-type-suggestions" placeholder="例: 箱・ヤマト、袋・Amazon" autocomplete="off">
+    <label for="edit-package-type">荷物情報（任意）</label>
+    <select id="edit-package-type">
+      <option value="">選択してください</option>
+    </select>
     <div id="edit-delivery-kind-field" hidden>
       <label for="edit-delivery-kind">作業内容</label>
       <select id="edit-delivery-kind">
@@ -2320,10 +2321,14 @@
         <option value="pickup">集荷</option>
       </select>
     </div>
-    <label for="edit-time-window">時間指定</label>
-    <select id="edit-time-window"></select>
-    <label for="edit-exact-time">指定時刻（任意）</label>
-    <input type="time" id="edit-exact-time" step="300">
+    <div class="edit-time-group">
+      <label for="edit-time-window">時間指定</label>
+      <select id="edit-time-window"></select>
+      <div class="edit-exact-time-field">
+        <label for="edit-exact-time">指定時刻（任意）</label>
+        <input type="time" id="edit-exact-time" step="300">
+      </div>
+    </div>
     <label for="edit-package-count">荷物の個数 (複数個口)</label>
     <input type="number" id="edit-package-count" min="1" step="1" inputmode="numeric">
     <button class="temporary-guidance-action" id="btn-edit-temporary-guidance" type="button">➜ このピンへ一時案内</button>
@@ -2421,9 +2426,24 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.80';
+const APP_VERSION = 'v2026.06.24-test.81';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
-const PACKAGE_TYPE_HISTORY_KEY = 'rys-mapbox-test-package-type-history-v1';
+const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
+const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
+const PACKAGE_TYPE_FALLBACK_ITEMS = [
+  { id: 'box', label: '箱' },
+  { id: 'bag', label: '袋' },
+  { id: 'envelope', label: '封筒' },
+  { id: 'amazon-box', label: 'Amazon・箱' },
+  { id: 'amazon-bag', label: 'Amazon・袋' },
+  { id: 'yamato-box', label: 'ヤマト・箱' },
+  { id: 'yamato-bag', label: 'ヤマト・袋' },
+  { id: 'sagawa-box', label: '佐川・箱' },
+  { id: 'sagawa-bag', label: '佐川・袋' },
+  { id: 'japan-post', label: '日本郵便' },
+  { id: 'cool', label: 'クール便' },
+  { id: 'other', label: 'その他' }
+];
 const DELIVERY_PHOTO_DB_NAME = 'rys-mapbox-test-delivery-photos-v1';
 const DELIVERY_PHOTO_DB_VERSION = 1;
 const DELIVERY_PHOTO_STORE = 'photos';
@@ -2618,6 +2638,8 @@ let workMode = localStorage.getItem(WORK_MODE_KEY) === 'delivery' ? 'delivery' :
 let selectedDeliveryCourse = normalizeDeliveryCourse(localStorage.getItem(DELIVERY_COURSE_KEY));
 let selectedCourseArea = localStorage.getItem(COURSE_AREA_KEY) || '';
 let deliveries = [];
+let packageTypeCatalog = PACKAGE_TYPE_FALLBACK_ITEMS.map(item => ({ ...item }));
+let packageTypeCatalogSource = 'built-in';
 let lastVisibleDeliveries = [];
 let markers = new Map();
 let activeDeliveryId = null;
@@ -3080,43 +3102,91 @@ function combinePackageTypes(currentValue, addedValue) {
   return values.join(' / ').slice(0, 160);
 }
 
-function savedPackageTypeHistory() {
+function normalizePackageTypeCatalogItems(items) {
+  const result = [];
+  const seen = new Set();
+  (Array.isArray(items) ? items : []).forEach((item, index) => {
+    const label = normalizePackageType(item && typeof item === 'object' ? item.label : item);
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) return;
+    seen.add(key);
+    const rawId = item && typeof item === 'object' ? item.id : '';
+    result.push({
+      id: String(rawId || `package-${index + 1}`).trim().slice(0, 80),
+      label
+    });
+  });
+  return result;
+}
+
+function cachedPackageTypeCatalog() {
   try {
-    const saved = JSON.parse(localStorage.getItem(PACKAGE_TYPE_HISTORY_KEY) || '[]');
-    return Array.isArray(saved) ? saved.map(normalizePackageType).filter(Boolean).slice(0, 30) : [];
+    const cached = JSON.parse(localStorage.getItem(PACKAGE_TYPE_CATALOG_CACHE_KEY) || 'null');
+    const items = normalizePackageTypeCatalogItems(cached && cached.items);
+    return items.length > 0 ? items : null;
   } catch (e) {
-    return [];
+    return null;
   }
 }
 
-function refreshPackageTypeSuggestions() {
-  const datalist = $('package-type-suggestions');
-  if (!datalist) return;
-  const values = [];
+function populatePackageTypeSelect(target, selectedValue = '') {
+  const select = typeof target === 'string' ? $(target) : target;
+  if (!select) return;
+  const selected = normalizePackageType(selectedValue);
   const seen = new Set();
-  [...savedPackageTypeHistory(), ...deliveries.map(d => d && d.packageType)].forEach(raw => {
-    const value = normalizePackageType(raw);
-    const key = value.toLowerCase();
-    if (!value || seen.has(key)) return;
+  const options = ['<option value="">選択してください</option>'];
+  packageTypeCatalog.forEach(item => {
+    const label = normalizePackageType(item && item.label);
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) return;
     seen.add(key);
-    values.push(value);
+    options.push(`<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`);
   });
-  datalist.innerHTML = values.slice(0, 30)
-    .map(value => `<option value="${escapeHtml(value)}"></option>`)
-    .join('');
+  if (selected && !seen.has(selected.toLowerCase())) {
+    options.push(`<option value="${escapeHtml(selected)}">${escapeHtml(selected)}（登録済み）</option>`);
+  }
+  select.innerHTML = options.join('');
+  select.value = selected;
 }
 
-function rememberPackageType(value) {
-  const normalized = normalizePackageType(value);
-  if (!normalized) return;
-  const next = [normalized, ...savedPackageTypeHistory().filter(item => item.toLowerCase() !== normalized.toLowerCase())]
-    .slice(0, 30);
-  localStorage.setItem(PACKAGE_TYPE_HISTORY_KEY, JSON.stringify(next));
-  refreshPackageTypeSuggestions();
+function refreshPackageTypeSelects() {
+  ['add-package-type', 'edit-package-type'].forEach(id => {
+    const select = $(id);
+    if (select) populatePackageTypeSelect(select, select.value);
+  });
 }
 
 function capturePackageTypeValue() {
-  return normalizePackageType($('capture-package-type') ? $('capture-package-type').value : '');
+  return '';
+}
+
+async function loadPackageTypeCatalog() {
+  const cached = cachedPackageTypeCatalog();
+  if (cached) {
+    packageTypeCatalog = cached;
+    packageTypeCatalogSource = 'cache';
+  }
+  refreshPackageTypeSelects();
+
+  try {
+    const res = await fetch(`${PACKAGE_TYPE_CATALOG_API}?refresh=${Date.now()}`, { cache: 'no-store' });
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    const items = normalizePackageTypeCatalogItems(data && data.items);
+    if (!res.ok || !data || data.error || items.length === 0) {
+      throw new Error(data && data.error ? data.error : '荷物情報マスターを取得できませんでした');
+    }
+    packageTypeCatalog = items;
+    packageTypeCatalogSource = String(data.source || 'spreadsheet');
+    localStorage.setItem(PACKAGE_TYPE_CATALOG_CACHE_KEY, JSON.stringify({
+      items,
+      source: packageTypeCatalogSource,
+      updatedAt: Date.now()
+    }));
+    refreshPackageTypeSelects();
+  } catch (e) {
+    console.warn('package type catalog load failed', e);
+  }
 }
 
 function openDeliveryPhotoDb() {
@@ -7078,7 +7148,6 @@ async function addDelivery({ address, note, packageType = '', photo = null, deli
         dupActive.packageCount = current + 1;
         dupActive.packageType = combinePackageTypes(dupActive.packageType, normalizedPackageType);
         dupActive.updatedAt = Date.now();
-        rememberPackageType(normalizedPackageType);
         saveDeliveries();
         renderMarkers();
         renderList();
@@ -7137,7 +7206,6 @@ async function insertDelivery({ address, note, packageType = '', photo = null, d
   };
   deliveries.push(d);
   activeDeliveryId = d.id;
-  rememberPackageType(d.packageType);
   saveDeliveries();
   renderMarkers();
   renderList();
@@ -7582,7 +7650,7 @@ function openSinglePhotoProcessingEditor(session) {
   setEditModalProcessingLayout(true);
   $('edit-address').value = '写真から住所を読み取り中...';
   $('edit-note').value = session.draft.note || '';
-  $('edit-package-type').value = session.draft.packageType || '';
+  populatePackageTypeSelect('edit-package-type', session.draft.packageType || '');
   $('edit-package-count').value = String(session.draft.packageCount || 1);
   populateTimeWindowSelect($('edit-time-window'), session.draft.timeWindowId || '');
   $('edit-exact-time').value = session.draft.exactTime || '';
@@ -7645,7 +7713,6 @@ function applySinglePhotoDraftToDelivery(session, result) {
     d.packageCount = Math.max(Number(d.packageCount) || 1, draft.packageCount);
   }
   d.updatedAt = Date.now();
-  rememberPackageType(draft.packageType);
   saveDeliveries();
   renderMarkers();
   renderList();
@@ -7658,9 +7725,9 @@ function applySinglePhotoDraftToEditor(session, result) {
   const draft = session.draft;
   const stacked = result.status === 'stacked';
   $('edit-note').value = combineSinglePhotoNotes(d.note, draft.note);
-  $('edit-package-type').value = stacked
+  populatePackageTypeSelect('edit-package-type', stacked
     ? combinePackageTypes(d.packageType, draft.packageType)
-    : draft.packageType;
+    : draft.packageType);
   if (!stacked || draft.timeWindowId) $('edit-time-window').value = draft.timeWindowId;
   if (!stacked || draft.exactTime) $('edit-exact-time').value = draft.exactTime;
   if (!stacked) {
@@ -7739,7 +7806,7 @@ function openEdit(id) {
   }
   $('edit-address').value = d.address;
   $('edit-note').value = d.note || '';
-  $('edit-package-type').value = d.packageType || '';
+  populatePackageTypeSelect('edit-package-type', d.packageType || '');
   $('edit-package-count').value = String(Number(d.packageCount) || 1);
   populateTimeWindowSelect($('edit-time-window'), d.timeWindowId || '');
   $('edit-exact-time').value = exactTimeForDelivery(d);
@@ -7920,7 +7987,6 @@ async function reGeocodeEditedItem() {
     return;
   }
   map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
-  rememberPackageType(d.packageType);
   closeModal('modal-edit');
   clearEditPhotoEntries();
   editingItemId = null;
@@ -8026,7 +8092,6 @@ async function saveEditedItem() {
     showToast('管理者確認に失敗したため、住所変更を取り消しました', true);
     return;
   }
-  rememberPackageType(d.packageType);
   closeModal('modal-edit');
   clearEditPhotoEntries();
   editingItemId = null;
@@ -8430,7 +8495,7 @@ function openManualAddModal() {
   pendingAddPhoto = null;
   $('add-address').value = '';
   $('add-note').value = '';
-  $('add-package-type').value = capturePackageTypeValue();
+  populatePackageTypeSelect('add-package-type', '');
   const kindSelect = $('add-delivery-kind');
   if (kindSelect) kindSelect.value = 'delivery';
   updateAddDeliveryKindField();
@@ -8453,7 +8518,7 @@ function startVoiceInput() {
     $('add-address').value = split.address;
     $('add-note').value = split.note;
     pendingAddPhoto = null;
-    $('add-package-type').value = capturePackageTypeValue();
+    populatePackageTypeSelect('add-package-type', '');
     const kindSelect = $('add-delivery-kind');
     if (kindSelect) kindSelect.value = 'delivery';
     updateAddDeliveryKindField();
@@ -8698,7 +8763,7 @@ async function readPendingPhoto() {
     const packageTypeForDelivery = pendingPhotoPackageType;
     $('add-address').value = resolved.address;
     $('add-note').value = note;
-    $('add-package-type').value = packageTypeForDelivery;
+    populatePackageTypeSelect('add-package-type', packageTypeForDelivery);
     pendingAddPhoto = photoForDelivery;
     const kindSelect = $('add-delivery-kind');
     if (kindSelect) kindSelect.value = 'delivery';
@@ -9279,7 +9344,6 @@ async function processBatchPhoto(file, options = {}) {
       dupActive.packageCount = (Number(dupActive.packageCount) || 1) + 1;
       dupActive.packageType = combinePackageTypes(dupActive.packageType, packageType);
       dupActive.updatedAt = Date.now();
-      rememberPackageType(packageType);
       saveDeliveries();
       renderMarkers();
       renderList();
@@ -9321,7 +9385,6 @@ async function processBatchPhoto(file, options = {}) {
       createdAt: Date.now(),
       updatedAt: Date.now()
     });
-    rememberPackageType(packageType);
     saveDeliveries();
     renderMarkers();
     renderList();
@@ -12271,13 +12334,6 @@ $('btn-photo-rotate-left').addEventListener('click', () => rotatePendingPhoto(-9
 $('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(90));
 $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
 $('btn-photo-read').addEventListener('click', readPendingPhoto);
-$('capture-package-type').addEventListener('input', updateBatchPhotoUi);
-$('capture-package-type').addEventListener('change', () => rememberPackageType(capturePackageTypeValue()));
-$('btn-clear-capture-package-type').addEventListener('click', () => {
-  $('capture-package-type').value = '';
-  $('capture-package-type').focus();
-  updateBatchPhotoUi();
-});
 $('btn-add-manual').addEventListener('click', openManualAddModal);
 $('btn-add-confirm').addEventListener('click', () => {
   const builder = $('manual-address-builder');
@@ -12516,7 +12572,7 @@ document.addEventListener('visibilitychange', () => {
     mapboxConfig = await loadMapboxConfig();
     const mapReady = initMap();
     loadDeliveries();
-    refreshPackageTypeSuggestions();
+    loadPackageTypeCatalog();
     updateBatchPhotoUi();
     if (appMode === 'pickup') {
       const selectedCourse = getSelectedPickupSheet();

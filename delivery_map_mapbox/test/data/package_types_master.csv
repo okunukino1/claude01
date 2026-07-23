@@ -1,0 +1,13 @@
+id,label,enabled,sort_order
+box,箱,TRUE,10
+bag,袋,TRUE,20
+envelope,封筒,TRUE,30
+amazon-box,Amazon・箱,TRUE,40
+amazon-bag,Amazon・袋,TRUE,50
+yamato-box,ヤマト・箱,TRUE,60
+yamato-bag,ヤマト・袋,TRUE,70
+sagawa-box,佐川・箱,TRUE,80
+sagawa-bag,佐川・袋,TRUE,90
+japan-post,日本郵便,TRUE,100
+cool,クール便,TRUE,110
+other,その他,TRUE,120
