@@ -2,15 +2,16 @@
 
 ## 0. Codex追記（2026-07-23）
 
-- 作業基準は最新 `origin/main` のコミット `1e11233fec51fc1c8a1b4628ebf965ad12c6302d`。
+- 作業基準は最新 `origin/main` のコミット `c4dcf73f2cc35d47e3517dd5e87f27664dd72c55`。
 - 安定版は引き続き **v2026.07.10-1**。新機能は反映していない。
-- テスト版は **v2026.06.24-test.81** へ更新準備中。
-- `配送先を編集` と手入力の荷物情報を自由入力からマスター選択式へ変更。
-- 荷物情報マスターは `id / label / enabled / sort_order` の4列。テスト専用API `api/package_types_test.php` が既存Googleスプレッドシートの `荷物情報マスター` タブを優先し、タブが未作成・取得不能の場合は `test/data/package_types_master.csv` を読む。
-- 既存の自由入力データは削除せず、編集時だけ `（登録済み）` の選択肢として保持する。
-- `指定時刻（任意）` を `時間指定` のまとまりへ移動し、画面下の `事前入力` 欄を削除。
-- Googleスプレッドシートの実タブ追加は、Codexのブラウザ連携が接続できなかったため未実施。Excel版 `荷物情報マスター.xlsx` は作成済み。
+- テスト版は **v2026.06.24-test.82** へ更新準備中。Google案内モードの変更はまだ未デプロイ。
+- 配送モードの地図上に `Mapbox / Google` の切替を追加。Google Routes APIの案内線は利用規約に従いGoogle地図上だけに描画し、Mapboxは番地・建物・ピン位置修正に引き続き使う。
+- Google案内では現在地→1番をオレンジ、1番→2番を青で表示し、残りの配送先、時間指定、集荷ピンもGoogle地図へ表示する。Google地図または経路取得に失敗した場合はMapboxへ自動復帰する。
+- テスト専用APIは `api/google_guidance_test.php`、`api/google_maps_config_test.php`、`api/route_segment_test.php`。Mapbox側も現在時刻、走行方向、速度、GPS精度を使って出発直後の不要な折り返しを抑える。
+- すぐ旧表示へ戻す場合は画面上の `Mapbox` を選ぶ。機能全体を止める場合は `test/index.html` の `GOOGLE_GUIDANCE_FEATURE_ENABLED` を `false` にする。今回分は単独コミットにまとめ、コミット単位でも撤回できるようにする。
+- Google地図表示には、HTTPリファラー制限とMaps JavaScript API制限を設定した `GOOGLE_MAPS_BROWSER_KEY` が必要。サーバー用キーをブラウザーへ公開しない。
 - **通常版DB API `api/delivery_geocode_cache.php` には、テスト版にある `manual=1` の保護処理がまだ未反映。通常版昇格時に必ず別途確認すること。**
+- **通常版 `index.html` のメニュー内固定バージョン表示には古い値が残るが、通常版昇格の指示がないため今回は変更しない。**
 
 ---
 

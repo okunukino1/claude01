@@ -15,6 +15,8 @@ if (!file_exists($configFile)) {
   exit;
 }
 require_once $configFile;
+require_once __DIR__ . '/request_guard.php';
+delivery_app_require_same_origin_request();
 
 $token = '';
 if (defined('MAPBOX_OPTIMIZATION_TOKEN') && MAPBOX_OPTIMIZATION_TOKEN) {
@@ -69,6 +71,19 @@ if (isset($input['heading']) && is_numeric($input['heading'])) {
   }
 }
 
+$speed = isset($input['speed']) && is_numeric($input['speed'])
+  ? max(0.0, min(60.0, (float)$input['speed']))
+  : null;
+$accuracy = isset($input['accuracy']) && is_numeric($input['accuracy'])
+  ? max(0.0, min(500.0, (float)$input['accuracy']))
+  : null;
+$avoidManeuverRadius = $speed !== null && $speed >= 1.5
+  ? max(25, min(80, (int)round(20 + $speed * 6)))
+  : null;
+$originSnapRadius = $accuracy !== null && $accuracy > 0 && $accuracy <= 50
+  ? max(18, min(60, (int)ceil($accuracy * 1.5)))
+  : null;
+
 $maxWalkMeters = isset($input['max_walk_m']) && is_numeric($input['max_walk_m'])
   ? (float)$input['max_walk_m']
   : 60.0;
@@ -89,7 +104,7 @@ function flow_request_origin() {
   return ($https ? 'https://' : 'http://') . $host . '/';
 }
 
-function flow_call_directions($profile, $points, $token, $heading = null) {
+function flow_call_directions($profile, $points, $token, $heading = null, $useSafetySnap = false, $avoidManeuverRadius = null, $originSnapRadius = null) {
   $coordText = implode(';', array_map(function($point) {
     return rawurlencode((string)$point['lng']) . ',' . rawurlencode((string)$point['lat']);
   }, $points));
@@ -101,10 +116,19 @@ function flow_call_directions($profile, $points, $token, $heading = null) {
     'language' => 'ja',
     'continue_straight' => 'true'
   ];
+  if ($profile === 'mapbox/driving-traffic') $params['depart_at'] = 'now';
   if ($heading !== null && $profile !== 'mapbox/walking') {
     $bearings = array_fill(0, count($points), '');
     $bearings[0] = round($heading, 1) . ',45';
     $params['bearings'] = implode(';', $bearings);
+  }
+  if ($profile !== 'mapbox/walking' && $useSafetySnap && $avoidManeuverRadius !== null) {
+    $params['avoid_maneuver_radius'] = (string)$avoidManeuverRadius;
+  }
+  if ($profile !== 'mapbox/walking' && $useSafetySnap && $originSnapRadius !== null) {
+    $radiuses = array_fill(0, count($points), 'unlimited');
+    $radiuses[0] = (string)$originSnapRadius;
+    $params['radiuses'] = implode(';', $radiuses);
   }
 
   $url = 'https://api.mapbox.com/directions/v5/' . $profile . '/' . $coordText . '?' . http_build_query($params);
@@ -152,19 +176,30 @@ function flow_call_directions($profile, $points, $token, $heading = null) {
   ];
 }
 
-function flow_vehicle_route($points, $token, $heading) {
+function flow_vehicle_route($points, $token, $heading, $avoidManeuverRadius, $originSnapRadius) {
   $attempts = [
-    ['profile' => 'mapbox/driving-traffic', 'heading' => $heading],
-    ['profile' => 'mapbox/driving-traffic', 'heading' => null],
-    ['profile' => 'mapbox/driving', 'heading' => null],
+    ['profile' => 'mapbox/driving-traffic', 'heading' => $heading, 'safety' => true],
+    ['profile' => 'mapbox/driving-traffic', 'heading' => $heading, 'safety' => false],
+    ['profile' => 'mapbox/driving-traffic', 'heading' => null, 'safety' => false],
+    ['profile' => 'mapbox/driving', 'heading' => null, 'safety' => false],
   ];
   $used = [];
   $last = null;
   foreach ($attempts as $settings) {
-    $key = $settings['profile'] . '|' . ($settings['heading'] === null ? '' : (string)$settings['heading']);
+    if ($settings['safety'] && $avoidManeuverRadius === null && $originSnapRadius === null) continue;
+    $key = $settings['profile'] . '|' . ($settings['heading'] === null ? '' : (string)$settings['heading'])
+      . '|' . ($settings['safety'] ? '1' : '0');
     if (isset($used[$key])) continue;
     $used[$key] = true;
-    $attempt = flow_call_directions($settings['profile'], $points, $token, $settings['heading']);
+    $attempt = flow_call_directions(
+      $settings['profile'],
+      $points,
+      $token,
+      $settings['heading'],
+      $settings['safety'],
+      $avoidManeuverRadius,
+      $originSnapRadius
+    );
     $last = $attempt;
     if ($attempt['ok']) return $attempt;
   }
@@ -296,7 +331,13 @@ function flow_turn_degrees($orange, $blue) {
 
 // まず「現在地→2番」の自然な走行線を作り、その線が1番の徒歩圏を通るか調べる。
 // 通る場合は同じ一本の線を停車候補で分割するため、オレンジと青が逆向きに重ならない。
-$directAttempt = flow_vehicle_route([$start, $following], $token, $heading);
+$directAttempt = flow_vehicle_route(
+  [$start, $following],
+  $token,
+  $heading,
+  $avoidManeuverRadius,
+  $originSnapRadius
+);
 if ($directAttempt && $directAttempt['ok']) {
   $directGeometry = $directAttempt['route']['geometry'];
   $closest = flow_closest_route_point($directGeometry, $destination);
@@ -337,7 +378,13 @@ if ($directAttempt && $directAttempt['ok']) {
 
 // 徒歩圏を通らない時も、1番を前後別々に検索せず、3地点を一度に検索する。
 // continue_straight=true により、可能な道路では1番通過後の折り返しを避ける。
-$throughAttempt = flow_vehicle_route([$start, $destination, $following], $token, $heading);
+$throughAttempt = flow_vehicle_route(
+  [$start, $destination, $following],
+  $token,
+  $heading,
+  $avoidManeuverRadius,
+  $originSnapRadius
+);
 if ($throughAttempt && $throughAttempt['ok']) {
   $route = $throughAttempt['route'];
   $legs = $route['legs'] ?? [];

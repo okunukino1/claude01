@@ -44,6 +44,13 @@ define('MAPBOX_STYLE', 'mapbox://styles/mapbox/standard');
 // Google Cloudで Geocoding API を有効化してください。
 define('GOOGLE_MAPS_SERVER_KEY', 'AIza...Google Geocoding API用キー...');
 
+// === テスト版 Google案内モードの地図表示用キー ===
+// Maps JavaScript API専用キーです。ブラウザーへ公開されるため、
+// Google Cloudで次のHTTPリファラー制限を必ず設定してください。
+//   https://your-domain.com/delivery_map_mapbox/test/*
+// API制限は Maps JavaScript API のみにします。サーバー用キーは流用しません。
+define('GOOGLE_MAPS_BROWSER_KEY', 'AIza...Google Maps JavaScript API用キー...');
+
 // === Google Routes API 車用ルート最適化 ===
 // 未設定の場合は GOOGLE_MAPS_SERVER_KEY を使います。
 // Google Cloudで Routes API を有効化してください。

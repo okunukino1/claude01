@@ -85,13 +85,24 @@
   }
 
   /* ===== Map ===== */
-  #map {
+  #map,
+  #google-guidance-map {
     position: fixed;
     top: calc(48px + env(safe-area-inset-top));
     bottom: calc(var(--list-height) + var(--native-app-bottom-inset));
     left: 0; right: 0;
     background: var(--paper-soft);
     transition: bottom 0.25s ease;
+  }
+  #google-guidance-map {
+    display: none;
+  }
+  body.google-guidance-active #map {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  body.google-guidance-active #google-guidance-map {
+    display: block;
   }
   .mapboxgl-ctrl-attrib { font-size: 10px !important; }
 
@@ -485,6 +496,40 @@
     border-radius: 4px;
     line-height: 1.3;
     text-align: right;
+  }
+  .guidance-provider-switch {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    padding: 2px;
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.96);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .map-control .guidance-provider-switch button {
+    min-width: 64px;
+    min-height: 38px;
+    padding: 7px 8px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    box-shadow: none;
+    font-size: 11px;
+    line-height: 1;
+  }
+  .guidance-provider-switch button.selected {
+    background: var(--ink);
+    color: white;
+  }
+  .guidance-provider-switch button[data-guidance-provider="google"].selected {
+    background: #1a73e8;
+  }
+  .guidance-provider-switch button:disabled {
+    opacity: 0.55;
+  }
+  body:not(.work-mode-delivery) .guidance-provider-switch {
+    display: none;
   }
 
   /* ===== Left-side map controls (display mode, neighborhood toggle) ===== */
@@ -1914,13 +1959,18 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.81</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.82</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
 <div id="map"></div>
+<div id="google-guidance-map" aria-label="Google案内地図"></div>
 
 <div class="map-control">
+  <div class="guidance-provider-switch" id="guidance-provider-switch" role="group" aria-label="案内線の地図">
+    <button type="button" data-guidance-provider="mapbox" aria-pressed="false">Mapbox</button>
+    <button type="button" data-guidance-provider="google" aria-pressed="true">Google</button>
+  </div>
   <button id="btn-gps" type="button">◎ 現在地</button>
   <button id="btn-north" type="button" style="display:none">🧭 北に戻す</button>
   <div class="gps-status" id="gps-status"></div>
@@ -1982,7 +2032,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.81</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.82</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2426,7 +2476,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.81';
+const APP_VERSION = 'v2026.06.24-test.82';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2483,8 +2533,12 @@ const DELIVERY_SYNC_DIRTY_KEY = 'rys-mapbox-test-delivery-sync-dirty-v1';
 const DELIVERY_SYNC_INTERVAL_MS = 10000;
 const DELIVERY_SYNC_PUSH_DEBOUNCE_MS = 3000;
 const DELIVERY_SYNC_API = '../api/delivery_sync.php';
-const ROAD_SEGMENT_API = '../api/route_segment.php';
+const ROAD_SEGMENT_API = '../api/route_segment_test.php';
 const ROAD_FLOW_API = '../api/route_flow_test.php';
+const GOOGLE_GUIDANCE_CONFIG_API = '../api/google_maps_config_test.php';
+const GOOGLE_GUIDANCE_ROUTE_API = '../api/google_guidance_test.php';
+const GUIDANCE_PROVIDER_KEY = 'rys-mapbox-test-guidance-provider-v1';
+const GOOGLE_GUIDANCE_FEATURE_ENABLED = true;
 const FLOW_GUIDANCE_MAX_WALK_METERS = 60;
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
@@ -2705,6 +2759,16 @@ let lastFlowGuidance = null;
 let lastFlowNoticeKey = '';
 let temporaryGuidanceTargetId = null;
 let temporaryGuidanceBusy = false;
+let guidanceProvider = GOOGLE_GUIDANCE_FEATURE_ENABLED &&
+  localStorage.getItem(GUIDANCE_PROVIDER_KEY) !== 'mapbox' ? 'google' : 'mapbox';
+let googleGuidanceConfigPromise = null;
+let googleGuidanceScriptPromise = null;
+let googleGuidanceMap = null;
+let googleGuidanceBusy = false;
+let googleGuidanceRouteOverlays = [];
+let googleGuidanceRouteMarkers = [];
+let googleGuidanceUserMarker = null;
+let googleGuidanceLastFlow = null;
 let recognition = null;
 let mapStyleLoaded = false;
 
@@ -2742,6 +2806,8 @@ usage.geocode = usage.geocode || 0;
 usage.mapboxAddressGeocode = usage.mapboxAddressGeocode || 0;
 usage.routeOptimize = usage.routeOptimize || 0;
 usage.googleRouteOptimize = usage.googleRouteOptimize || 0;
+usage.googleGuidanceMap = usage.googleGuidanceMap || 0;
+usage.googleGuidanceRoute = usage.googleGuidanceRoute || 0;
 
 function $(id) { return document.getElementById(id); }
 
@@ -3637,6 +3703,8 @@ function modeLabel() {
 function updateWorkModeUi() {
   const deliveryMode = workMode === 'delivery';
   document.body.classList.toggle('work-mode-delivery', deliveryMode);
+  if (!deliveryMode) showMapboxGuidanceSurface();
+  updateGuidanceProviderUi();
   const inputButton = $('btn-work-mode-input');
   const deliveryButton = $('btn-work-mode-delivery');
   if (inputButton) {
@@ -3657,7 +3725,15 @@ function setWorkMode(mode, options = {}) {
     setBatchPhotoMode(false, { summary: false, toast: false });
   }
   updateWorkModeUi();
-  setTimeout(() => { if (map) map.resize(); }, 0);
+  setTimeout(() => {
+    if (map) map.resize();
+    if (googleGuidanceMap && window.google && google.maps && google.maps.event) {
+      google.maps.event.trigger(googleGuidanceMap, 'resize');
+    }
+  }, 0);
+  if (workMode === 'delivery' && guidanceHasRouteTarget()) {
+    updateNextSegmentHighlight();
+  }
   if (options.toast !== false) {
     showToast(workMode === 'delivery'
       ? '配送モード — 配送先の入力ボタンを隠しました'
@@ -4407,8 +4483,10 @@ const OPTIMIZED_ROUTE_SOURCE_ID = 'optimized-route';
 const OPTIMIZED_ROUTE_LAYER_ID = 'optimized-route-line';
 const NEXT_SEGMENT_SOURCE_ID = 'next-segment';
 const NEXT_SEGMENT_LAYER_ID = 'next-segment-line';
+const NEXT_SEGMENT_ARROW_LAYER_ID = 'next-segment-arrows';
 const FOLLOWING_SEGMENT_SOURCE_ID = 'following-segment';
 const FOLLOWING_SEGMENT_LAYER_ID = 'following-segment-line';
+const FOLLOWING_SEGMENT_ARROW_LAYER_ID = 'following-segment-arrows';
 const FLOW_WALK_SOURCE_ID = 'flow-walk';
 const FLOW_WALK_LAYER_ID = 'flow-walk-line';
 const FLOW_STOP_SOURCE_ID = 'flow-stop';
@@ -5189,16 +5267,25 @@ function clearOptimizedRouteGeometry() {
 }
 
 function clearNextSegmentLayer() {
-  if (!map) return;
   nextSegmentUpdateId++;
+  googleGuidanceBusy = false;
+  updateGuidanceProviderUi();
+  clearGoogleGuidanceRouteOverlays();
+  if (!map) {
+    showMapboxGuidanceSurface();
+    lastFlowNoticeKey = '';
+    return;
+  }
   removeNextSegmentLayer();
   removeFollowingSegmentLayer();
   removeFlowGuidanceLayers();
+  if (!guidanceHasRouteTarget()) showMapboxGuidanceSurface();
   lastFlowNoticeKey = '';
 }
 
 function removeNextSegmentLayer() {
   if (!map) return;
+  if (map.getLayer(NEXT_SEGMENT_ARROW_LAYER_ID)) map.removeLayer(NEXT_SEGMENT_ARROW_LAYER_ID);
   if (map.getLayer(NEXT_SEGMENT_LAYER_ID)) map.removeLayer(NEXT_SEGMENT_LAYER_ID);
   if (map.getSource(NEXT_SEGMENT_SOURCE_ID)) map.removeSource(NEXT_SEGMENT_SOURCE_ID);
 }
@@ -5209,6 +5296,7 @@ function clearFollowingSegmentLayer() {
 
 function removeFollowingSegmentLayer() {
   if (!map) return;
+  if (map.getLayer(FOLLOWING_SEGMENT_ARROW_LAYER_ID)) map.removeLayer(FOLLOWING_SEGMENT_ARROW_LAYER_ID);
   if (map.getLayer(FOLLOWING_SEGMENT_LAYER_ID)) map.removeLayer(FOLLOWING_SEGMENT_LAYER_ID);
   if (map.getSource(FOLLOWING_SEGMENT_SOURCE_ID)) map.removeSource(FOLLOWING_SEGMENT_SOURCE_ID);
 }
@@ -5222,18 +5310,29 @@ function removeFlowGuidanceLayers() {
   if (map.getSource(FLOW_WALK_SOURCE_ID)) map.removeSource(FLOW_WALK_SOURCE_ID);
 }
 
-function addNextSegmentLayer() {
-  if (map.getLayer(NEXT_SEGMENT_LAYER_ID)) return;
+function addRouteDirectionArrowLayer(layerId, sourceId, color) {
+  if (!map || map.getLayer(layerId)) return;
   const layerDef = {
-    id: NEXT_SEGMENT_LAYER_ID,
-    type: 'line',
-    source: NEXT_SEGMENT_SOURCE_ID,
+    id: layerId,
+    type: 'symbol',
+    source: sourceId,
     slot: 'top',
-    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    layout: {
+      'symbol-placement': 'line',
+      'symbol-spacing': 90,
+      'text-field': '▶',
+      'text-size': ['interpolate', ['linear'], ['zoom'], 12, 11, 16, 15, 19, 18],
+      'text-rotation-alignment': 'map',
+      'text-pitch-alignment': 'map',
+      'text-keep-upright': false,
+      'text-allow-overlap': true,
+      'text-ignore-placement': true
+    },
     paint: {
-      'line-color': '#f97316',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 5, 16, 8, 19, 11],
-      'line-opacity': 0.95
+      'text-color': color,
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 1.5,
+      'text-opacity': 0.96
     }
   };
   try {
@@ -5241,6 +5340,29 @@ function addNextSegmentLayer() {
   } catch (e) {
     try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
   }
+}
+
+function addNextSegmentLayer() {
+  if (!map.getLayer(NEXT_SEGMENT_LAYER_ID)) {
+    const layerDef = {
+      id: NEXT_SEGMENT_LAYER_ID,
+      type: 'line',
+      source: NEXT_SEGMENT_SOURCE_ID,
+      slot: 'top',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#f97316',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 12, 5, 16, 8, 19, 11],
+        'line-opacity': 0.95
+      }
+    };
+    try {
+      map.addLayer(layerDef);
+    } catch (e) {
+      try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
+    }
+  }
+  addRouteDirectionArrowLayer(NEXT_SEGMENT_ARROW_LAYER_ID, NEXT_SEGMENT_SOURCE_ID, '#c2410c');
 }
 
 function setNextSegmentGeometry(geometry) {
@@ -5256,24 +5378,26 @@ function setNextSegmentGeometry(geometry) {
 }
 
 function addFollowingSegmentLayer() {
-  if (map.getLayer(FOLLOWING_SEGMENT_LAYER_ID)) return;
-  const layerDef = {
-    id: FOLLOWING_SEGMENT_LAYER_ID,
-    type: 'line',
-    source: FOLLOWING_SEGMENT_SOURCE_ID,
-    slot: 'top',
-    layout: { 'line-join': 'round', 'line-cap': 'round' },
-    paint: {
-      'line-color': '#2563eb',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 16, 7, 19, 10],
-      'line-opacity': 0.9
+  if (!map.getLayer(FOLLOWING_SEGMENT_LAYER_ID)) {
+    const layerDef = {
+      id: FOLLOWING_SEGMENT_LAYER_ID,
+      type: 'line',
+      source: FOLLOWING_SEGMENT_SOURCE_ID,
+      slot: 'top',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#2563eb',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 16, 7, 19, 10],
+        'line-opacity': 0.9
+      }
+    };
+    try {
+      map.addLayer(layerDef);
+    } catch (e) {
+      try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
     }
-  };
-  try {
-    map.addLayer(layerDef);
-  } catch (e) {
-    try { const { slot, ...def } = layerDef; map.addLayer(def); } catch (e2) {}
   }
+  addRouteDirectionArrowLayer(FOLLOWING_SEGMENT_ARROW_LAYER_ID, FOLLOWING_SEGMENT_SOURCE_ID, '#1d4ed8');
 }
 
 function setFollowingSegmentGeometry(geometry) {
@@ -5291,6 +5415,433 @@ function setFollowingSegmentGeometry(geometry) {
 function validRouteLineGeometry(geometry) {
   return !!geometry && geometry.type === 'LineString' &&
     Array.isArray(geometry.coordinates) && geometry.coordinates.length >= 2;
+}
+
+function updateGuidanceProviderUi() {
+  const switchEl = $('guidance-provider-switch');
+  if (switchEl) switchEl.hidden = !GOOGLE_GUIDANCE_FEATURE_ENABLED;
+  document.querySelectorAll('[data-guidance-provider]').forEach(button => {
+    const selected = button.dataset.guidanceProvider === guidanceProvider;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    button.disabled = googleGuidanceBusy && button.dataset.guidanceProvider === 'google';
+  });
+}
+
+function guidanceHasRouteTarget() {
+  return !!temporaryGuidanceTargetId || optimizedRouteOrderedIds.length > 0;
+}
+
+function showMapboxGuidanceSurface() {
+  document.body.classList.remove('google-guidance-active');
+  if (map) {
+    const northButton = $('btn-north');
+    if (northButton) {
+      const bearing = Number(map.getBearing());
+      const pitch = Number(map.getPitch());
+      northButton.style.display = Math.abs(bearing) >= 1 || pitch > 1 ? 'block' : 'none';
+    }
+  }
+  if (map) {
+    setTimeout(() => {
+      try { map.resize(); } catch (e) {}
+      updateZoomBadge();
+    }, 0);
+  }
+}
+
+function showGoogleGuidanceSurface() {
+  if (!googleGuidanceMap || workMode !== 'delivery') {
+    showMapboxGuidanceSurface();
+    return false;
+  }
+  document.body.classList.add('google-guidance-active');
+  const northButton = $('btn-north');
+  if (northButton) northButton.style.display = 'none';
+  setTimeout(() => {
+    if (window.google && google.maps && google.maps.event) {
+      google.maps.event.trigger(googleGuidanceMap, 'resize');
+    }
+    updateZoomBadge();
+  }, 0);
+  return true;
+}
+
+function loadGoogleGuidanceConfig() {
+  if (googleGuidanceConfigPromise) return googleGuidanceConfigPromise;
+  googleGuidanceConfigPromise = fetch(GOOGLE_GUIDANCE_CONFIG_API, { cache: 'no-store' })
+    .then(async res => {
+      let data = null;
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok || !data || !data.available || !data.googleMapsBrowserKey) {
+        throw new Error((data && data.error) || 'Google地図のブラウザーキーが未設定です');
+      }
+      return data;
+    })
+    .catch(error => {
+      googleGuidanceConfigPromise = null;
+      throw error;
+    });
+  return googleGuidanceConfigPromise;
+}
+
+function loadGoogleGuidanceScript() {
+  if (window.google && google.maps && typeof google.maps.Map === 'function') {
+    return Promise.resolve();
+  }
+  if (googleGuidanceScriptPromise) return googleGuidanceScriptPromise;
+  googleGuidanceScriptPromise = loadGoogleGuidanceConfig()
+    .then(config => new Promise((resolve, reject) => {
+      if (window.google && google.maps && typeof google.maps.Map === 'function') {
+        resolve();
+        return;
+      }
+      const callbackName = '__rysGoogleGuidanceReady';
+      const script = document.createElement('script');
+      script.dataset.googleGuidance = '1';
+      script.async = true;
+      script.defer = true;
+      script.src = 'https://maps.googleapis.com/maps/api/js?' + new URLSearchParams({
+        key: config.googleMapsBrowserKey,
+        v: 'weekly',
+        language: 'ja',
+        region: 'JP',
+        loading: 'async',
+        callback: callbackName
+      }).toString();
+      window[callbackName] = () => {
+        try { delete window[callbackName]; } catch (e) {}
+        resolve();
+      };
+      script.onerror = () => {
+        try { delete window[callbackName]; } catch (e) {}
+        reject(new Error('Google地図を読み込めませんでした'));
+      };
+      document.head.appendChild(script);
+    }))
+    .catch(error => {
+      googleGuidanceScriptPromise = null;
+      throw error;
+    });
+  return googleGuidanceScriptPromise;
+}
+
+async function ensureGoogleGuidanceMap() {
+  if (googleGuidanceMap) return googleGuidanceMap;
+  await loadGoogleGuidanceScript();
+  if (!window.google || !google.maps || typeof google.maps.Map !== 'function') {
+    throw new Error('Google地図を初期化できませんでした');
+  }
+  const start = getRouteStartPoint();
+  bumpUsage('googleGuidanceMap');
+  googleGuidanceMap = new google.maps.Map($('google-guidance-map'), {
+    center: { lat: start.lat, lng: start.lng },
+    zoom: 17,
+    mapTypeId: 'roadmap',
+    gestureHandling: 'greedy',
+    clickableIcons: false,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    rotateControl: false,
+    zoomControl: false,
+    keyboardShortcuts: false
+  });
+  if (typeof googleGuidanceMap.addListener === 'function') {
+    googleGuidanceMap.addListener('zoom_changed', updateZoomBadge);
+  }
+  updateGoogleGuidanceUserMarker();
+  return googleGuidanceMap;
+}
+
+function clearGoogleGuidanceRouteOverlays() {
+  googleGuidanceRouteOverlays.forEach(overlay => {
+    try { overlay.setMap(null); } catch (e) {}
+  });
+  googleGuidanceRouteMarkers.forEach(marker => {
+    try { marker.setMap(null); } catch (e) {}
+  });
+  googleGuidanceRouteOverlays = [];
+  googleGuidanceRouteMarkers = [];
+  googleGuidanceLastFlow = null;
+}
+
+function googleGuidancePath(geometry) {
+  if (!validRouteLineGeometry(geometry)) return [];
+  return geometry.coordinates
+    .filter(coord => Array.isArray(coord) && coord.length >= 2 &&
+      Number.isFinite(Number(coord[0])) && Number.isFinite(Number(coord[1])))
+    .map(coord => ({ lat: Number(coord[1]), lng: Number(coord[0]) }));
+}
+
+function addGoogleGuidanceLine(geometry, color, width) {
+  const path = googleGuidancePath(geometry);
+  if (path.length < 2 || !googleGuidanceMap) return path;
+  const outline = new google.maps.Polyline({
+    map: googleGuidanceMap,
+    path,
+    geodesic: false,
+    clickable: false,
+    strokeColor: '#111827',
+    strokeOpacity: 0.88,
+    strokeWeight: width + 4,
+    zIndex: 5
+  });
+  const arrowPath = google.maps.SymbolPath && google.maps.SymbolPath.FORWARD_CLOSED_ARROW;
+  const line = new google.maps.Polyline({
+    map: googleGuidanceMap,
+    path,
+    geodesic: false,
+    clickable: false,
+    strokeColor: color,
+    strokeOpacity: 0.96,
+    strokeWeight: width,
+    zIndex: 6,
+    icons: arrowPath ? [{
+      icon: {
+        path: arrowPath,
+        fillColor: color,
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeOpacity: 1,
+        strokeWeight: 1,
+        scale: 3
+      },
+      offset: '35px',
+      repeat: '80px'
+    }] : []
+  });
+  googleGuidanceRouteOverlays.push(outline, line);
+  return path;
+}
+
+function addGoogleGuidanceWalkLine(geometry) {
+  const path = googleGuidancePath(geometry);
+  if (path.length < 2 || !googleGuidanceMap) return path;
+  const line = new google.maps.Polyline({
+    map: googleGuidanceMap,
+    path,
+    geodesic: false,
+    clickable: false,
+    strokeColor: '#111827',
+    strokeOpacity: 0.8,
+    strokeWeight: 4,
+    zIndex: 7
+  });
+  googleGuidanceRouteOverlays.push(line);
+  return path;
+}
+
+function addGoogleGuidanceMarker(point, label, color, title, scale = 13) {
+  if (!googleGuidanceMap || !window.google || typeof google.maps.Marker !== 'function' ||
+      !point || !Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lng))) {
+    return null;
+  }
+  const marker = new google.maps.Marker({
+    map: googleGuidanceMap,
+    position: { lat: Number(point.lat), lng: Number(point.lng) },
+    title: title || '',
+    clickable: false,
+    zIndex: 10,
+    label: label ? {
+      text: String(label),
+      color: '#ffffff',
+      fontSize: '12px',
+      fontWeight: '800'
+    } : undefined,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale,
+      fillColor: color,
+      fillOpacity: 1,
+      strokeColor: '#111827',
+      strokeOpacity: 1,
+      strokeWeight: 2
+    }
+  });
+  googleGuidanceRouteMarkers.push(marker);
+  return marker;
+}
+
+function googleGuidanceDeliveryStyle(delivery, index) {
+  const number = displayNumber(delivery, index);
+  if (delivery.completed) return { color: '#6b7280', label: number, scale: 10 };
+  const timeInfo = deliveryTimeInfo(delivery);
+  if (timeInfo.hasTime) return { color: timeInfo.color, label: `時${number}`, scale: 12 };
+  if (isOtherCoursePickup(delivery)) return { color: '#047857', label: `集${number}`, scale: 12 };
+  if (isSpotPickupDelivery(delivery)) return { color: '#0284c7', label: number, scale: 10 };
+  if (delivery.approx) return { color: '#fbbf24', label: number, scale: 10 };
+  return { color: '#ff5722', label: number, scale: 10 };
+}
+
+function addGoogleGuidanceContextMarkers(excludedIds) {
+  const excluded = new Set(excludedIds.filter(Boolean));
+  deliveries.forEach((delivery, index) => {
+    if (!delivery || excluded.has(delivery.id) || !isVisibleInCurrentMode(delivery)) return;
+    if (!Number.isFinite(Number(delivery.lat)) || !Number.isFinite(Number(delivery.lng))) return;
+    const style = googleGuidanceDeliveryStyle(delivery, index);
+    addGoogleGuidanceMarker(
+      { lat: Number(delivery.lat), lng: Number(delivery.lng) },
+      style.label,
+      style.color,
+      temporaryGuidanceTargetLabel(delivery),
+      style.scale
+    );
+  });
+}
+
+function updateGoogleGuidanceUserMarker() {
+  if (!googleGuidanceMap || !lastKnownGps ||
+      !Number.isFinite(Number(lastKnownGps.lat)) || !Number.isFinite(Number(lastKnownGps.lng)) ||
+      !window.google || typeof google.maps.Marker !== 'function') return;
+  const position = { lat: Number(lastKnownGps.lat), lng: Number(lastKnownGps.lng) };
+  if (!googleGuidanceUserMarker) {
+    googleGuidanceUserMarker = new google.maps.Marker({
+      map: googleGuidanceMap,
+      position,
+      clickable: false,
+      zIndex: 20,
+      title: '現在地',
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 8,
+        fillColor: '#2563eb',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeOpacity: 1,
+        strokeWeight: 3
+      }
+    });
+  } else {
+    googleGuidanceUserMarker.setPosition(position);
+    googleGuidanceUserMarker.setMap(googleGuidanceMap);
+  }
+  if (gpsAutoFollow && document.body.classList.contains('google-guidance-active')) {
+    googleGuidanceMap.panTo(position);
+  }
+}
+
+function extendGoogleGuidanceBounds(bounds, path) {
+  path.forEach(point => bounds.extend(point));
+}
+
+function renderGoogleGuidanceFlow(flow, nextDelivery, followingDelivery) {
+  if (!googleGuidanceMap || !flow || !validRouteLineGeometry(flow.orangeGeometry)) return false;
+  clearGoogleGuidanceRouteOverlays();
+  showGoogleGuidanceSurface();
+
+  const bounds = new google.maps.LatLngBounds();
+  extendGoogleGuidanceBounds(bounds, addGoogleGuidanceLine(flow.orangeGeometry, '#f97316', 8));
+  if (validRouteLineGeometry(flow.blueGeometry)) {
+    extendGoogleGuidanceBounds(bounds, addGoogleGuidanceLine(flow.blueGeometry, '#2563eb', 7));
+  }
+  if (validRouteLineGeometry(flow.walkingGeometry)) {
+    extendGoogleGuidanceBounds(bounds, addGoogleGuidanceWalkLine(flow.walkingGeometry));
+  }
+
+  addGoogleGuidanceContextMarkers([
+    nextDelivery && nextDelivery.id,
+    followingDelivery && followingDelivery.id
+  ]);
+  if (nextDelivery) {
+    const nextPoint = { lat: Number(nextDelivery.lat), lng: Number(nextDelivery.lng) };
+    addGoogleGuidanceMarker(nextPoint, temporaryGuidanceTargetId ? '案' : '1', '#f97316', nextDelivery.address);
+    bounds.extend(nextPoint);
+  }
+  if (followingDelivery) {
+    const followingPoint = { lat: Number(followingDelivery.lat), lng: Number(followingDelivery.lng) };
+    addGoogleGuidanceMarker(followingPoint, '2', '#2563eb', followingDelivery.address);
+    bounds.extend(followingPoint);
+  }
+  if (flow.stop && Number.isFinite(Number(flow.stop.lat)) && Number.isFinite(Number(flow.stop.lng)) &&
+      Number(flow.walkingDistance) >= 5) {
+    const stopPoint = { lat: Number(flow.stop.lat), lng: Number(flow.stop.lng) };
+    addGoogleGuidanceMarker(stopPoint, '', '#fde047', '停車候補', 8);
+    bounds.extend(stopPoint);
+  }
+  if (lastKnownGps && Number.isFinite(Number(lastKnownGps.lat)) && Number.isFinite(Number(lastKnownGps.lng))) {
+    bounds.extend({ lat: Number(lastKnownGps.lat), lng: Number(lastKnownGps.lng) });
+  }
+
+  updateGoogleGuidanceUserMarker();
+  if (!bounds.isEmpty()) {
+    if (google.maps.event) google.maps.event.trigger(googleGuidanceMap, 'resize');
+    googleGuidanceMap.fitBounds(bounds, { top: 64, right: 34, bottom: 54, left: 34 });
+  }
+  googleGuidanceLastFlow = flow;
+  updateZoomBadge();
+  return true;
+}
+
+async function fetchGoogleGuidanceSegments(start, destination, following = null) {
+  const body = {
+    start: { lat: start.lat, lng: start.lng },
+    destination: { lat: destination.lat, lng: destination.lng },
+    max_walk_m: FLOW_GUIDANCE_MAX_WALK_METERS
+  };
+  if (following) body.following = { lat: following.lat, lng: following.lng };
+  if (Number.isFinite(start.heading)) body.heading = start.heading;
+  bumpUsage('googleGuidanceRoute');
+  const res = await fetch(GOOGLE_GUIDANCE_ROUTE_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || !data.ok || !validRouteLineGeometry(data.orangeGeometry) ||
+      (following && !validRouteLineGeometry(data.blueGeometry))) {
+    throw new Error((data && (data.error || data.detail)) || 'Google案内線を取得できませんでした');
+  }
+  return data;
+}
+
+function fallbackToMapboxGuidance(message) {
+  guidanceProvider = 'mapbox';
+  localStorage.setItem(GUIDANCE_PROVIDER_KEY, guidanceProvider);
+  googleGuidanceBusy = false;
+  clearGoogleGuidanceRouteOverlays();
+  showMapboxGuidanceSurface();
+  updateGuidanceProviderUi();
+  if (message) showToast(`${message} Mapbox案内へ戻しました`, true);
+}
+
+async function selectGuidanceProvider(provider, options = {}) {
+  if (provider !== 'mapbox' && provider !== 'google') return;
+  if (provider === 'google' && !GOOGLE_GUIDANCE_FEATURE_ENABLED) return;
+  guidanceProvider = provider;
+  localStorage.setItem(GUIDANCE_PROVIDER_KEY, guidanceProvider);
+  updateGuidanceProviderUi();
+
+  if (provider === 'mapbox') {
+    clearGoogleGuidanceRouteOverlays();
+    showMapboxGuidanceSurface();
+    if (guidanceHasRouteTarget()) await updateNextSegmentHighlight();
+    if (options.announce !== false) showToast('案内線をMapboxへ戻しました');
+    return;
+  }
+
+  if (workMode !== 'delivery' || !guidanceHasRouteTarget()) {
+    showMapboxGuidanceSurface();
+    if (options.announce !== false) showToast('配送順を決めるとGoogle案内を表示します');
+    return;
+  }
+
+  googleGuidanceBusy = true;
+  updateGuidanceProviderUi();
+  try {
+    await ensureGoogleGuidanceMap();
+    await updateNextSegmentHighlight();
+    if (guidanceProvider === 'google' && options.announce !== false) {
+      showToast('Google案内へ切り替えました');
+    }
+  } catch (error) {
+    fallbackToMapboxGuidance(error.message || 'Google案内を開始できませんでした。');
+    await updateNextSegmentHighlight();
+  } finally {
+    googleGuidanceBusy = false;
+    updateGuidanceProviderUi();
+  }
 }
 
 function addFlowWalkLayer() {
@@ -5381,6 +5932,8 @@ async function fetchDrivingSegmentGeometry(start, destination) {
       destination: { lat: destination.lat, lng: destination.lng }
     };
     if (Number.isFinite(start.heading)) body.heading = start.heading;
+    if (Number.isFinite(start.speed)) body.speed = start.speed;
+    if (Number.isFinite(start.accuracy)) body.accuracy = start.accuracy;
     const res = await fetch(ROAD_SEGMENT_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5404,6 +5957,8 @@ async function fetchFlowAwareSegments(start, destination, following) {
       max_walk_m: FLOW_GUIDANCE_MAX_WALK_METERS
     };
     if (Number.isFinite(start.heading)) body.heading = start.heading;
+    if (Number.isFinite(start.speed)) body.speed = start.speed;
+    if (Number.isFinite(start.accuracy)) body.accuracy = start.accuracy;
     const res = await fetch(ROAD_FLOW_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5467,6 +6022,16 @@ function updateTemporaryGuidanceUi() {
   }
 }
 
+function announceFlowWalkingStop(flow, deliveryId) {
+  if (!flow) return;
+  const walkingDistance = Number(flow.walkingDistance);
+  if (flow.mode !== 'pass-by-walk' || !Number.isFinite(walkingDistance) || walkingDistance < 5) return;
+  const noticeKey = `${deliveryId}|${Math.round(walkingDistance)}`;
+  if (noticeKey === lastFlowNoticeKey) return;
+  lastFlowNoticeKey = noticeKey;
+  showToast(`1番は流れを優先: 黄色の停車候補から徒歩約${Math.round(walkingDistance)}m`);
+}
+
 async function refreshTemporaryGuidanceLine(options = {}) {
   const target = temporaryGuidanceTarget();
   if (!map || !target || target.completed || target.lat == null || target.lng == null) return false;
@@ -5478,9 +6043,38 @@ async function refreshTemporaryGuidanceLine(options = {}) {
   removeNextSegmentLayer();
   removeFollowingSegmentLayer();
   removeFlowGuidanceLayers();
+  clearGoogleGuidanceRouteOverlays();
   lastFlowNoticeKey = '';
 
-  const geometry = await fetchDrivingSegmentGeometry(getRouteStartPoint(), target);
+  const start = getRouteStartPoint();
+  if (guidanceProvider === 'google' && workMode === 'delivery') {
+    googleGuidanceBusy = true;
+    updateGuidanceProviderUi();
+    try {
+      await ensureGoogleGuidanceMap();
+      const flow = await fetchGoogleGuidanceSegments(start, target);
+      if (updateId !== nextSegmentUpdateId || temporaryGuidanceTargetId !== targetId) return false;
+      temporaryGuidanceBusy = false;
+      googleGuidanceBusy = false;
+      updateTemporaryGuidanceUi();
+      updateGuidanceProviderUi();
+      renderGoogleGuidanceFlow(flow, target, null);
+      if (options.announce !== false) {
+        const message = options.refresh
+          ? 'Google案内を現在地から引き直しました'
+          : `Google一時案内を開始: ${temporaryGuidanceTargetLabel(target)}`;
+        showToast(message);
+      }
+      return true;
+    } catch (error) {
+      if (updateId !== nextSegmentUpdateId || temporaryGuidanceTargetId !== targetId) return false;
+      googleGuidanceBusy = false;
+      fallbackToMapboxGuidance(error.message || 'Google一時案内を取得できませんでした。');
+    }
+  }
+
+  showMapboxGuidanceSurface();
+  const geometry = await fetchDrivingSegmentGeometry(start, target);
   if (updateId !== nextSegmentUpdateId || temporaryGuidanceTargetId !== targetId) return false;
 
   temporaryGuidanceBusy = false;
@@ -5586,7 +6180,30 @@ async function updateNextSegmentHighlight() {
   removeNextSegmentLayer();
   removeFollowingSegmentLayer();
   removeFlowGuidanceLayers();
+  clearGoogleGuidanceRouteOverlays();
 
+  if (guidanceProvider === 'google' && workMode === 'delivery') {
+    googleGuidanceBusy = true;
+    updateGuidanceProviderUi();
+    try {
+      await ensureGoogleGuidanceMap();
+      const googleFlow = await fetchGoogleGuidanceSegments(start, nextDelivery, followingDelivery || null);
+      if (updateId !== nextSegmentUpdateId) return;
+      googleGuidanceBusy = false;
+      updateGuidanceProviderUi();
+      if (renderGoogleGuidanceFlow(googleFlow, nextDelivery, followingDelivery)) {
+        announceFlowWalkingStop(googleFlow, nextDelivery.id);
+        return true;
+      }
+      throw new Error('Google案内線を表示できませんでした');
+    } catch (error) {
+      if (updateId !== nextSegmentUpdateId) return;
+      googleGuidanceBusy = false;
+      fallbackToMapboxGuidance(error.message || 'Google案内線を取得できませんでした。');
+    }
+  }
+
+  showMapboxGuidanceSurface();
   let nextGeometry = null;
   let followingGeometry = null;
   let flow = null;
@@ -5613,14 +6230,7 @@ async function updateNextSegmentHighlight() {
     setNextSegmentGeometry(nextGeometry);
     if (flow) {
       setFlowGuidance(flow, nextDelivery.id);
-      const walkingDistance = Number(flow.walkingDistance);
-      if (flow.mode === 'pass-by-walk' && Number.isFinite(walkingDistance) && walkingDistance >= 5) {
-        const noticeKey = `${nextDelivery.id}|${Math.round(walkingDistance)}`;
-        if (noticeKey !== lastFlowNoticeKey) {
-          lastFlowNoticeKey = noticeKey;
-          showToast(`1番は流れを優先: 黄色の停車候補から徒歩約${Math.round(walkingDistance)}m`);
-        }
-      }
+      announceFlowWalkingStop(flow, nextDelivery.id);
     }
   }
   else if (Date.now() - nextSegmentFailureToastAt > 60000) {
@@ -7512,6 +8122,7 @@ async function startPlacement(id) {
   const d = deliveries.find(x => x.id === id);
   if (!d) return;
   if (isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
+  showMapboxGuidanceSurface();
   placingItemId = id;
   document.body.classList.add('placing-mode');
   showToast('地図上で位置をタップしてください');
@@ -7577,6 +8188,8 @@ async function commitPlacement() {
 
   if (temporaryGuidanceTargetId === d.id) {
     refreshTemporaryGuidanceLine({ announce: false });
+  } else if (guidanceProvider === 'google' && optimizedRouteOrderedIds.length > 0) {
+    updateNextSegmentHighlight();
   }
 
   showToast(locationSynced ? '位置を更新し、この住所の正しい位置を記憶しました' : '位置は更新しましたが固定位置の共有保存に失敗しました', !locationSynced);
@@ -7586,6 +8199,7 @@ function cancelPlacement() {
   placingItemId = null;
   pendingPlacementCoord = null;
   document.body.classList.remove('placing-mode');
+  if (guidanceProvider === 'google' && guidanceHasRouteTarget()) updateNextSegmentHighlight();
   showToast('位置修正をキャンセル');
 }
 
@@ -9547,7 +10161,10 @@ function showUsage() {
     <p><b>車用ルート最適化 (Google Routes)</b><br>
     呼び出し回数: ${usage.googleRouteOptimize} 回<br>
     費用はGoogle Maps Platformの管理画面で確認してください。</p>
-    <p><b>Google車用ルートを除く合計推定費用: $${total}</b></p>
+    <p><b>Google案内地図</b><br>
+    地図読み込み: ${usage.googleGuidanceMap} 回 / 案内更新: ${usage.googleGuidanceRoute} 回<br>
+    費用はGoogle Maps Platformの管理画面で確認してください。</p>
+    <p><b>Google機能を除く合計推定費用: $${total}</b></p>
     <p style="font-size:11px;color:#666;margin-top:12px">
     ※ 地図表示自体 (Mapbox) はこのカウントに含まれません。<br>
     Mapboxは月50,000マップロードまで無料、超過後は約$5/1000ロード。<br>
@@ -9559,7 +10176,15 @@ function showUsage() {
 
 function resetUsage() {
   showConfirm('使用状況リセット', 'カウンターをリセットしますか？', () => {
-    usage = { ocr: 0, geocode: 0, mapboxAddressGeocode: 0, routeOptimize: 0, googleRouteOptimize: 0 };
+    usage = {
+      ocr: 0,
+      geocode: 0,
+      mapboxAddressGeocode: 0,
+      routeOptimize: 0,
+      googleRouteOptimize: 0,
+      googleGuidanceMap: 0,
+      googleGuidanceRoute: 0
+    };
     localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
     showUsage();
     showToast('リセットしました');
@@ -11465,7 +12090,11 @@ function getRouteStartPoint() {
   if (userMarker) {
     const ll = userMarker.getLngLat();
     const start = { lat: ll.lat, lng: ll.lng, label: '現在地' };
-    if (lastKnownGps && Number.isFinite(lastKnownGps.heading)) start.heading = lastKnownGps.heading;
+    if (lastKnownGps) {
+      if (Number.isFinite(lastKnownGps.heading)) start.heading = lastKnownGps.heading;
+      if (Number.isFinite(lastKnownGps.speed)) start.speed = lastKnownGps.speed;
+      if (Number.isFinite(lastKnownGps.accuracy)) start.accuracy = lastKnownGps.accuracy;
+    }
     return start;
   }
   if (map) {
@@ -12067,7 +12696,8 @@ async function optimizeCarRouteOrderWith(providerKey) {
       timeWindowItems,
       noLocationItems,
       completedItems,
-      geometry: data.geometry || null,
+      geometry: providerKey === 'google' ? null : (data.geometry || null),
+      clearGeometry: providerKey === 'google',
       successMessage: `${modeLabel()}順を${provider.shortName}ルートで並べ替えました`
     });
   } catch (e) {
@@ -12096,7 +12726,13 @@ function exportDeliveriesAsJSON() {
 
 function updateZoomBadge() {
   const el = $('zoom-badge');
-  if (!el || !map) return;
+  if (!el) return;
+  if (document.body.classList.contains('google-guidance-active') && googleGuidanceMap) {
+    const zoom = Number(googleGuidanceMap.getZoom());
+    el.textContent = Number.isFinite(zoom) ? `Google: ${zoom.toFixed(1)}` : 'Google案内';
+    return;
+  }
+  if (!map) return;
   el.textContent = `ズーム: ${map.getZoom().toFixed(1)}`;
 }
 
@@ -12148,6 +12784,7 @@ function updateUserLocation(pos, moveMap = false) {
     ? ((rawHeading % 360) + 360) % 360
     : null;
   lastKnownGps = { lat: latitude, lng: longitude, heading, speed, accuracy };
+  updateGoogleGuidanceUserMarker();
   banchiSchedulePrefetch(longitude, latitude);
 
   const startupCenterAllowed = gpsInitialCenterStartedAt &&
@@ -12155,7 +12792,12 @@ function updateUserLocation(pos, moveMap = false) {
   const shouldMoveMap = moveMap || (gpsInitialCenterPending && startupCenterAllowed);
   if (shouldMoveMap) {
     gpsInitialCenterPending = false;
-    map.easeTo({ center: lngLat, zoom: Math.max(map.getZoom(), 17), duration: 600 });
+    if (document.body.classList.contains('google-guidance-active') && googleGuidanceMap) {
+      googleGuidanceMap.panTo({ lat: latitude, lng: longitude });
+      if (Number(googleGuidanceMap.getZoom()) < 17) googleGuidanceMap.setZoom(17);
+    } else {
+      map.easeTo({ center: lngLat, zoom: Math.max(map.getZoom(), 17), duration: 600 });
+    }
   }
 }
 
@@ -12201,7 +12843,12 @@ function toggleGpsTracking() {
     showToast('地図追従ON');
     if (userMarker) {
       const ll = userMarker.getLngLat();
-      map.easeTo({ center: [ll.lng, ll.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+      if (document.body.classList.contains('google-guidance-active') && googleGuidanceMap) {
+        googleGuidanceMap.panTo({ lat: ll.lat, lng: ll.lng });
+        if (Number(googleGuidanceMap.getZoom()) < 17) googleGuidanceMap.setZoom(17);
+      } else {
+        map.easeTo({ center: [ll.lng, ll.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+      }
     }
   } else {
     showToast('地図追従OFF: 現在地マーカーは動き続けます');
@@ -12214,7 +12861,12 @@ function centerOnUser() {
   ensureGpsWatching();
   if (userMarker) {
     const ll = userMarker.getLngLat();
-    map.easeTo({ center: [ll.lng, ll.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+    if (document.body.classList.contains('google-guidance-active') && googleGuidanceMap) {
+      googleGuidanceMap.panTo({ lat: ll.lat, lng: ll.lng });
+      if (Number(googleGuidanceMap.getZoom()) < 17) googleGuidanceMap.setZoom(17);
+    } else {
+      map.easeTo({ center: [ll.lng, ll.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+    }
     showToast('現在地を表示しました');
     return;
   }
@@ -12228,6 +12880,12 @@ function centerOnUser() {
 
 $('btn-menu').addEventListener('click', () => openModal('modal-menu'));
 $('btn-gps').addEventListener('click', toggleGpsTracking);
+$('guidance-provider-switch').addEventListener('click', event => {
+  const button = event.target.closest('[data-guidance-provider]');
+  if (!button || button.disabled) return;
+  selectGuidanceProvider(button.dataset.guidanceProvider)
+    .catch(error => fallbackToMapboxGuidance(error.message || '案内地図を切り替えられませんでした。'));
+});
 $('course-area-row').addEventListener('click', () => openCourseChoiceModal('area'));
 $('course-mode-row').addEventListener('click', () => openCourseChoiceModal('mode'));
 $('course-choice-list').addEventListener('click', (event) => {
@@ -12249,7 +12907,12 @@ function toggleListCollapse(forceState) {
     : !document.body.classList.contains('list-collapsed');
   document.body.classList.toggle('list-collapsed', willCollapse);
   localStorage.setItem(LIST_COLLAPSED_KEY, willCollapse ? '1' : '0');
-  setTimeout(() => { if (map) map.resize(); }, 280);
+  setTimeout(() => {
+    if (map) map.resize();
+    if (googleGuidanceMap && window.google && google.maps && google.maps.event) {
+      google.maps.event.trigger(googleGuidanceMap, 'resize');
+    }
+  }, 280);
 }
 $('list-header').addEventListener('click', event => {
   if (event.target.closest('.work-mode-switch')) return;
@@ -12267,6 +12930,7 @@ document.querySelectorAll('[data-pickup-list-tab]').forEach(button => {
   button.addEventListener('click', () => setPickupListTab(button.dataset.pickupListTab));
 });
 $('btn-north').addEventListener('click', () => {
+  if (document.body.classList.contains('google-guidance-active')) return;
   map.easeTo({ bearing: 0, pitch: 0, duration: 400 });
   showToast('🧭 北向き・水平に戻しました');
 });
@@ -12559,6 +13223,7 @@ document.addEventListener('visibilitychange', () => {
     updateAppVersionLabels();
     applyTextSize(currentTextSize(), false);
     updateWorkModeUi();
+    updateGuidanceProviderUi();
     if (localStorage.getItem(LIST_COLLAPSED_KEY) === '1') {
       document.body.classList.add('list-collapsed');
     }
