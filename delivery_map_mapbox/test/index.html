@@ -1911,7 +1911,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.79</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.80</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -1985,7 +1985,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.79</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.80</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2421,7 +2421,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.79';
+const APP_VERSION = 'v2026.06.24-test.80';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_HISTORY_KEY = 'rys-mapbox-test-package-type-history-v1';
 const DELIVERY_PHOTO_DB_NAME = 'rys-mapbox-test-delivery-photos-v1';
@@ -7533,7 +7533,9 @@ function setEditFieldVisible(id, visible) {
 
 function setEditModalProcessingLayout(processing) {
   ['edit-address', 'edit-note', 'edit-time-window', 'edit-exact-time', 'edit-package-count']
-    .forEach(id => setEditFieldVisible(id, !processing));
+    .forEach(id => setEditFieldVisible(id, true));
+  const address = $('edit-address');
+  if (address) address.disabled = processing;
   const geocodeBtn = $('btn-edit-geocode');
   if (geocodeBtn) {
     geocodeBtn.hidden = processing;
@@ -7569,21 +7571,21 @@ function openSinglePhotoProcessingEditor(session) {
   session.cancelled = false;
 
   const title = $('edit-modal-title');
-  if (title) title.textContent = '荷物情報を入力';
+  if (title) title.textContent = '配送先を編集';
   const banner = $('edit-review-banner');
   if (banner) {
     banner.classList.add('processing');
-    banner.textContent = '住所とピンをバックグラウンドで作成中です。伝票写真を見ながら、先に箱・袋・メーカー名などを入力してください。';
+    banner.textContent = '住所とピンをバックグラウンドで作成中です。待っている間に、時間指定・荷物情報・備考・個数を入力できます。';
     banner.style.display = 'block';
   }
 
   setEditModalProcessingLayout(true);
   $('edit-address').value = '写真から住所を読み取り中...';
-  $('edit-note').value = '';
-  $('edit-package-type').value = session.initialPackageType || '';
-  $('edit-package-count').value = '1';
-  populateTimeWindowSelect($('edit-time-window'), '');
-  $('edit-exact-time').value = '';
+  $('edit-note').value = session.draft.note || '';
+  $('edit-package-type').value = session.draft.packageType || '';
+  $('edit-package-count').value = String(session.draft.packageCount || 1);
+  populateTimeWindowSelect($('edit-time-window'), session.draft.timeWindowId || '');
+  $('edit-exact-time').value = session.draft.exactTime || '';
 
   try {
     editPhotoEntries = [{ url: URL.createObjectURL(session.file), ownedUrl: true }];
@@ -7594,26 +7596,78 @@ function openSinglePhotoProcessingEditor(session) {
   renderEditPhoto();
   openModal('modal-edit');
   resetEditModalScroll();
-  setTimeout(() => {
-    if (activeSinglePhotoEditorSession === session) $('edit-package-type').focus();
-  }, 80);
 }
 
-function applyInitialSinglePhotoMetadata(session, result) {
-  const packageType = normalizePackageType(session && session.initialPackageType);
-  if (!packageType || !result || !result.id) return;
+function readSinglePhotoEditorDraft(session) {
+  const fallback = session && session.draft ? session.draft : {
+    note: '',
+    packageType: normalizePackageType(session && session.initialPackageType),
+    timeWindowId: '',
+    exactTime: '',
+    packageCount: 1,
+    packageCountChanged: false
+  };
+  if (activeSinglePhotoEditorSession !== session) return { ...fallback };
+  const packageCount = Math.max(1, parseInt($('edit-package-count').value, 10) || 1);
+  return {
+    note: $('edit-note').value.trim(),
+    packageType: normalizePackageType($('edit-package-type').value),
+    timeWindowId: normalizeTimeWindowOverride($('edit-time-window').value),
+    exactTime: normalizeExactDeliveryTime($('edit-exact-time').value),
+    packageCount,
+    packageCountChanged: packageCount !== 1
+  };
+}
+
+function combineSinglePhotoNotes(existing, draft) {
+  const lines = [existing, draft]
+    .flatMap(value => String(value || '').split(/\r?\n/))
+    .map(line => line.trim())
+    .filter(Boolean);
+  return [...new Set(lines)].join('\n');
+}
+
+function applySinglePhotoDraftToDelivery(session, result) {
+  if (!session || !session.draft || !result || !result.id) return;
   const d = deliveries.find(item => item.id === result.id);
   if (!d) return;
-  const next = result.status === 'stacked'
-    ? combinePackageTypes(d.packageType, packageType)
-    : packageType;
-  if (next === d.packageType) return;
-  d.packageType = next;
+  const draft = session.draft;
+  const stacked = result.status === 'stacked';
+  d.note = combineSinglePhotoNotes(d.note, draft.note);
+  d.packageType = stacked
+    ? combinePackageTypes(d.packageType, draft.packageType)
+    : draft.packageType;
+  if (!stacked || draft.timeWindowId) d.timeWindowId = draft.timeWindowId;
+  if (!stacked || draft.exactTime) d.exactTime = draft.exactTime;
+  if (!stacked) {
+    d.packageCount = draft.packageCount;
+  } else if (draft.packageCountChanged) {
+    d.packageCount = Math.max(Number(d.packageCount) || 1, draft.packageCount);
+  }
   d.updatedAt = Date.now();
-  rememberPackageType(packageType);
+  rememberPackageType(draft.packageType);
   saveDeliveries();
   renderMarkers();
   renderList();
+}
+
+function applySinglePhotoDraftToEditor(session, result) {
+  if (!session || !session.draft || !result || !result.id) return;
+  const d = deliveries.find(item => item.id === result.id);
+  if (!d) return;
+  const draft = session.draft;
+  const stacked = result.status === 'stacked';
+  $('edit-note').value = combineSinglePhotoNotes(d.note, draft.note);
+  $('edit-package-type').value = stacked
+    ? combinePackageTypes(d.packageType, draft.packageType)
+    : draft.packageType;
+  if (!stacked || draft.timeWindowId) $('edit-time-window').value = draft.timeWindowId;
+  if (!stacked || draft.exactTime) $('edit-exact-time').value = draft.exactTime;
+  if (!stacked) {
+    $('edit-package-count').value = String(draft.packageCount);
+  } else if (draft.packageCountChanged) {
+    $('edit-package-count').value = String(Math.max(Number(d.packageCount) || 1, draft.packageCount));
+  }
 }
 
 function finishSinglePhotoEditorSession(session, result) {
@@ -7634,32 +7688,21 @@ function finishSinglePhotoEditorSession(session, result) {
   }
 
   if (!editorIsOpen) {
-    applyInitialSinglePhotoMetadata(session, result);
+    applySinglePhotoDraftToDelivery(session, result);
     if (result.status === 'review') {
       queueImmediateBatchReview(result.id, { source: 'single' });
     }
     return;
   }
 
-  const draftPackageType = normalizePackageType($('edit-package-type').value);
-  const restoreFocus = document.activeElement === $('edit-package-type');
+  session.draft = readSinglePhotoEditorDraft(session);
   activeSinglePhotoEditorSession = null;
   if (result.status === 'review') {
     batchReviewSourceById.set(result.id, 'single');
     batchReviewEditingId = result.id;
   }
   openEdit(result.id);
-  const d = deliveries.find(item => item.id === result.id);
-  $('edit-package-type').value = result.status === 'stacked' && d
-    ? combinePackageTypes(d.packageType, draftPackageType)
-    : draftPackageType;
-  if (restoreFocus) {
-    setTimeout(() => {
-      const input = $('edit-package-type');
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    }, 0);
-  }
+  applySinglePhotoDraftToEditor(session, result);
 }
 
 function openEdit(id) {
@@ -7729,6 +7772,7 @@ function cancelEditedItem() {
   if (activeSinglePhotoEditorSession) {
     const session = activeSinglePhotoEditorSession;
     const failed = session.result && session.result.status === 'failed';
+    session.draft = readSinglePhotoEditorDraft(session);
     session.cancelled = true;
     activeSinglePhotoEditorSession = null;
     closeModal('modal-edit');
@@ -7737,7 +7781,7 @@ function cancelEditedItem() {
     showToast(
       failed
         ? '読み取りに失敗しました。伝票をもう一度撮影してください'
-        : '写真の処理は続けています。ピンが立った後でも荷物情報を編集できます',
+        : '入力内容を保持し、写真の処理は続けています',
       failed
     );
     presentQueuedPhotoReviewIfIdle();
@@ -8763,7 +8807,7 @@ function updateBatchPhotoUi() {
   const nativePackageType = $('native-camera-package-type');
   if (nativePackageType) {
     const packageType = capturePackageTypeValue();
-    nativePackageType.textContent = packageType ? `荷物: ${packageType}` : '荷物情報は撮影後に入力';
+    nativePackageType.textContent = packageType ? `荷物: ${packageType}` : '時間・荷物情報は撮影後に入力';
   }
 }
 
@@ -9043,7 +9087,7 @@ async function captureNativeBatchPhoto() {
     const blob = base64ToBlob(b64, 'image/jpeg');
     completeNativeCaptureFeedback();
     if (singleShot) {
-      // 1枚撮影モード: カメラを閉じて荷物情報画面を開き、OCR・住所検索は裏で続ける
+      // 1枚撮影モード: カメラを閉じて配送先編集画面を開き、OCR・住所検索は裏で続ける
       await closeNativeBatchCamera();
       completedSingleShot = true;
       nativeCaptureInFlight = false;
@@ -9141,10 +9185,19 @@ function toggleBatchPhotoMode(options = {}) {
 
 function enqueueSinglePhotoForBackground(file, options = {}) {
   if (!file) return;
+  const initialPackageType = normalizePackageType(options.packageType);
   const session = {
     id: uid(),
     file,
-    initialPackageType: normalizePackageType(options.packageType),
+    initialPackageType,
+    draft: {
+      note: '',
+      packageType: initialPackageType,
+      timeWindowId: '',
+      exactTime: '',
+      packageCount: 1,
+      packageCountChanged: false
+    },
     cancelled: false,
     result: null
   };
