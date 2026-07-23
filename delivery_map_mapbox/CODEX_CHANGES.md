@@ -2,14 +2,14 @@
 
 ## 0. Codex追記（2026-07-23）
 
-- 作業基準は最新 `origin/main` のコミット `c4dcf73f2cc35d47e3517dd5e87f27664dd72c55`。
+- 作業開始基準は最新 `origin/main` のコミット `c4dcf73f2cc35d47e3517dd5e87f27664dd72c55`。Google案内の本体はコミット `74ba23b882fc4e859f5acc46fae41bf30c93cdd5` で `main` へ反映済み。
 - 安定版は引き続き **v2026.07.10-1**。新機能は反映していない。
-- テスト版は **v2026.06.24-test.82** へ更新準備中。Google案内モードの変更はまだ未デプロイ。
+- テスト版は **v2026.06.24-test.83**。Google案内モードを公開し、Google地図表示用キーの安全なサーバー設定を追加。
 - 配送モードの地図上に `Mapbox / Google` の切替を追加。Google Routes APIの案内線は利用規約に従いGoogle地図上だけに描画し、Mapboxは番地・建物・ピン位置修正に引き続き使う。
 - Google案内では現在地→1番をオレンジ、1番→2番を青で表示し、残りの配送先、時間指定、集荷ピンもGoogle地図へ表示する。Google地図または経路取得に失敗した場合はMapboxへ自動復帰する。
 - テスト専用APIは `api/google_guidance_test.php`、`api/google_maps_config_test.php`、`api/route_segment_test.php`。Mapbox側も現在時刻、走行方向、速度、GPS精度を使って出発直後の不要な折り返しを抑える。
-- すぐ旧表示へ戻す場合は画面上の `Mapbox` を選ぶ。機能全体を止める場合は `test/index.html` の `GOOGLE_GUIDANCE_FEATURE_ENABLED` を `false` にする。今回分は単独コミットにまとめ、コミット単位でも撤回できるようにする。
-- Google地図表示には、HTTPリファラー制限とMaps JavaScript API制限を設定した `GOOGLE_MAPS_BROWSER_KEY` が必要。サーバー用キーをブラウザーへ公開しない。
+- すぐ旧表示へ戻す場合は画面上の `Mapbox` を選ぶ。機能全体を止める場合は `test/index.html` の `GOOGLE_GUIDANCE_FEATURE_ENABLED` を `false` にする。Google案内本体は単独コミット `74ba23b` のため、コミット単位でも撤回できる。
+- Google地図表示には、HTTPリファラー制限とMaps JavaScript API制限を設定したブラウザーキーを使用する。サーバー上ではGit管理外の `api/google_maps_browser_key_test.runtime.php` に保存し、サーバー用キーはブラウザーへ公開しない。
 - **通常版DB API `api/delivery_geocode_cache.php` には、テスト版にある `manual=1` の保護処理がまだ未反映。通常版昇格時に必ず別途確認すること。**
 - **通常版 `index.html` のメニュー内固定バージョン表示には古い値が残るが、通常版昇格の指示がないため今回は変更しない。**
 

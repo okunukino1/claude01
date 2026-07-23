@@ -34,6 +34,7 @@ jobs:
           server-dir: ${{ secrets.FTP_REMOTE_DIR }}
           exclude: |
             **/config.php
+            **/*.runtime.php
             **/.git*
             **/node_modules/**
             **/data/private/*.json

@@ -18,9 +18,14 @@ delivery_app_reject_disallowed_browser_origin();
 $key = defined('GOOGLE_MAPS_BROWSER_KEY')
   ? trim((string)GOOGLE_MAPS_BROWSER_KEY)
   : '';
-$placeholder = 'AIza...Google Maps JavaScript API用キー...';
+$runtimeKeyFile = __DIR__ . '/google_maps_browser_key_test.runtime.php';
+if ($key === '' && is_file($runtimeKeyFile)) {
+  $runtimeKey = require $runtimeKeyFile;
+  $key = is_string($runtimeKey) ? trim($runtimeKey) : '';
+}
+$isConfigured = preg_match('/^AIza[0-9A-Za-z_-]{35}$/D', $key) === 1;
 
 echo json_encode([
-  'available' => $key !== '' && $key !== $placeholder,
-  'googleMapsBrowserKey' => $key !== $placeholder ? $key : '',
+  'available' => $isConfigured,
+  'googleMapsBrowserKey' => $isConfigured ? $key : '',
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
