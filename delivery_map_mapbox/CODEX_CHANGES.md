@@ -10,6 +10,7 @@
 - テスト専用APIは `api/google_guidance_test.php`、`api/google_maps_config_test.php`、`api/route_segment_test.php`。Mapbox側も現在時刻、走行方向、速度、GPS精度を使って出発直後の不要な折り返しを抑える。
 - すぐ旧表示へ戻す場合は画面上の `Mapbox` を選ぶ。機能全体を止める場合は `test/index.html` の `GOOGLE_GUIDANCE_FEATURE_ENABLED` を `false` にする。Google案内本体は単独コミット `74ba23b` のため、コミット単位でも撤回できる。
 - Google地図表示には、HTTPリファラー制限とMaps JavaScript API制限を設定したブラウザーキーを使用する。サーバー上ではGit管理外の `api/google_maps_browser_key_test.runtime.php` に保存し、サーバー用キーはブラウザーへ公開しない。
+- ブラウザーキーの一度限りの設定処理は完了後にサーバーとリポジトリの両方から削除済み。以後のデプロイではランタイム設定ファイルを除外して保持する。
 - **通常版DB API `api/delivery_geocode_cache.php` には、テスト版にある `manual=1` の保護処理がまだ未反映。通常版昇格時に必ず別途確認すること。**
 - **通常版 `index.html` のメニュー内固定バージョン表示には古い値が残るが、通常版昇格の指示がないため今回は変更しない。**
 
