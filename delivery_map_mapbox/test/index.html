@@ -1965,7 +1965,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.85</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.86</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2038,7 +2038,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.85</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.86</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2482,7 +2482,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.85';
+const APP_VERSION = 'v2026.06.24-test.86';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -5593,6 +5593,7 @@ async function ensureGoogleGuidanceMap() {
   });
   if (typeof googleGuidanceMap.addListener === 'function') {
     googleGuidanceMap.addListener('zoom_changed', updateZoomBadge);
+    googleGuidanceMap.addListener('dragstart', () => clearPendingMarkerTapSelect());
   }
   updateGoogleGuidanceUserMarker();
   return googleGuidanceMap;
@@ -5603,6 +5604,14 @@ function clearGoogleGuidanceRouteOverlays() {
     try { overlay.setMap(null); } catch (e) {}
   });
   googleGuidanceRouteMarkers.forEach(marker => {
+    try {
+      if (typeof marker.__rysCancelGuidanceInteraction === 'function') {
+        marker.__rysCancelGuidanceInteraction();
+      }
+      if (window.google && google.maps && google.maps.event) {
+        google.maps.event.clearInstanceListeners(marker);
+      }
+    } catch (e) {}
     try { marker.setMap(null); } catch (e) {}
   });
   googleGuidanceRouteOverlays = [];
@@ -5676,7 +5685,58 @@ function addGoogleGuidanceWalkLine(geometry) {
   return path;
 }
 
-function addGoogleGuidanceMarker(point, label, color, title, scale = 13) {
+function bindGoogleGuidanceMarkerInteractions(marker, deliveryId) {
+  if (!marker || !deliveryId || typeof marker.addListener !== 'function') return;
+  let longPressTimer = null;
+  let longPressResetTimer = null;
+  let longPressTriggered = false;
+
+  const clearLongPressTimer = () => {
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = null;
+  };
+  const clearInteraction = () => {
+    clearLongPressTimer();
+    if (longPressResetTimer) clearTimeout(longPressResetTimer);
+    longPressResetTimer = null;
+    longPressTriggered = false;
+  };
+  const triggerLongPress = () => {
+    clearLongPressTimer();
+    if (longPressTriggered) return;
+    longPressTriggered = true;
+    clearPendingMarkerTapSelect(1000);
+    if (navigator.vibrate) navigator.vibrate(35);
+    Promise.resolve(startPlacement(deliveryId)).catch(error => {
+      console.warn('google marker placement failed', error);
+      showToast('位置修正を開始できませんでした', true);
+    });
+    longPressResetTimer = setTimeout(() => {
+      longPressTriggered = false;
+      longPressResetTimer = null;
+    }, 1100);
+  };
+
+  marker.addListener('mousedown', () => {
+    clearLongPressTimer();
+    if (longPressResetTimer) clearTimeout(longPressResetTimer);
+    longPressResetTimer = null;
+    longPressTriggered = false;
+    longPressTimer = setTimeout(triggerLongPress, MARKER_LONG_PRESS_DELAY_MS);
+  });
+  marker.addListener('mouseup', clearLongPressTimer);
+  marker.addListener('mouseout', clearLongPressTimer);
+  marker.addListener('click', () => {
+    clearLongPressTimer();
+    if (longPressTriggered || Date.now() < suppressMarkerTapSelectUntil) return;
+    scheduleMarkerTapSelect(deliveryId);
+  });
+  // Android WebViewでは長押しがrightclickとして届く場合がある。
+  marker.addListener('rightclick', triggerLongPress);
+  marker.__rysCancelGuidanceInteraction = clearInteraction;
+}
+
+function addGoogleGuidanceMarker(point, label, color, title, scale = 13, deliveryId = '') {
   if (!googleGuidanceMap || !window.google || typeof google.maps.Marker !== 'function' ||
       !point || !Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lng))) {
     return null;
@@ -5685,7 +5745,8 @@ function addGoogleGuidanceMarker(point, label, color, title, scale = 13) {
     map: googleGuidanceMap,
     position: { lat: Number(point.lat), lng: Number(point.lng) },
     title: title || '',
-    clickable: false,
+    clickable: !!deliveryId,
+    cursor: deliveryId ? 'pointer' : undefined,
     zIndex: 10,
     label: label ? {
       text: String(label),
@@ -5703,6 +5764,7 @@ function addGoogleGuidanceMarker(point, label, color, title, scale = 13) {
       strokeWeight: 2
     }
   });
+  bindGoogleGuidanceMarkerInteractions(marker, deliveryId);
   googleGuidanceRouteMarkers.push(marker);
   return marker;
 }
@@ -5729,7 +5791,8 @@ function addGoogleGuidanceContextMarkers(excludedIds) {
       style.label,
       style.color,
       temporaryGuidanceTargetLabel(delivery),
-      style.scale
+      style.scale,
+      delivery.id
     );
   });
 }
@@ -5789,12 +5852,26 @@ function renderGoogleGuidanceFlow(flow, nextDelivery, followingDelivery) {
   ]);
   if (nextDelivery) {
     const nextPoint = { lat: Number(nextDelivery.lat), lng: Number(nextDelivery.lng) };
-    addGoogleGuidanceMarker(nextPoint, temporaryGuidanceTargetId ? '案' : '1', '#f97316', nextDelivery.address);
+    addGoogleGuidanceMarker(
+      nextPoint,
+      temporaryGuidanceTargetId ? '案' : '1',
+      '#f97316',
+      nextDelivery.address,
+      13,
+      nextDelivery.id
+    );
     bounds.extend(nextPoint);
   }
   if (followingDelivery) {
     const followingPoint = { lat: Number(followingDelivery.lat), lng: Number(followingDelivery.lng) };
-    addGoogleGuidanceMarker(followingPoint, '2', '#2563eb', followingDelivery.address);
+    addGoogleGuidanceMarker(
+      followingPoint,
+      '2',
+      '#2563eb',
+      followingDelivery.address,
+      13,
+      followingDelivery.id
+    );
     bounds.extend(followingPoint);
   }
   if (flow.stop && Number.isFinite(Number(flow.stop.lat)) && Number.isFinite(Number(flow.stop.lng)) &&
