@@ -1965,7 +1965,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.86</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.87</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2038,7 +2038,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.86</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.87</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2482,7 +2482,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.86';
+const APP_VERSION = 'v2026.06.24-test.87';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -5780,6 +5780,12 @@ function googleGuidanceDeliveryStyle(delivery, index) {
   return { color: '#ff5722', label: number, scale: 10 };
 }
 
+function googleGuidanceFixedDeliveryNumber(delivery, fallback) {
+  if (!delivery) return String(fallback || '');
+  const index = deliveries.findIndex(item => item && item.id === delivery.id);
+  return index >= 0 ? displayNumber(delivery, index) : String(fallback || '');
+}
+
 function addGoogleGuidanceContextMarkers(excludedIds) {
   const excluded = new Set(excludedIds.filter(Boolean));
   deliveries.forEach((delivery, index) => {
@@ -5854,7 +5860,7 @@ function renderGoogleGuidanceFlow(flow, nextDelivery, followingDelivery) {
     const nextPoint = { lat: Number(nextDelivery.lat), lng: Number(nextDelivery.lng) };
     addGoogleGuidanceMarker(
       nextPoint,
-      temporaryGuidanceTargetId ? '案' : '1',
+      temporaryGuidanceTargetId ? '案' : googleGuidanceFixedDeliveryNumber(nextDelivery, '1'),
       '#f97316',
       nextDelivery.address,
       13,
@@ -5866,7 +5872,7 @@ function renderGoogleGuidanceFlow(flow, nextDelivery, followingDelivery) {
     const followingPoint = { lat: Number(followingDelivery.lat), lng: Number(followingDelivery.lng) };
     addGoogleGuidanceMarker(
       followingPoint,
-      '2',
+      googleGuidanceFixedDeliveryNumber(followingDelivery, '2'),
       '#2563eb',
       followingDelivery.address,
       13,
