@@ -1206,6 +1206,9 @@
   .edit-exact-time-field {
     padding-top: 2px;
   }
+  .edit-exact-time-field[hidden] {
+    display: none;
+  }
   .edit-review-banner {
     display: none;
     border: 1px solid #e11d48;
@@ -1959,7 +1962,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.83</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.84</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2032,7 +2035,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.83</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.84</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2188,7 +2191,7 @@
   <div class="modal">
     <h3>時間指定設定</h3>
     <div class="modal-help">
-      時間帯の表示名とピン色を設定します。各配送先の時間帯と指定時刻は、詳細(編集)画面から手動で設定します。
+      時間帯の表示名とピン色を設定します。各配送先では、詳細(編集)画面の「時間指定」から時間帯または任意時刻を選びます。
     </div>
     <div id="time-window-settings-list" class="time-window-settings-list"></div>
     <button class="inline-action" id="btn-time-window-add" type="button">+ 時間帯を追加</button>
@@ -2373,9 +2376,9 @@
     </div>
     <div class="edit-time-group">
       <label for="edit-time-window">時間指定</label>
-      <select id="edit-time-window"></select>
-      <div class="edit-exact-time-field">
-        <label for="edit-exact-time">指定時刻（任意）</label>
+      <select id="edit-time-window" aria-controls="edit-exact-time-field"></select>
+      <div class="edit-exact-time-field" id="edit-exact-time-field" hidden>
+        <label for="edit-exact-time">指定する時刻</label>
         <input type="time" id="edit-exact-time" step="300">
       </div>
     </div>
@@ -2476,7 +2479,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.83';
+const APP_VERSION = 'v2026.06.24-test.84';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2562,6 +2565,7 @@ const MARKER_LONG_PRESS_MOVE_TOLERANCE_PX = 12;
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
 const LIST_TIME_WINDOW_FILTER_TIMED = '__timed__';
 const LIST_TIME_WINDOW_FILTER_NONE = '__none__';
+const EXACT_TIME_SELECT_VALUE = '__exact_time__';
 const EXACT_TIME_DEFAULT_COLOR = '#c026d3';
 const TIME_WINDOW_DEFAULTS = [
   { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
@@ -4198,21 +4202,58 @@ function populateListTimeWindowFilter() {
   updateListSearchUi();
 }
 
-function timeWindowSelectOptions(selectedId) {
+function timeWindowSelectOptions(selectedId, exactTime = '') {
   const selected = normalizeTimeWindowOverride(selectedId);
+  const exactSelected = !!normalizeExactDeliveryTime(exactTime);
   const settings = loadTimeWindowSettings();
   const options = [
-    `<option value=""${(selected === '' || selected === 'none') ? ' selected' : ''}>指定なし</option>`
+    `<option value=""${!exactSelected && (selected === '' || selected === 'none') ? ' selected' : ''}>指定なし</option>`
   ];
   settings.forEach(item => {
-    options.push(`<option value="${escapeHtml(item.id)}"${selected === item.id ? ' selected' : ''}>${escapeHtml(item.label)}</option>`);
+    options.push(`<option value="${escapeHtml(item.id)}"${!exactSelected && selected === item.id ? ' selected' : ''}>${escapeHtml(item.label)}</option>`);
   });
+  options.push(`<option value="${EXACT_TIME_SELECT_VALUE}"${exactSelected ? ' selected' : ''}>指定時刻（任意）</option>`);
   return options.join('');
 }
 
-function populateTimeWindowSelect(select, selectedId) {
+function syncEditExactTimeField({ focus = false, clearWhenHidden = false } = {}) {
+  const select = $('edit-time-window');
+  const field = $('edit-exact-time-field');
+  const input = $('edit-exact-time');
+  if (!select || !field || !input) return;
+  const exactSelected = select.value === EXACT_TIME_SELECT_VALUE;
+  field.hidden = !exactSelected;
+  input.disabled = !exactSelected;
+  if (!exactSelected && clearWhenHidden) input.value = '';
+  if (exactSelected && focus) {
+    requestAnimationFrame(() => input.focus());
+  }
+}
+
+function populateTimeWindowSelect(select, selectedId, exactTime = '') {
   if (!select) return;
-  select.innerHTML = timeWindowSelectOptions(selectedId);
+  select.innerHTML = timeWindowSelectOptions(selectedId, exactTime);
+  if (select.id === 'edit-time-window') {
+    $('edit-exact-time').value = normalizeExactDeliveryTime(exactTime);
+    syncEditExactTimeField();
+  }
+}
+
+function readEditTimeSelection() {
+  const rawSelection = String($('edit-time-window')?.value || '');
+  const exactSelected = rawSelection === EXACT_TIME_SELECT_VALUE;
+  return {
+    timeWindowId: exactSelected ? '' : normalizeTimeWindowOverride(rawSelection),
+    exactTime: exactSelected ? normalizeExactDeliveryTime($('edit-exact-time')?.value) : '',
+    exactSelected
+  };
+}
+
+function validateEditTimeSelection(selection) {
+  if (!selection.exactSelected || selection.exactTime) return true;
+  showToast('指定する時刻を入力してください', true);
+  $('edit-exact-time')?.focus();
+  return false;
 }
 
 function renderTimeWindowSettings() {
@@ -8214,7 +8255,7 @@ function setEditFieldVisible(id, visible) {
 }
 
 function setEditModalProcessingLayout(processing) {
-  ['edit-address', 'edit-note', 'edit-time-window', 'edit-exact-time', 'edit-package-count']
+  ['edit-address', 'edit-note', 'edit-time-window', 'edit-package-count']
     .forEach(id => setEditFieldVisible(id, true));
   const address = $('edit-address');
   if (address) address.disabled = processing;
@@ -8266,8 +8307,11 @@ function openSinglePhotoProcessingEditor(session) {
   $('edit-note').value = session.draft.note || '';
   populatePackageTypeSelect('edit-package-type', session.draft.packageType || '');
   $('edit-package-count').value = String(session.draft.packageCount || 1);
-  populateTimeWindowSelect($('edit-time-window'), session.draft.timeWindowId || '');
-  $('edit-exact-time').value = session.draft.exactTime || '';
+  populateTimeWindowSelect(
+    $('edit-time-window'),
+    session.draft.timeWindowId || '',
+    session.draft.exactTime || ''
+  );
 
   try {
     editPhotoEntries = [{ url: URL.createObjectURL(session.file), ownedUrl: true }];
@@ -8291,11 +8335,12 @@ function readSinglePhotoEditorDraft(session) {
   };
   if (activeSinglePhotoEditorSession !== session) return { ...fallback };
   const packageCount = Math.max(1, parseInt($('edit-package-count').value, 10) || 1);
+  const timeSelection = readEditTimeSelection();
   return {
     note: $('edit-note').value.trim(),
     packageType: normalizePackageType($('edit-package-type').value),
-    timeWindowId: normalizeTimeWindowOverride($('edit-time-window').value),
-    exactTime: normalizeExactDeliveryTime($('edit-exact-time').value),
+    timeWindowId: timeSelection.timeWindowId,
+    exactTime: timeSelection.exactTime,
     packageCount,
     packageCountChanged: packageCount !== 1
   };
@@ -8319,8 +8364,10 @@ function applySinglePhotoDraftToDelivery(session, result) {
   d.packageType = stacked
     ? combinePackageTypes(d.packageType, draft.packageType)
     : draft.packageType;
-  if (!stacked || draft.timeWindowId) d.timeWindowId = draft.timeWindowId;
-  if (!stacked || draft.exactTime) d.exactTime = draft.exactTime;
+  if (!stacked || draft.timeWindowId || draft.exactTime) {
+    d.timeWindowId = draft.timeWindowId;
+    d.exactTime = draft.exactTime;
+  }
   if (!stacked) {
     d.packageCount = draft.packageCount;
   } else if (draft.packageCountChanged) {
@@ -8342,8 +8389,12 @@ function applySinglePhotoDraftToEditor(session, result) {
   populatePackageTypeSelect('edit-package-type', stacked
     ? combinePackageTypes(d.packageType, draft.packageType)
     : draft.packageType);
-  if (!stacked || draft.timeWindowId) $('edit-time-window').value = draft.timeWindowId;
-  if (!stacked || draft.exactTime) $('edit-exact-time').value = draft.exactTime;
+  const applyDraftTime = !stacked || draft.timeWindowId || draft.exactTime;
+  populateTimeWindowSelect(
+    $('edit-time-window'),
+    applyDraftTime ? draft.timeWindowId : d.timeWindowId,
+    applyDraftTime ? draft.exactTime : exactTimeForDelivery(d)
+  );
   if (!stacked) {
     $('edit-package-count').value = String(draft.packageCount);
   } else if (draft.packageCountChanged) {
@@ -8422,8 +8473,7 @@ function openEdit(id) {
   $('edit-note').value = d.note || '';
   populatePackageTypeSelect('edit-package-type', d.packageType || '');
   $('edit-package-count').value = String(Number(d.packageCount) || 1);
-  populateTimeWindowSelect($('edit-time-window'), d.timeWindowId || '');
-  $('edit-exact-time').value = exactTimeForDelivery(d);
+  populateTimeWindowSelect($('edit-time-window'), d.timeWindowId || '', exactTimeForDelivery(d));
   const kindField = $('edit-delivery-kind-field');
   const kindSelect = $('edit-delivery-kind');
   const canChooseKind = d.deliveryCourse === OTHER_DELIVERY_COURSE && !isPickupStorageRecord(d);
@@ -8534,8 +8584,10 @@ async function reGeocodeEditedItem() {
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
   const newPackageType = normalizePackageType($('edit-package-type').value);
-  const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
-  const newExactTime = normalizeExactDeliveryTime($('edit-exact-time').value);
+  const timeSelection = readEditTimeSelection();
+  if (!validateEditTimeSelection(timeSelection)) return;
+  const newTimeWindowId = timeSelection.timeWindowId;
+  const newExactTime = timeSelection.exactTime;
   const newDeliveryKind = normalizeDeliveryKind($('edit-delivery-kind').value, d.deliveryCourse);
   if (!newAddr) { showToast('住所を入力してください', true); return; }
   if (isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
@@ -8626,8 +8678,10 @@ async function saveEditedItem() {
   const newAddr = $('edit-address').value.trim();
   const newNote = $('edit-note').value.trim();
   const newPackageType = normalizePackageType($('edit-package-type').value);
-  const newTimeWindowId = normalizeTimeWindowOverride($('edit-time-window').value);
-  const newExactTime = normalizeExactDeliveryTime($('edit-exact-time').value);
+  const timeSelection = readEditTimeSelection();
+  if (!validateEditTimeSelection(timeSelection)) return;
+  const newTimeWindowId = timeSelection.timeWindowId;
+  const newExactTime = timeSelection.exactTime;
   const newDeliveryKind = normalizeDeliveryKind($('edit-delivery-kind').value, d.deliveryCourse);
   const newPkgCount = Math.max(1, parseInt($('edit-package-count').value, 10) || 1);
   if (!newAddr) { showToast('住所を入力してください', true); return; }
@@ -13061,6 +13115,9 @@ $('btn-edit-photo-next').addEventListener('click', () => moveEditPhoto(1));
 $('btn-delivery-photo-prev').addEventListener('click', () => moveEditPhoto(-1));
 $('btn-delivery-photo-next').addEventListener('click', () => moveEditPhoto(1));
 $('btn-delivery-photo-close').addEventListener('click', closeEditPhotoViewer);
+$('edit-time-window').addEventListener('change', () => {
+  syncEditExactTimeField({ focus: true, clearWhenHidden: true });
+});
 
 $('menu-center-user').addEventListener('click', centerOnUser);
 $('menu-toggle-mode').addEventListener('click', toggleAppMode);
