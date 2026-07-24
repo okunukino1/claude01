@@ -2,9 +2,9 @@
 
 ## 0. Codex追記（2026-07-24）
 
-- 作業開始基準は最新 `origin/main` のコミット `7f5116cfbc4d823676da9578f162996fa1f9c9ee`。Google案内の本体はコミット `74ba23b882fc4e859f5acc46fae41bf30c93cdd5` で `main` へ反映済み。
+- 作業開始基準は最新 `origin/main` のコミット `43e0f65d7d384bc54fa2a16ef1d672d0deb7916a`。Google案内の本体はコミット `74ba23b882fc4e859f5acc46fae41bf30c93cdd5` で `main` へ反映済み。
 - 安定版は引き続き **v2026.07.10-1**。新機能は反映していない。
-- テスト版は **v2026.06.24-test.84**。時間指定のプルダウン内へ `指定時刻（任意）` を追加し、選択時だけ具体的な時刻欄を表示する。
+- テスト版は **v2026.06.24-test.85**。Google Maps初期化時のインライン `position: relative` で地図領域が高さ0になる問題を修正し、ブラウザー版とAndroid WebView相当の両方で地図タイル表示を確認した。
 - 配送モードの地図上に `Mapbox / Google` の切替を追加。Google Routes APIの案内線は利用規約に従いGoogle地図上だけに描画し、Mapboxは番地・建物・ピン位置修正に引き続き使う。
 - Google案内では現在地→1番をオレンジ、1番→2番を青で表示し、残りの配送先、時間指定、集荷ピンもGoogle地図へ表示する。Google地図または経路取得に失敗した場合はMapboxへ自動復帰する。
 - テスト専用APIは `api/google_guidance_test.php`、`api/google_maps_config_test.php`、`api/route_segment_test.php`。Mapbox側も現在時刻、走行方向、速度、GPS精度を使って出発直後の不要な折り返しを抑える。
