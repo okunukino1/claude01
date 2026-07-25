@@ -10,7 +10,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -37,10 +36,10 @@ class OverlayController(private val service: AccessibilityService) {
     fun showPrompt(onYes: () -> Unit) {
         removePrompt()
 
-        val container = LinearLayout(service).apply {
+        val row = LinearLayout(service).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(10), dp(10), dp(10))
+            setPadding(dp(18), dp(10), dp(10), dp(10))
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#EE202124"))
                 cornerRadius = dp(28).toFloat()
@@ -50,32 +49,62 @@ class OverlayController(private val service: AccessibilityService) {
         val messageView = TextView(service).apply {
             text = service.getString(R.string.prompt_long_question)
             setTextColor(Color.WHITE)
-            textSize = 15f
+            textSize = 14f
+            maxLines = 2
         }
-        val yesButton = Button(service).apply {
-            text = service.getString(R.string.prompt_yes)
-            setOnClickListener {
-                removePrompt()
-                onYes()
-            }
+        val yesButton = pillButton(service.getString(R.string.prompt_yes), "#FF1A73E8") {
+            removePrompt()
+            onYes()
         }
-        val closeButton = Button(service).apply {
-            text = service.getString(R.string.prompt_close)
-            setOnClickListener { removePrompt() }
+        val closeButton = pillButton(service.getString(R.string.prompt_close), "#FF5F6368") {
+            removePrompt()
         }
 
+        // メッセージ側だけを伸縮させ、ボタンは常に画面内に収まるようにする
+        row.addView(
+            messageView,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
         val buttonParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { leftMargin = dp(8) }
-        container.addView(messageView)
-        container.addView(yesButton, buttonParams)
-        container.addView(closeButton, buttonParams)
+        row.addView(yesButton, buttonParams)
+        row.addView(closeButton, buttonParams)
 
-        addOverlay(container, yOffset = dp(150))
+        // 画面幅いっぱいに広げたうえで左右に余白を取る（はみ出して✕が切れるのを防ぐ）
+        val container = LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(12), 0, dp(12), 0)
+            addView(
+                row,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
+        addOverlay(container, yOffset = dp(150), matchWidth = true)
         promptView = container
         handler.postDelayed(hidePromptRunnable, PROMPT_AUTO_HIDE_MS)
     }
+
+    /** 余白の小さい丸型ボタン（標準 Button は最小幅が広く画面をはみ出すため自作する） */
+    private fun pillButton(label: String, colorHex: String, onClick: () -> Unit): TextView =
+        TextView(service).apply {
+            text = label
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(colorHex))
+                cornerRadius = dp(22).toFloat()
+            }
+            isClickable = true
+            setOnClickListener { onClick() }
+        }
 
     fun showStopButton(onStop: () -> Unit) {
         removeStop()
@@ -119,9 +148,13 @@ class OverlayController(private val service: AccessibilityService) {
         removeStop()
     }
 
-    private fun addOverlay(view: View, yOffset: Int) {
+    private fun addOverlay(view: View, yOffset: Int, matchWidth: Boolean = false) {
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            if (matchWidth) {
+                WindowManager.LayoutParams.MATCH_PARENT
+            } else {
+                WindowManager.LayoutParams.WRAP_CONTENT
+            },
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
