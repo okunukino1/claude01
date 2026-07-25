@@ -70,15 +70,20 @@ class LongScreenshotCapturer(
     }
 
     suspend fun capture(): Bitmap? {
-        val firstShot = grabFrame() ?: return null
         val (cropTop, cropBottom) = systemBarInsets()
+        val firstShot = grabFrame() ?: return null
+        val first = crop(firstShot, cropTop, cropBottom)
+        if (first !== firstShot) firstShot.recycle()
 
-        var prev = crop(firstShot, cropTop, cropBottom)
-        if (prev !== firstShot) firstShot.recycle()
+        val width = first.width
+        val frameHeight = first.height
 
-        val width = prev.width
-        val pieces = mutableListOf(prev)
-        var totalHeight = prev.height
+        var prev = first
+        var fixedTop = 0
+        var fixedBottom = 0
+        var regionsDetected = false
+        val newParts = mutableListOf<Bitmap>()
+        var addedHeight = 0
 
         try {
             for (page in 1 until maxPages) {
@@ -86,7 +91,7 @@ class LongScreenshotCapturer(
                     stopReason = "停止ボタン"
                     break
                 }
-                if (totalHeight >= MAX_TOTAL_HEIGHT) {
+                if (frameHeight + addedHeight >= MAX_TOTAL_HEIGHT) {
                     stopReason = "高さ上限"
                     break
                 }
@@ -108,42 +113,75 @@ class LongScreenshotCapturer(
                 val cur = crop(shot, cropTop, cropBottom)
                 if (cur !== shot) shot.recycle()
 
-                val scrolled = estimateScroll(prev, cur)
+                if (cur.width != width || cur.height != frameHeight) {
+                    stopReason = "画面サイズ変化"
+                    cur.recycle()
+                    break
+                }
+
+                // 最初のスクロール後に、スクロールしても動かない領域
+                // （固定ヘッダー・固定フッター/入力バー等）を検出する
+                if (!regionsDetected) {
+                    val fixed = detectFixedRegions(prev, cur)
+                    fixedTop = fixed.first
+                    fixedBottom = fixed.second
+                    regionsDetected = true
+                    Log.i(TAG, "fixed header=$fixedTop footer=$fixedBottom")
+                }
+
+                val scrolled = estimateScroll(prev, cur, fixedTop, fixedBottom)
                 Log.i(TAG, "page=$page scrolled=$scrolled")
                 if (scrolled <= 0) {
-                    // 画面が変わっていない＝最下部に到達
+                    // スクロールできる部分が動いていない＝最下部に到達
                     stopReason = "最下部と判定"
                     cur.recycle()
                     break
                 }
 
-                val newPart = Bitmap.createBitmap(cur, 0, cur.height - scrolled, width, scrolled)
-                pieces.add(newPart)
-                totalHeight += scrolled
+                // 新しく現れたのは「固定フッターのすぐ上」までの scrolled px 分
+                val contentBottom = frameHeight - fixedBottom
+                val part = Bitmap.createBitmap(cur, 0, contentBottom - scrolled, width, scrolled)
+                newParts.add(part)
+                addedHeight += scrolled
 
-                if (prev !== pieces[0]) prev.recycle()
+                if (prev !== first) prev.recycle()
                 prev = cur
             }
 
             if (stopReason.isEmpty()) stopReason = "ページ上限"
-            pagesCaptured = pieces.size
+            pagesCaptured = newParts.size + 1
 
-            if (pieces.size == 1) {
-                // スクロールできなかった場合は1画面分をそのまま返す
-                return pieces[0].copy(Bitmap.Config.ARGB_8888, false)
-            }
-
+            val totalHeight = frameHeight + addedHeight
             val result = Bitmap.createBitmap(width, totalHeight, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(result)
-            var y = 0f
-            for (piece in pieces) {
-                canvas.drawBitmap(piece, 0f, y, null)
-                y += piece.height
+
+            // 1枚目: 先頭から固定フッターの手前まで（固定ヘッダーはここに1回だけ入る）
+            val firstBottom = frameHeight - fixedBottom
+            canvas.drawBitmap(
+                first,
+                Rect(0, 0, width, firstBottom),
+                Rect(0, 0, width, firstBottom),
+                null
+            )
+            var y = firstBottom
+            for (part in newParts) {
+                canvas.drawBitmap(part, 0f, y.toFloat(), null)
+                y += part.height
+            }
+            // 固定フッターは最後のフレームのものを末尾に1回だけ描く
+            if (fixedBottom > 0) {
+                canvas.drawBitmap(
+                    prev,
+                    Rect(0, firstBottom, width, frameHeight),
+                    Rect(0, y, width, y + fixedBottom),
+                    null
+                )
             }
             return result
         } finally {
-            if (prev !== pieces.firstOrNull() && !prev.isRecycled) prev.recycle()
-            pieces.forEach { if (!it.isRecycled) it.recycle() }
+            if (prev !== first && !prev.isRecycled) prev.recycle()
+            if (!first.isRecycled) first.recycle()
+            newParts.forEach { if (!it.isRecycled) it.recycle() }
         }
     }
 
@@ -240,57 +278,109 @@ class LongScreenshotCapturer(
      * 前フレームと現フレームを比較し、実際にスクロールした量(px)を推定する。
      * 一致が見つからない／ほぼ動いていない場合は 0 を返す。
      */
-    private fun estimateScroll(prev: Bitmap, cur: Bitmap): Int {
+    private fun estimateScroll(prev: Bitmap, cur: Bitmap, fixedTop: Int, fixedBottom: Int): Int {
         val h = prev.height
         if (cur.height != h || cur.width != prev.width) return 0
 
         val sigPrev = rowSignatures(prev)
         val sigCur = rowSignatures(cur)
 
-        val cost0 = alignmentCost(sigPrev, sigCur, 0)
-        val minS = h / 12
-        val maxS = h * 9 / 10
+        // 固定領域を除いた「実際にスクロールする部分」だけで比較する。
+        // ここを含めてしまうと固定フッターの一致で s=0 が最良になり、
+        // 1スクロールで「最下部」と誤判定してしまう。
+        val lo = fixedTop
+        val hi = h - fixedBottom
+        val contentHeight = hi - lo
+        if (contentHeight < 64) return 0
+
+        val cost0 = alignmentCost(sigPrev, sigCur, 0, lo, hi)
+        val minS = max(8, contentHeight / 12)
+        val maxS = contentHeight * 9 / 10
 
         var bestS = 0
         var bestCost = Double.MAX_VALUE
-        var costSum = 0.0
-        var costCount = 0
         var s = minS
         while (s <= maxS) {
-            val cost = alignmentCost(sigPrev, sigCur, s)
+            val cost = alignmentCost(sigPrev, sigCur, s, lo, hi)
             if (cost < bestCost) {
                 bestCost = cost
                 bestS = s
             }
-            costSum += cost
-            costCount++
             s++
         }
-        val meanCost = costSum / costCount
 
-        Log.i(TAG, "estimateScroll best=$bestS cost=%.1f mean=%.1f cost0=%.1f"
-            .format(bestCost, meanCost, cost0))
+        Log.i(TAG, "estimateScroll best=$bestS cost=%.1f cost0=%.1f content=$contentHeight"
+            .format(bestCost, cost0))
 
-        // s=0（スクロールしていない）も候補に含めた argmin で判定する。
-        // s=0 が最良なら最下部に到達したとみなして終了、
-        // そうでなければ最良のオフセットを常に採用して続行する
-        // （閾値による合否判定は固定UIやアニメーションで誤って
-        //  打ち切ってしまうことが実地で確認されたため廃止）。
+        // s=0（スクロールしていない）が最良なら最下部に到達したとみなす。
+        // そうでなければ最良のオフセットを常に採用して続行する。
         return if (cost0 <= bestCost) 0 else bestS
     }
 
-    /** prev を s ピクセル上へずらして cur と重ねたときの行シグネチャ平均絶対差。 */
-    private fun alignmentCost(sigPrev: DoubleArray, sigCur: DoubleArray, s: Int): Double {
-        val overlap = sigPrev.size - s
-        if (overlap < 16) return Double.MAX_VALUE
+    /**
+     * スクロールしても内容が変わらない領域（固定ヘッダー・固定フッター）を検出する。
+     * 上下それぞれについて、前後フレームで同一の行が連続する長さを数える。
+     */
+    private fun detectFixedRegions(prev: Bitmap, cur: Bitmap): Pair<Int, Int> {
+        val h = prev.height
+        val samplesPrev = rowSamples(prev)
+        val samplesCur = rowSamples(cur)
+        val maxFixed = (h * 0.4).toInt()
+
+        var top = 0
+        while (top < maxFixed && rowsSimilar(samplesPrev[top], samplesCur[top])) top++
+
+        var bottom = 0
+        while (bottom < maxFixed &&
+            rowsSimilar(samplesPrev[h - 1 - bottom], samplesCur[h - 1 - bottom])
+        ) bottom++
+
+        // 動く部分が小さすぎる場合は検出失敗（画面全体が静止していた等）とみなす
+        if (h - top - bottom < h / 3) return 0 to 0
+        return top to bottom
+    }
+
+    /** 各行から等間隔にサンプリングした画素の配列。固定領域の判定に使う。 */
+    private fun rowSamples(bitmap: Bitmap, columns: Int = 24): Array<IntArray> {
+        val w = bitmap.width
+        val h = bitmap.height
+        val xs = IntArray(columns) { (it + 1) * w / (columns + 1) }
+        val row = IntArray(w)
+        return Array(h) { y ->
+            bitmap.getPixels(row, 0, w, 0, y, w, 1)
+            IntArray(columns) { i -> row[xs[i]] }
+        }
+    }
+
+    /** 2行が（わずかな描画差を許容して）同一かどうか。 */
+    private fun rowsSimilar(a: IntArray, b: IntArray): Boolean {
+        for (i in a.indices) {
+            val p = a[i]
+            val q = b[i]
+            if (abs((p ushr 16 and 0xFF) - (q ushr 16 and 0xFF)) > 10) return false
+            if (abs((p ushr 8 and 0xFF) - (q ushr 8 and 0xFF)) > 10) return false
+            if (abs((p and 0xFF) - (q and 0xFF)) > 10) return false
+        }
+        return true
+    }
+
+    /** prev を s ピクセル上へずらして cur と重ねたときの、[lo, hi) 範囲の平均絶対差。 */
+    private fun alignmentCost(
+        sigPrev: DoubleArray,
+        sigCur: DoubleArray,
+        s: Int,
+        lo: Int,
+        hi: Int,
+    ): Double {
         var cost = 0.0
         var count = 0
-        var y = 0
-        while (y < overlap) {
+        var y = lo
+        while (y + s < hi) {
             cost += abs(sigPrev[y + s] - sigCur[y])
             count++
             y += 3
         }
+        if (count < 16) return Double.MAX_VALUE
         return cost / count
     }
 

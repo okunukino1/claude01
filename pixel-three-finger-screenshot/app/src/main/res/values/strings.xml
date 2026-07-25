@@ -25,6 +25,7 @@
     <string name="stop_button">■ 停止</string>
     <string name="stop_button_stopping">処理中…</string>
     <string name="toast_interactive_countdown">まもなくスクロール撮影を開始します。「停止」を押すまで撮影します</string>
+    <string name="last_result_label">直近のロングスクショ: %1$s</string>
 
     <string name="notes_title">注意事項</string>
     <string name="notes_body">・3本指ジェスチャーには Android 13 以降が必要です（Android 11〜12 ではクイック設定タイルのみ）\n・TalkBack など他のジェスチャー系ユーザー補助機能とは併用できません\n・銀行アプリなど FLAG_SECURE の画面は撮影できません（システム仕様）\n・ロングスクショはページを自動スクロールしながら撮影し、重なり部分を検出してつなぎ合わせます。固定ヘッダーがある画面では継ぎ目が乱れることがあります</string>

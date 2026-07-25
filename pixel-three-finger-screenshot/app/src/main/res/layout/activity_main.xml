@@ -31,6 +31,13 @@
             android:layout_marginTop="8dp"
             android:text="@string/btn_grant_images" />
 
+        <TextView
+            android:id="@+id/lastResultText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textSize="13sp" />
+
         <Switch
             android:id="@+id/switchThreeFinger"
             android:layout_width="match_parent"

@@ -65,6 +65,13 @@ class MainActivity : Activity() {
         findViewById<TextView>(R.id.statusText).text =
             getString(if (enabled) R.string.status_enabled else R.string.status_disabled)
 
+        val lastResult = Prefs.lastResult(this)
+        findViewById<TextView>(R.id.lastResultText).text = if (lastResult.isEmpty()) {
+            ""
+        } else {
+            getString(R.string.last_result_label, lastResult)
+        }
+
         val imagesGranted =
             checkSelfPermission(imagesPermission) == PackageManager.PERMISSION_GRANTED
         findViewById<Button>(R.id.btnGrantImages).apply {

@@ -117,10 +117,9 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private fun onSystemScreenshotDetected() {
         if (busy) return
         overlay.showPrompt {
-            toast(getString(R.string.toast_interactive_countdown))
             scope.launch {
                 // システムのサムネイルプレビューが消えるのを待ってから開始する
-                delay(3500)
+                delay(3000)
                 requestLongScreenshot()
             }
         }
@@ -175,13 +174,12 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         scope.launch {
             try {
                 if (delayMs > 0) delay(delayMs)
-                toast(getString(R.string.toast_long_start))
 
+                // トーストは撮影画像に写り込むため使わず、撮影の瞬間に隠せる
+                // オーバーレイ（停止ボタン）だけで状態を伝える
                 var stopRequested = false
                 overlay.showStopButton { stopRequested = true }
-
-                // トースト(約2秒)が消えてから撮影を始める（写り込み防止）
-                delay(2300)
+                delay(500)
                 val hooks = object : LongScreenshotCapturer.Hooks {
                     override fun shouldStop(): Boolean = stopRequested
 
@@ -210,11 +208,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                     toast(getString(R.string.toast_failed))
                     return@launch
                 }
-                saveAndNotify(
-                    bitmap,
-                    isLong = true,
-                    detail = "${capturer.pagesCaptured}ページ / 終了: ${capturer.stopReason}"
-                )
+                val detail = "高さ${bitmap.height}px / ${capturer.pagesCaptured}ページ / " +
+                    "終了: ${capturer.stopReason}"
+                Prefs.setLastResult(this@ScreenshotAccessibilityService, detail)
+                saveAndNotify(bitmap, isLong = true, detail = detail)
             } finally {
                 busy = false
             }
