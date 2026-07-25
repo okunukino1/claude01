@@ -44,6 +44,16 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         private const val TAG = "ThreeFingerShot"
         const val NOTIFICATION_CHANNEL_ID = "screenshots"
 
+        private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
+
+        /** スクリーンショットプレビューを構成するビューID（AOSP SystemUI） */
+        private val SCREENSHOT_UI_IDS = listOf(
+            "com.android.systemui:id/screenshot_preview",
+            "com.android.systemui:id/screenshot_static",
+            "com.android.systemui:id/actions_container",
+            "com.android.systemui:id/screenshot_message_container",
+        )
+
         @Volatile
         var instance: ScreenshotAccessibilityService? = null
             private set
@@ -117,12 +127,45 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private fun onSystemScreenshotDetected() {
         if (busy) return
         overlay.showPrompt {
-            scope.launch {
-                // システムのサムネイルプレビューが消えるのを待ってから開始する
-                delay(3000)
-                requestLongScreenshot()
+            scope.launch { requestLongScreenshot() }
+        }
+    }
+
+    /**
+     * Pixel標準のスクリーンショットプレビュー（サムネイル＋共有/編集ボタン）が
+     * 消えるまで待つ。残ったまま撮影すると合成画像に写り込んでしまう。
+     */
+    private suspend fun waitForSystemScreenshotUi(timeoutMs: Long = 9000) {
+        val start = System.currentTimeMillis()
+        var everSeen = false
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            if (isSystemScreenshotUiVisible()) {
+                everSeen = true
+            } else if (everSeen) {
+                delay(350) // 消えるアニメーションの完了を待つ
+                return
+            } else if (System.currentTimeMillis() - start > 1200) {
+                // 一度も検出できない（プレビューが無い経路）ならすぐ進む
+                return
+            }
+            delay(300)
+        }
+    }
+
+    private fun isSystemScreenshotUiVisible(): Boolean = try {
+        windows.any { window ->
+            val root = window.root
+            if (root == null || root.packageName?.toString() != SYSTEM_UI_PACKAGE) {
+                false
+            } else {
+                SCREENSHOT_UI_IDS.any { id ->
+                    root.findAccessibilityNodeInfosByViewId(id).isNotEmpty()
+                }
             }
         }
+    } catch (t: Throwable) {
+        Log.w(TAG, "window scan failed", t)
+        false
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -179,7 +222,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 // オーバーレイ（停止ボタン）だけで状態を伝える
                 var stopRequested = false
                 overlay.showStopButton { stopRequested = true }
-                delay(500)
+
+                // Pixel標準のスクショプレビューが消えてから撮影を始める
+                waitForSystemScreenshotUi()
+                delay(300)
                 val hooks = object : LongScreenshotCapturer.Hooks {
                     override fun shouldStop(): Boolean = stopRequested
 
@@ -335,7 +381,11 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             .setContentText(contentText)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
-            .setStyle(Notification.BigPictureStyle().bigPicture(thumbnail))
+            .setStyle(
+                Notification.BigPictureStyle()
+                    .bigPicture(thumbnail)
+                    .setSummaryText(contentText)
+            )
             .build()
 
         getSystemService(NotificationManager::class.java)
