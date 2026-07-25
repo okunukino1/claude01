@@ -1965,7 +1965,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.88</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.89</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2038,7 +2038,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.88</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.89</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2482,7 +2482,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.88';
+const APP_VERSION = 'v2026.06.24-test.89';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2549,7 +2549,6 @@ const FLOW_GUIDANCE_MAX_WALK_METERS = 60;
 const GOOGLE_MAPBOX_CLOSEUP_ROUTE_METERS = 150;
 const GOOGLE_MAPBOX_CLOSEUP_MAX_OFFSET_METERS = 80;
 const GOOGLE_MAPBOX_CLOSEUP_MAX_GPS_ACCURACY_METERS = 60;
-const GOOGLE_MAPBOX_CLOSEUP_ZOOM = 19;
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
 const MAPBOX_GEOCODING_API = 'https://api.mapbox.com/search/geocode/v6/forward';
@@ -5559,13 +5558,6 @@ function maybeAutoShowMapboxCloseup(options = {}) {
   googleMapboxCloseupTargetId = target.id;
   showMapboxGuidanceSurface();
   updateGuidanceProviderUi();
-  if (map) {
-    map.easeTo({
-      center: [Number(target.lng), Number(target.lat)],
-      zoom: Math.max(Number(map.getZoom()) || 0, GOOGLE_MAPBOX_CLOSEUP_ZOOM),
-      duration: 500
-    });
-  }
   banchiScheduleUpdate(0);
   updateZoomBadge();
   if (options.announce !== false) {
@@ -5590,8 +5582,71 @@ function guidanceHasRouteTarget() {
   return !!temporaryGuidanceTargetId || optimizedRouteOrderedIds.length > 0;
 }
 
-function showMapboxGuidanceSurface() {
+function readGoogleGuidanceViewport() {
+  if (!googleGuidanceMap) return null;
+  let center = null;
+  let bounds = null;
+  let zoom = null;
+  try {
+    const value = googleGuidanceMap.getCenter();
+    const lat = value ? Number(value.lat()) : NaN;
+    const lng = value ? Number(value.lng()) : NaN;
+    if (Number.isFinite(lat) && Number.isFinite(lng)) center = { lat, lng };
+  } catch (e) {}
+  try {
+    const value = googleGuidanceMap.getBounds();
+    const southWest = value ? value.getSouthWest() : null;
+    const northEast = value ? value.getNorthEast() : null;
+    const south = southWest ? Number(southWest.lat()) : NaN;
+    const west = southWest ? Number(southWest.lng()) : NaN;
+    const north = northEast ? Number(northEast.lat()) : NaN;
+    const east = northEast ? Number(northEast.lng()) : NaN;
+    if ([south, west, north, east].every(Number.isFinite) && north > south && east > west) {
+      bounds = { south, west, north, east };
+    }
+  } catch (e) {}
+  try {
+    const value = Number(googleGuidanceMap.getZoom());
+    if (Number.isFinite(value)) zoom = value;
+  } catch (e) {}
+  return center || bounds ? { center, bounds, zoom } : null;
+}
+
+function applyGoogleViewportToMapbox(viewport) {
+  if (!map || !viewport) return false;
+  try { map.resize(); } catch (e) {}
+  try {
+    if (viewport.bounds) {
+      map.fitBounds(
+        [
+          [viewport.bounds.west, viewport.bounds.south],
+          [viewport.bounds.east, viewport.bounds.north]
+        ],
+        { padding: 0, duration: 0, bearing: 0, pitch: 0 }
+      );
+      return true;
+    }
+    if (viewport.center) {
+      const camera = {
+        center: [viewport.center.lng, viewport.center.lat],
+        bearing: 0,
+        pitch: 0
+      };
+      // Google and Mapbox use different base tile sizes, so equal scale is about one zoom apart.
+      if (Number.isFinite(viewport.zoom)) camera.zoom = Math.max(0, viewport.zoom - 1);
+      map.jumpTo(camera);
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function showMapboxGuidanceSurface(options = {}) {
+  const syncFromGoogle = options.syncFromGoogle !== false &&
+    document.body.classList.contains('google-guidance-active');
+  const googleViewport = syncFromGoogle ? readGoogleGuidanceViewport() : null;
   document.body.classList.remove('google-guidance-active');
+  if (googleViewport) applyGoogleViewportToMapbox(googleViewport);
   if (map) {
     const northButton = $('btn-north');
     if (northButton) {

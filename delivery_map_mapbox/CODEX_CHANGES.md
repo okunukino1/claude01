@@ -2,9 +2,9 @@
 
 ## 0. Codex追記（2026-07-25）
 
-- 作業開始基準は最新 `origin/main` のコミット `2422ab6e1956b75ededfdff34fd7ab1d5ba04915`。Google案内の本体はコミット `74ba23b882fc4e859f5acc46fae41bf30c93cdd5` で `main` へ反映済み。
+- 作業開始基準は最新 `origin/main` のコミット `3776e64e33384c6f0f2d34664f41597208d55293`。Google案内の本体はコミット `74ba23b882fc4e859f5acc46fae41bf30c93cdd5` で `main` へ反映済み。
 - 安定版は引き続き **v2026.07.10-1**。新機能は反映していない。
-- テスト版は **v2026.06.24-test.88**。Google経路の残りが約150mになると番地確認用のMapboxへ自動切替し、完了後は次のGoogle案内へ戻る。手動でGoogleへ戻した配送先では再切替しない。Google地図のピン番号は配送リストと同じ固定番号。
+- テスト版は **v2026.06.24-test.89**。Google経路の残りが約150mになると番地確認用のMapboxへ自動切替し、完了後は次のGoogle案内へ戻る。GoogleからMapboxへの切替時は中心位置と表示範囲を同期し、自動切替、手動切替、ピン長押しの位置修正で表示地点や縮尺が飛ばない。手動でGoogleへ戻した配送先では再切替しない。Google地図のピン番号は配送リストと同じ固定番号。
 - 配送モードの地図上に `Mapbox / Google` の切替を追加。Google Routes APIの案内線は利用規約に従いGoogle地図上だけに描画し、Mapboxは番地・建物・ピン位置修正に引き続き使う。
 - Google案内では現在地→次の配送先をオレンジ、次の配送先→その次を青で表示し、残りの配送先、時間指定、集荷ピンもGoogle地図へ表示する。Google地図または経路取得に失敗した場合はMapboxへ自動復帰する。
 - テスト専用APIは `api/google_guidance_test.php`、`api/google_maps_config_test.php`、`api/route_segment_test.php`。Mapbox側も現在時刻、走行方向、速度、GPS精度を使って出発直後の不要な折り返しを抑える。
