@@ -258,13 +258,23 @@
     background: linear-gradient(rgba(0,0,0,0.55), transparent);
   }
   .native-camera-status-copy {
+    flex: 1 1 auto;
     min-width: 0;
+    overflow: hidden;
+  }
+  .native-camera-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
   }
   #native-camera-stats {
+    overflow: hidden;
     color: #fff;
     font-weight: 700;
     font-size: 13px;
+    text-overflow: ellipsis;
     text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    white-space: nowrap;
   }
   #native-camera-package-type {
     max-width: min(68vw, 360px);
@@ -277,6 +287,7 @@
     text-shadow: 0 1px 2px rgba(0,0,0,0.85);
     white-space: nowrap;
   }
+  #native-camera-torch,
   #native-camera-close {
     background: rgba(255,255,255,0.92);
     border: 0;
@@ -284,6 +295,18 @@
     padding: 8px 14px;
     font-weight: 700;
     font-size: 14px;
+    white-space: nowrap;
+  }
+  #native-camera-torch {
+    min-width: 82px;
+  }
+  #native-camera-torch.on {
+    background: #facc15;
+    color: #111827;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.75);
+  }
+  #native-camera-torch:disabled {
+    opacity: 0.62;
   }
   .native-camera-bottom {
     position: relative;
@@ -1965,7 +1988,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.92</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.93</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2038,7 +2061,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.92</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.93</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2471,7 +2494,10 @@
       <div id="native-camera-stats">📸 連続撮影</div>
       <div id="native-camera-package-type"></div>
     </div>
-    <button id="native-camera-close" type="button">✕ 終了</button>
+    <div class="native-camera-actions">
+      <button id="native-camera-torch" type="button" aria-label="ライトを点灯" aria-pressed="false">🔦 OFF</button>
+      <button id="native-camera-close" type="button">✕ 終了</button>
+    </div>
   </div>
   <div class="native-camera-bottom">
     <button id="native-camera-shutter" type="button" aria-label="撮影"></button>
@@ -2482,7 +2508,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.92';
+const APP_VERSION = 'v2026.06.24-test.93';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -10023,6 +10049,68 @@ let nativeCaptureInFlight = false;
 let nativeCameraReadyTimer = null;
 let nativeCameraFeedbackTimer = null;
 let nativeCameraAudioContext = null;
+let nativeCameraTorchSupported = null;
+let nativeCameraTorchOn = false;
+let nativeCameraTorchBusy = false;
+let nativeCameraSessionId = 0;
+
+function updateNativeCameraTorchButton() {
+  const button = $('native-camera-torch');
+  if (!button) return;
+  const checking = nativeCameraOpen && nativeCameraTorchSupported === null;
+  const unavailable = nativeCameraTorchSupported === false;
+  button.textContent = checking
+    ? '🔦 確認中'
+    : unavailable
+      ? '🔦 非対応'
+      : nativeCameraTorchOn ? '🔦 ON' : '🔦 OFF';
+  button.disabled = !nativeCameraOpen || checking || unavailable || nativeCameraTorchBusy;
+  button.classList.toggle('on', nativeCameraTorchOn);
+  button.setAttribute('aria-pressed', nativeCameraTorchOn ? 'true' : 'false');
+  button.setAttribute(
+    'aria-label',
+    unavailable
+      ? 'この端末はライトに対応していません'
+      : nativeCameraTorchOn ? 'ライトを消灯' : 'ライトを点灯'
+  );
+  button.title = button.getAttribute('aria-label');
+}
+
+async function detectNativeCameraTorchSupport(plugin, sessionId) {
+  nativeCameraTorchSupported = null;
+  nativeCameraTorchOn = false;
+  updateNativeCameraTorchButton();
+  let supported = false;
+  try {
+    const modes = await plugin.getSupportedFlashModes();
+    supported = !!(modes && Array.isArray(modes.result) &&
+      modes.result.includes('torch'));
+  } catch (e) {}
+  if (!nativeCameraOpen || sessionId !== nativeCameraSessionId) return;
+  nativeCameraTorchSupported = supported;
+  updateNativeCameraTorchButton();
+}
+
+async function toggleNativeCameraTorch() {
+  const plugin = nativeCameraPlugin();
+  if (!plugin || !nativeCameraOpen || nativeCameraTorchSupported !== true ||
+      nativeCameraTorchBusy) return;
+  const sessionId = nativeCameraSessionId;
+  const nextOn = !nativeCameraTorchOn;
+  nativeCameraTorchBusy = true;
+  updateNativeCameraTorchButton();
+  try {
+    await plugin.setFlashMode({ flashMode: nextOn ? 'torch' : 'off' });
+    if (!nativeCameraOpen || sessionId !== nativeCameraSessionId) return;
+    nativeCameraTorchOn = nextOn;
+    showNativeCameraFeedback(nextOn ? 'ライト ON' : 'ライト OFF', 650);
+  } catch (e) {
+    showToast('ライトを切り替えられませんでした', true);
+  } finally {
+    nativeCameraTorchBusy = false;
+    updateNativeCameraTorchButton();
+  }
+}
 
 function showNativeCameraFeedback(message, duration = 0) {
   const feedback = $('native-camera-capture-feedback');
@@ -10142,12 +10230,15 @@ async function openNativeBatchCamera(options = {}) {
     return false;
   }
   nativeCameraOpen = true;
+  const sessionId = ++nativeCameraSessionId;
   nativeCameraSingleShot = !!options.singleShot;
   nativeCaptureInFlight = false;
+  nativeCameraTorchBusy = false;
   document.documentElement.classList.add('native-camera-open'); // html要素も透過に
   document.body.classList.add('native-camera-open');
   const ui = $('native-camera-ui');
   if (ui) ui.style.display = 'flex';
+  detectNativeCameraTorchSupport(plugin, sessionId);
   resetNativeCaptureFeedback();
   armNativeCameraShutter();
   updateBatchPhotoUi();
@@ -10161,6 +10252,7 @@ async function openNativeBatchCamera(options = {}) {
 async function closeNativeBatchCamera() {
   if (!nativeCameraOpen) return;
   nativeCameraOpen = false;
+  nativeCameraSessionId++;
   nativeCameraSingleShot = false;
   document.documentElement.classList.remove('native-camera-open');
   document.body.classList.remove('native-camera-open');
@@ -10170,6 +10262,13 @@ async function closeNativeBatchCamera() {
   const shutter = $('native-camera-shutter');
   if (shutter) shutter.disabled = true;
   const plugin = nativeCameraPlugin();
+  if (plugin && (nativeCameraTorchOn || nativeCameraTorchBusy)) {
+    try { await plugin.setFlashMode({ flashMode: 'off' }); } catch (e) {}
+  }
+  nativeCameraTorchOn = false;
+  nativeCameraTorchSupported = null;
+  nativeCameraTorchBusy = false;
+  updateNativeCameraTorchButton();
   try { if (plugin) await plugin.stop(); } catch (e) {}
 }
 
@@ -13390,6 +13489,7 @@ async function startBatchPhotoCapture() {
 $('btn-add-photo').addEventListener('click', startSinglePhotoCapture);
 $('btn-add-batch-photo').addEventListener('click', startBatchPhotoCapture);
 $('native-camera-close').addEventListener('click', closeNativeBatchCamera);
+$('native-camera-torch').addEventListener('click', toggleNativeCameraTorch);
 $('native-camera-shutter').addEventListener('click', captureNativeBatchPhoto);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) closeNativeBatchCamera(); // 裏に回ったらカメラを解放
