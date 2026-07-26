@@ -1965,7 +1965,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.89</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.90</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2038,7 +2038,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.89</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.90</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2482,7 +2482,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.89';
+const APP_VERSION = 'v2026.06.24-test.90';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2590,6 +2590,11 @@ function isCapacitorNativeApp() {
   return !!(window.Capacitor &&
     typeof window.Capacitor.isNativePlatform === 'function' &&
     window.Capacitor.isNativePlatform());
+}
+
+function capacitorAppPlugin() {
+  if (!isCapacitorNativeApp() || !window.Capacitor.Plugins) return null;
+  return window.Capacitor.Plugins.App || null;
 }
 
 if (isCapacitorNativeApp()) {
@@ -2864,6 +2869,81 @@ function warmupAppCaches() {
 
 function openModal(id) { $(id).classList.add('show'); }
 function closeModal(id) { $(id).classList.remove('show'); }
+
+function modalIsOpen(id) {
+  const modal = $(id);
+  return !!(modal && modal.classList.contains('show'));
+}
+
+async function closeActiveSurfaceForBackButton() {
+  if (nativeCameraOpen) {
+    await closeNativeBatchCamera();
+    return true;
+  }
+  if (modalIsOpen('modal-confirm')) {
+    closeModal('modal-confirm');
+    pendingPlacementCoord = null;
+    confirmCallback = null;
+    return true;
+  }
+  if (modalIsOpen('modal-delivery-photo')) {
+    closeEditPhotoViewer();
+    return true;
+  }
+  if (modalIsOpen('modal-edit')) {
+    cancelEditedItem();
+    return true;
+  }
+  if (modalIsOpen('modal-photo-preview')) {
+    closePhotoPreview();
+    return true;
+  }
+  if (modalIsOpen('modal-operator')) {
+    cancelOperatorModal();
+    return true;
+  }
+  if (modalIsOpen('modal-route-areas')) {
+    cancelRouteAreaPlanner();
+    return true;
+  }
+  const visibleModals = Array.from(document.querySelectorAll('.modal-bg.show'));
+  if (visibleModals.length) {
+    closeModal(visibleModals[visibleModals.length - 1].id);
+    return true;
+  }
+  if (document.body.classList.contains('placing-mode')) {
+    cancelPlacement();
+    return true;
+  }
+  return false;
+}
+
+let nativeBackButtonListenerRegistered = false;
+
+async function registerNativeBackButtonHandler() {
+  const appPlugin = capacitorAppPlugin();
+  if (!appPlugin || typeof appPlugin.addListener !== 'function' ||
+      nativeBackButtonListenerRegistered) return false;
+  try {
+    await appPlugin.addListener('backButton', async event => {
+      try {
+        if (await closeActiveSurfaceForBackButton()) return;
+        if (event && event.canGoBack) {
+          window.history.back();
+          return;
+        }
+        if (typeof appPlugin.exitApp === 'function') await appPlugin.exitApp();
+      } catch (error) {
+        console.warn('native back button handling failed', error);
+      }
+    });
+    nativeBackButtonListenerRegistered = true;
+    return true;
+  } catch (error) {
+    console.warn('native back button listener registration failed', error);
+    return false;
+  }
+}
 
 function showConfirm(title, msg, callback) {
   $('confirm-title').textContent = title;
@@ -13570,6 +13650,8 @@ document.addEventListener('visibilitychange', () => {
     checkAppVersionUpdate();
   }
 });
+
+registerNativeBackButtonHandler();
 
 (async function init() {
   try {
