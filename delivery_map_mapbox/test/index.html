@@ -1988,7 +1988,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.94</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.95</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2061,7 +2061,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.94</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.95</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2508,7 +2508,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.94';
+const APP_VERSION = 'v2026.06.24-test.95';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2572,9 +2572,6 @@ const GOOGLE_GUIDANCE_ROUTE_API = '../api/google_guidance_test.php';
 const GUIDANCE_PROVIDER_KEY = 'rys-mapbox-test-guidance-provider-v1';
 const GOOGLE_GUIDANCE_FEATURE_ENABLED = true;
 const FLOW_GUIDANCE_MAX_WALK_METERS = 60;
-const GOOGLE_MAPBOX_CLOSEUP_ROUTE_METERS = 150;
-const GOOGLE_MAPBOX_CLOSEUP_MAX_OFFSET_METERS = 80;
-const GOOGLE_MAPBOX_CLOSEUP_MAX_GPS_ACCURACY_METERS = 60;
 const GEOCODE_CACHE_MAX_ITEMS = 500;
 const SHARED_GEOCODE_CACHE_API = '../api/delivery_geocode_cache_test.php';
 const MAPBOX_GEOCODING_API = 'https://api.mapbox.com/search/geocode/v6/forward';
@@ -2809,10 +2806,6 @@ let googleGuidanceBusy = false;
 let googleGuidanceRouteOverlays = [];
 let googleGuidanceRouteMarkers = [];
 let googleGuidanceUserMarker = null;
-let googleGuidanceLastFlow = null;
-let googleGuidanceTargetId = null;
-let googleMapboxCloseupTargetId = null;
-let googleMapboxCloseupSuppressedTargetId = null;
 let recognition = null;
 let mapStyleLoaded = false;
 
@@ -3823,7 +3816,6 @@ function updateWorkModeUi() {
   const deliveryMode = workMode === 'delivery';
   document.body.classList.toggle('work-mode-delivery', deliveryMode);
   if (!deliveryMode) {
-    googleMapboxCloseupTargetId = null;
     showMapboxGuidanceSurface();
   }
   updateGuidanceProviderUi();
@@ -5439,8 +5431,7 @@ function clearNextSegmentLayer() {
   removeFollowingSegmentLayer();
   removeFlowGuidanceLayers();
   if (!guidanceHasRouteTarget()) {
-    resetGoogleMapboxCloseup();
-    showMapboxGuidanceSurface();
+    showSelectedGuidanceSurface();
     updateGuidanceProviderUi();
   }
   lastFlowNoticeKey = '';
@@ -5580,104 +5571,11 @@ function validRouteLineGeometry(geometry) {
     Array.isArray(geometry.coordinates) && geometry.coordinates.length >= 2;
 }
 
-function resetGoogleMapboxCloseup() {
-  googleMapboxCloseupTargetId = null;
-  googleMapboxCloseupSuppressedTargetId = null;
-  googleGuidanceTargetId = null;
-}
-
-function googleRouteRemainingProgress(position, geometry) {
-  if (!position || !validRouteLineGeometry(geometry)) return null;
-  const lat = Number(position.lat);
-  const lng = Number(position.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-
-  const coords = geometry.coordinates;
-  const latScale = 111320;
-  const lngScale = latScale * Math.max(0.01, Math.cos(lat * Math.PI / 180));
-  let closest = null;
-
-  for (let index = 0; index < coords.length - 1; index++) {
-    const a = coords[index];
-    const b = coords[index + 1];
-    if (!Array.isArray(a) || !Array.isArray(b) ||
-        !Number.isFinite(Number(a[0])) || !Number.isFinite(Number(a[1])) ||
-        !Number.isFinite(Number(b[0])) || !Number.isFinite(Number(b[1]))) continue;
-    const ax = (Number(a[0]) - lng) * lngScale;
-    const ay = (Number(a[1]) - lat) * latScale;
-    const bx = (Number(b[0]) - lng) * lngScale;
-    const by = (Number(b[1]) - lat) * latScale;
-    const dx = bx - ax;
-    const dy = by - ay;
-    const lengthSquared = dx * dx + dy * dy;
-    const t = lengthSquared > 0
-      ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSquared))
-      : 0;
-    const x = ax + dx * t;
-    const y = ay + dy * t;
-    const offset = Math.sqrt(x * x + y * y);
-    if (!closest || offset < closest.offset) closest = { index, t, offset };
-  }
-  if (!closest) return null;
-
-  const a = coords[closest.index];
-  const b = coords[closest.index + 1];
-  const projected = {
-    lng: Number(a[0]) + (Number(b[0]) - Number(a[0])) * closest.t,
-    lat: Number(a[1]) + (Number(b[1]) - Number(a[1])) * closest.t
-  };
-  let remaining = distanceMeters(projected, { lng: Number(b[0]), lat: Number(b[1]) });
-  for (let index = closest.index + 1; index < coords.length - 1; index++) {
-    const from = coords[index];
-    const to = coords[index + 1];
-    if (!Array.isArray(from) || !Array.isArray(to) ||
-        !Number.isFinite(Number(from[0])) || !Number.isFinite(Number(from[1])) ||
-        !Number.isFinite(Number(to[0])) || !Number.isFinite(Number(to[1]))) continue;
-    remaining += distanceMeters(
-      { lng: Number(from[0]), lat: Number(from[1]) },
-      { lng: Number(to[0]), lat: Number(to[1]) }
-    );
-  }
-  return { remaining, offset: closest.offset };
-}
-
-function maybeAutoShowMapboxCloseup(options = {}) {
-  if (guidanceProvider !== 'google' || workMode !== 'delivery' ||
-      !document.body.classList.contains('google-guidance-active') ||
-      !googleGuidanceTargetId || !googleGuidanceLastFlow || !lastKnownGps) return false;
-  if (googleMapboxCloseupTargetId === googleGuidanceTargetId ||
-      googleMapboxCloseupSuppressedTargetId === googleGuidanceTargetId) return false;
-
-  const accuracy = Number(lastKnownGps.accuracy);
-  if (Number.isFinite(accuracy) && accuracy > GOOGLE_MAPBOX_CLOSEUP_MAX_GPS_ACCURACY_METERS) return false;
-  const progress = googleRouteRemainingProgress(lastKnownGps, googleGuidanceLastFlow.orangeGeometry);
-  if (!progress ||
-      progress.offset > GOOGLE_MAPBOX_CLOSEUP_MAX_OFFSET_METERS ||
-      progress.remaining > GOOGLE_MAPBOX_CLOSEUP_ROUTE_METERS) return false;
-
-  const target = deliveries.find(delivery =>
-    delivery && delivery.id === googleGuidanceTargetId && !delivery.completed &&
-    Number.isFinite(Number(delivery.lat)) && Number.isFinite(Number(delivery.lng))
-  );
-  if (!target) return false;
-
-  googleMapboxCloseupTargetId = target.id;
-  showMapboxGuidanceSurface();
-  updateGuidanceProviderUi();
-  banchiScheduleUpdate(0);
-  updateZoomBadge();
-  if (options.announce !== false) {
-    showToast(`目的地まで約${Math.max(0, Math.round(progress.remaining))}m。番地確認のためMapboxへ切り替えました`);
-  }
-  return true;
-}
-
 function updateGuidanceProviderUi() {
   const switchEl = $('guidance-provider-switch');
   if (switchEl) switchEl.hidden = !GOOGLE_GUIDANCE_FEATURE_ENABLED;
-  const displayedProvider = googleMapboxCloseupTargetId ? 'mapbox' : guidanceProvider;
   document.querySelectorAll('[data-guidance-provider]').forEach(button => {
-    const selected = button.dataset.guidanceProvider === displayedProvider;
+    const selected = button.dataset.guidanceProvider === guidanceProvider;
     button.classList.toggle('selected', selected);
     button.setAttribute('aria-pressed', selected ? 'true' : 'false');
     button.disabled = googleGuidanceBusy && button.dataset.guidanceProvider === 'google';
@@ -5867,20 +5765,27 @@ function readGoogleGuidanceViewport() {
   return center || bounds ? { center, bounds, zoom } : null;
 }
 
+function readMapboxGuidanceViewport() {
+  if (!map) return null;
+  try {
+    const center = map.getCenter();
+    const lat = center ? Number(center.lat) : NaN;
+    const lng = center ? Number(center.lng) : NaN;
+    const zoom = Number(map.getZoom());
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return {
+        center: { lat, lng },
+        zoom: Number.isFinite(zoom) ? zoom : null
+      };
+    }
+  } catch (e) {}
+  return null;
+}
+
 function applyGoogleViewportToMapbox(viewport) {
   if (!map || !viewport) return false;
   try { map.resize(); } catch (e) {}
   try {
-    if (viewport.bounds) {
-      map.fitBounds(
-        [
-          [viewport.bounds.west, viewport.bounds.south],
-          [viewport.bounds.east, viewport.bounds.north]
-        ],
-        { padding: 0, duration: 0, bearing: 0, pitch: 0 }
-      );
-      return true;
-    }
     if (viewport.center) {
       const camera = {
         center: [viewport.center.lng, viewport.center.lat],
@@ -5892,6 +5797,36 @@ function applyGoogleViewportToMapbox(viewport) {
       map.jumpTo(camera);
       return true;
     }
+    if (viewport.bounds) {
+      map.fitBounds(
+        [
+          [viewport.bounds.west, viewport.bounds.south],
+          [viewport.bounds.east, viewport.bounds.north]
+        ],
+        { padding: 0, duration: 0, bearing: 0, pitch: 0 }
+      );
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function applyMapboxViewportToGoogle(viewport) {
+  if (!googleGuidanceMap || !viewport || !viewport.center) return false;
+  try {
+    if (window.google && google.maps && google.maps.event) {
+      google.maps.event.trigger(googleGuidanceMap, 'resize');
+    }
+    googleGuidanceMap.setCenter({
+      lat: viewport.center.lat,
+      lng: viewport.center.lng
+    });
+    // Mapbox uses 512 px tiles and Google uses 256 px tiles, so equal scale is one zoom apart.
+    if (Number.isFinite(viewport.zoom)) {
+      googleGuidanceMap.setZoom(Math.max(3, Math.min(21, viewport.zoom + 1)));
+    }
+    updateZoomBadge();
+    return true;
   } catch (e) {}
   return false;
 }
@@ -5933,6 +5868,14 @@ function showGoogleGuidanceSurface() {
     updateZoomBadge();
   }, 0);
   return true;
+}
+
+function showSelectedGuidanceSurface() {
+  if (guidanceProvider === 'google' && googleGuidanceMap && workMode === 'delivery') {
+    return showGoogleGuidanceSurface();
+  }
+  showMapboxGuidanceSurface();
+  return false;
 }
 
 function loadGoogleGuidanceConfig() {
@@ -6042,7 +5985,6 @@ function clearGoogleGuidanceRouteOverlays() {
   });
   googleGuidanceRouteOverlays = [];
   googleGuidanceRouteMarkers = [];
-  googleGuidanceLastFlow = null;
 }
 
 function googleGuidancePath(geometry) {
@@ -6266,13 +6208,6 @@ function extendGoogleGuidanceBounds(bounds, path) {
 
 function renderGoogleGuidanceFlow(flow, nextDelivery, followingDelivery) {
   if (!googleGuidanceMap || !flow || !validRouteLineGeometry(flow.orangeGeometry)) return false;
-  const nextTargetId = nextDelivery && nextDelivery.id ? nextDelivery.id : null;
-  const restoreCloseup = !!nextTargetId && googleMapboxCloseupTargetId === nextTargetId;
-  if (nextTargetId !== googleGuidanceTargetId) {
-    googleMapboxCloseupTargetId = null;
-    googleMapboxCloseupSuppressedTargetId = null;
-  }
-  googleGuidanceTargetId = nextTargetId;
   clearGoogleGuidanceRouteOverlays();
   showGoogleGuidanceSurface();
 
@@ -6328,11 +6263,8 @@ function renderGoogleGuidanceFlow(flow, nextDelivery, followingDelivery) {
     if (google.maps.event) google.maps.event.trigger(googleGuidanceMap, 'resize');
     googleGuidanceMap.fitBounds(bounds, { top: 64, right: 34, bottom: 54, left: 34 });
   }
-  googleGuidanceLastFlow = flow;
-  if (restoreCloseup) googleMapboxCloseupTargetId = null;
   updateGuidanceProviderUi();
   updateZoomBadge();
-  maybeAutoShowMapboxCloseup({ announce: !restoreCloseup });
   return true;
 }
 
@@ -6363,7 +6295,6 @@ function fallbackToMapboxGuidance(message) {
   guidanceProvider = 'mapbox';
   localStorage.setItem(GUIDANCE_PROVIDER_KEY, guidanceProvider);
   googleGuidanceBusy = false;
-  resetGoogleMapboxCloseup();
   clearGoogleGuidanceRouteOverlays();
   showMapboxGuidanceSurface();
   updateGuidanceProviderUi();
@@ -6373,30 +6304,15 @@ function fallbackToMapboxGuidance(message) {
 async function selectGuidanceProvider(provider, options = {}) {
   if (provider !== 'mapbox' && provider !== 'google') return;
   if (provider === 'google' && !GOOGLE_GUIDANCE_FEATURE_ENABLED) return;
-  const resumedFromCloseup = provider === 'google' && !!googleMapboxCloseupTargetId;
-  if (resumedFromCloseup) {
-    googleMapboxCloseupSuppressedTargetId = googleMapboxCloseupTargetId;
-    googleMapboxCloseupTargetId = null;
-  }
+  const mapboxViewport = provider === 'google' &&
+    !document.body.classList.contains('google-guidance-active')
+    ? readMapboxGuidanceViewport()
+    : null;
   guidanceProvider = provider;
   localStorage.setItem(GUIDANCE_PROVIDER_KEY, guidanceProvider);
   updateGuidanceProviderUi();
 
-  if (resumedFromCloseup && googleGuidanceMap && googleGuidanceLastFlow) {
-    showGoogleGuidanceSurface();
-    if (gpsAutoFollow && lastKnownGps) {
-      googleGuidanceMap.panTo({ lat: Number(lastKnownGps.lat), lng: Number(lastKnownGps.lng) });
-    }
-    updateGuidanceProviderUi();
-    updateZoomBadge();
-    if (options.announce !== false) {
-      showToast('Google案内へ戻しました。この配送先では自動切替しません');
-    }
-    return;
-  }
-
   if (provider === 'mapbox') {
-    resetGoogleMapboxCloseup();
     clearGoogleGuidanceRouteOverlays();
     showMapboxGuidanceSurface();
     if (guidanceHasRouteTarget()) await updateNextSegmentHighlight();
@@ -6415,6 +6331,10 @@ async function selectGuidanceProvider(provider, options = {}) {
   try {
     await ensureGoogleGuidanceMap();
     await updateNextSegmentHighlight();
+    if (guidanceProvider === 'google' && mapboxViewport &&
+        document.body.classList.contains('google-guidance-active')) {
+      applyMapboxViewportToGoogle(mapboxViewport);
+    }
     if (guidanceProvider === 'google' && options.announce !== false) {
       showToast('Google案内へ切り替えました');
     }
@@ -6757,9 +6677,7 @@ async function updateNextSegmentHighlight() {
   const followingDelivery = pendingDeliveries[1];
 
   if (!nextDelivery) {
-    resetGoogleMapboxCloseup();
     clearNextSegmentLayer();
-    showMapboxGuidanceSurface();
     updateGuidanceProviderUi();
     return;
   }
@@ -13402,10 +13320,6 @@ function exportDeliveriesAsJSON() {
 function updateZoomBadge() {
   const el = $('zoom-badge');
   if (!el) return;
-  if (googleMapboxCloseupTargetId && map) {
-    el.textContent = `番地確認: ${map.getZoom().toFixed(1)}`;
-    return;
-  }
   if (document.body.classList.contains('google-guidance-active') && googleGuidanceMap) {
     const zoom = Number(googleGuidanceMap.getZoom());
     el.textContent = Number.isFinite(zoom) ? `Google: ${zoom.toFixed(1)}` : 'Google案内';
@@ -13473,12 +13387,15 @@ function updateUserLocation(pos, moveMap = false) {
     gpsInitialCenterPending = false;
     if (document.body.classList.contains('google-guidance-active') && googleGuidanceMap) {
       googleGuidanceMap.panTo({ lat: latitude, lng: longitude });
-      if (Number(googleGuidanceMap.getZoom()) < 17) googleGuidanceMap.setZoom(17);
+      if (!gpsAutoFollow && Number(googleGuidanceMap.getZoom()) < 17) {
+        googleGuidanceMap.setZoom(17);
+      }
     } else {
-      map.easeTo({ center: lngLat, zoom: Math.max(map.getZoom(), 17), duration: 600 });
+      const camera = { center: lngLat, duration: 600 };
+      if (!gpsAutoFollow) camera.zoom = Math.max(map.getZoom(), 17);
+      map.easeTo(camera);
     }
   }
-  maybeAutoShowMapboxCloseup();
 }
 
 function ensureGpsWatching() {
@@ -13525,9 +13442,8 @@ function toggleGpsTracking() {
       const ll = userMarker.getLngLat();
       if (document.body.classList.contains('google-guidance-active') && googleGuidanceMap) {
         googleGuidanceMap.panTo({ lat: ll.lat, lng: ll.lng });
-        if (Number(googleGuidanceMap.getZoom()) < 17) googleGuidanceMap.setZoom(17);
       } else {
-        map.easeTo({ center: [ll.lng, ll.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+        map.easeTo({ center: [ll.lng, ll.lat], duration: 600 });
       }
     }
   } else {
@@ -13543,9 +13459,13 @@ function centerOnUser() {
     const ll = userMarker.getLngLat();
     if (document.body.classList.contains('google-guidance-active') && googleGuidanceMap) {
       googleGuidanceMap.panTo({ lat: ll.lat, lng: ll.lng });
-      if (Number(googleGuidanceMap.getZoom()) < 17) googleGuidanceMap.setZoom(17);
+      if (!gpsAutoFollow && Number(googleGuidanceMap.getZoom()) < 17) {
+        googleGuidanceMap.setZoom(17);
+      }
     } else {
-      map.easeTo({ center: [ll.lng, ll.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+      const camera = { center: [ll.lng, ll.lat], duration: 600 };
+      if (!gpsAutoFollow) camera.zoom = Math.max(map.getZoom(), 17);
+      map.easeTo(camera);
     }
     showToast('現在地を表示しました');
     return;
