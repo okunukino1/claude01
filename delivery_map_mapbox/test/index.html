@@ -1988,7 +1988,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.93</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.94</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2061,7 +2061,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.93</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.94</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2508,7 +2508,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.93';
+const APP_VERSION = 'v2026.06.24-test.94';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -5688,6 +5688,155 @@ function guidanceHasRouteTarget() {
   return !!temporaryGuidanceTargetId || optimizedRouteOrderedIds.length > 0;
 }
 
+function installGoogleGuidanceOneFingerZoom(element) {
+  if (!element || element.dataset.rysOneFingerZoom === '1') return;
+  element.dataset.rysOneFingerZoom = '1';
+
+  const doubleTapMs = 380;
+  const doubleTapDistancePx = 42;
+  const tapMoveTolerancePx = 12;
+  const dragStartPx = 4;
+  const pixelsPerZoomLevel = 96;
+  const minZoom = 3;
+  const maxZoom = 21;
+  let lastTap = null;
+  let firstTouch = null;
+  let zoomGesture = null;
+
+  const touchById = (touches, identifier) => {
+    for (let index = 0; index < touches.length; index++) {
+      if (touches[index].identifier === identifier) return touches[index];
+    }
+    return null;
+  };
+  const googleSurfaceActive = () =>
+    document.body.classList.contains('google-guidance-active');
+  const blockGoogleTouch = event => {
+    if (event.cancelable) event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === 'function') {
+      event.stopImmediatePropagation();
+    }
+  };
+  const resetTouchState = () => {
+    lastTap = null;
+    firstTouch = null;
+    zoomGesture = null;
+  };
+
+  element.addEventListener('touchstart', event => {
+    if (!googleSurfaceActive()) {
+      resetTouchState();
+      return;
+    }
+    if (event.touches.length !== 1) {
+      resetTouchState();
+      return;
+    }
+
+    const touch = event.touches[0];
+    const now = performance.now();
+    const isSecondTap = lastTap &&
+      now - lastTap.endedAt <= doubleTapMs &&
+      Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y) <=
+        doubleTapDistancePx;
+    const currentZoom = Number(googleGuidanceMap && googleGuidanceMap.getZoom());
+
+    if (isSecondTap && Number.isFinite(currentZoom)) {
+      zoomGesture = {
+        identifier: touch.identifier,
+        startY: touch.clientY,
+        startZoom: currentZoom,
+        lastZoom: currentZoom,
+        moved: false
+      };
+      lastTap = null;
+      firstTouch = null;
+      clearPendingMarkerTapSelect(700);
+      blockGoogleTouch(event);
+      return;
+    }
+
+    if (lastTap && now - lastTap.endedAt > doubleTapMs) lastTap = null;
+    firstTouch = {
+      identifier: touch.identifier,
+      x: touch.clientX,
+      y: touch.clientY,
+      moved: false
+    };
+  }, { capture: true, passive: false });
+
+  element.addEventListener('touchmove', event => {
+    if (zoomGesture) {
+      const touch = touchById(event.touches, zoomGesture.identifier);
+      if (!touch || event.touches.length !== 1) {
+        resetTouchState();
+        return;
+      }
+      const deltaY = touch.clientY - zoomGesture.startY;
+      if (Math.abs(deltaY) >= dragStartPx) zoomGesture.moved = true;
+      const nextZoom = Math.max(
+        minZoom,
+        Math.min(maxZoom, zoomGesture.startZoom + deltaY / pixelsPerZoomLevel)
+      );
+      if (Math.abs(nextZoom - zoomGesture.lastZoom) >= 0.02) {
+        googleGuidanceMap.setZoom(nextZoom);
+        zoomGesture.lastZoom = nextZoom;
+      }
+      blockGoogleTouch(event);
+      return;
+    }
+
+    if (!firstTouch) return;
+    const touch = touchById(event.touches, firstTouch.identifier);
+    if (!touch || event.touches.length !== 1) {
+      firstTouch = null;
+      lastTap = null;
+      return;
+    }
+    if (Math.hypot(touch.clientX - firstTouch.x, touch.clientY - firstTouch.y) >
+        tapMoveTolerancePx) {
+      firstTouch.moved = true;
+      lastTap = null;
+    }
+  }, { capture: true, passive: false });
+
+  element.addEventListener('touchend', event => {
+    if (zoomGesture) {
+      const ended = !touchById(event.touches, zoomGesture.identifier);
+      if (!ended) return;
+      if (!zoomGesture.moved && googleGuidanceMap) {
+        googleGuidanceMap.setZoom(Math.min(maxZoom, zoomGesture.startZoom + 1));
+      }
+      clearPendingMarkerTapSelect(700);
+      zoomGesture = null;
+      firstTouch = null;
+      lastTap = null;
+      blockGoogleTouch(event);
+      return;
+    }
+
+    if (!firstTouch) return;
+    if (event.touches.length === 0 && !firstTouch.moved) {
+      const touch = touchById(event.changedTouches, firstTouch.identifier);
+      lastTap = {
+        endedAt: performance.now(),
+        x: touch ? touch.clientX : firstTouch.x,
+        y: touch ? touch.clientY : firstTouch.y
+      };
+    } else {
+      lastTap = null;
+    }
+    firstTouch = null;
+  }, { capture: true, passive: false });
+
+  element.addEventListener('touchcancel', event => {
+    const wasZooming = !!zoomGesture;
+    resetTouchState();
+    if (wasZooming) blockGoogleTouch(event);
+  }, { capture: true, passive: false });
+}
+
 function readGoogleGuidanceViewport() {
   if (!googleGuidanceMap) return null;
   let center = null;
@@ -5852,8 +6001,10 @@ async function ensureGoogleGuidanceMap() {
     throw new Error('Google地図を初期化できませんでした');
   }
   const start = getRouteStartPoint();
+  const googleMapElement = $('google-guidance-map');
+  installGoogleGuidanceOneFingerZoom(googleMapElement);
   bumpUsage('googleGuidanceMap');
-  googleGuidanceMap = new google.maps.Map($('google-guidance-map'), {
+  googleGuidanceMap = new google.maps.Map(googleMapElement, {
     center: { lat: start.lat, lng: start.lng },
     zoom: 17,
     mapTypeId: 'roadmap',
