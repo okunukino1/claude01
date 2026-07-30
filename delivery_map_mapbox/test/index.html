@@ -1455,6 +1455,33 @@
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    transform-origin: center center;
+    will-change: transform;
+    cursor: zoom-in;
+  }
+  .delivery-photo-viewer img.is-zoomed { cursor: grab; }
+  .delivery-photo-viewer img.is-panning { cursor: grabbing; }
+  .delivery-photo-zoom-badge {
+    position: absolute;
+    top: calc(10px + env(safe-area-inset-top));
+    left: 10px;
+    display: none;
+    min-width: 48px;
+    padding: 6px 8px;
+    border: 1px solid rgba(255,255,255,0.8);
+    border-radius: 6px;
+    background: rgba(17,24,39,0.82);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+    text-align: center;
+    pointer-events: none;
+  }
+  .delivery-photo-zoom-badge.show {
+    display: block;
   }
   .delivery-photo-viewer-controls {
     position: absolute;
@@ -1988,7 +2015,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.96</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.97</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2061,7 +2088,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.96</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.97</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2424,6 +2451,7 @@
 <div class="modal-bg" id="modal-delivery-photo">
   <div class="delivery-photo-viewer">
     <img id="delivery-photo-viewer-img" alt="伝票写真の拡大表示">
+    <div class="delivery-photo-zoom-badge" id="delivery-photo-zoom-badge" aria-live="polite"></div>
     <div class="delivery-photo-viewer-controls">
       <button id="btn-delivery-photo-prev" type="button" title="前の写真" aria-label="前の写真">‹</button>
       <span id="delivery-photo-viewer-position"></span>
@@ -2508,7 +2536,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.96';
+const APP_VERSION = 'v2026.06.24-test.97';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2531,6 +2559,8 @@ const DELIVERY_PHOTO_DB_VERSION = 1;
 const DELIVERY_PHOTO_STORE = 'photos';
 const DELIVERY_PHOTO_MAX_SIZE = 1600;
 const DELIVERY_PHOTO_QUALITY = 0.82;
+const DELIVERY_PHOTO_MAX_ZOOM = 4;
+const DELIVERY_PHOTO_DOUBLE_TAP_ZOOM = 2.5;
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2778,6 +2808,17 @@ let deliveryPhotoStorageWarningShown = false;
 let editPhotoEntries = [];
 let editPhotoIndex = 0;
 let editPhotoLoadToken = 0;
+const deliveryPhotoZoomState = {
+  scale: 1,
+  x: 0,
+  y: 0,
+  pointers: new Map(),
+  gesture: null,
+  lastTapAt: 0,
+  lastTapX: 0,
+  lastTapY: 0,
+  suppressTapUntil: 0
+};
 let pendingFilePhotoContext = null;
 let activeSinglePhotoEditorSession = null;
 
@@ -3488,6 +3529,242 @@ async function deleteDeliveryPhotos(deliveryIds) {
   });
 }
 
+function clampDeliveryPhotoZoom() {
+  const image = $('delivery-photo-viewer-img');
+  const viewer = image && image.parentElement;
+  if (!image || !viewer) return;
+  const state = deliveryPhotoZoomState;
+  if (state.scale <= 1.001) {
+    state.scale = 1;
+    state.x = 0;
+    state.y = 0;
+    return;
+  }
+  const maxX = Math.max(0, (image.clientWidth * state.scale - viewer.clientWidth) / 2);
+  const maxY = Math.max(0, (image.clientHeight * state.scale - viewer.clientHeight) / 2);
+  state.x = Math.max(-maxX, Math.min(maxX, state.x));
+  state.y = Math.max(-maxY, Math.min(maxY, state.y));
+}
+
+function renderDeliveryPhotoZoom() {
+  const image = $('delivery-photo-viewer-img');
+  const badge = $('delivery-photo-zoom-badge');
+  if (!image) return;
+  clampDeliveryPhotoZoom();
+  const state = deliveryPhotoZoomState;
+  image.style.transform = state.scale > 1
+    ? `translate3d(${state.x.toFixed(1)}px, ${state.y.toFixed(1)}px, 0) scale(${state.scale.toFixed(3)})`
+    : '';
+  image.classList.toggle('is-zoomed', state.scale > 1.001);
+  if (badge) {
+    const zoomed = state.scale > 1.001;
+    badge.textContent = zoomed ? `${state.scale.toFixed(1)}×` : '';
+    badge.classList.toggle('show', zoomed);
+  }
+}
+
+function resetDeliveryPhotoZoom() {
+  const image = $('delivery-photo-viewer-img');
+  const state = deliveryPhotoZoomState;
+  state.scale = 1;
+  state.x = 0;
+  state.y = 0;
+  state.pointers.clear();
+  state.gesture = null;
+  state.lastTapAt = 0;
+  state.suppressTapUntil = 0;
+  if (image) image.classList.remove('is-panning');
+  renderDeliveryPhotoZoom();
+}
+
+function setDeliveryPhotoZoomAt(nextScale, clientX, clientY) {
+  const image = $('delivery-photo-viewer-img');
+  const viewer = image && image.parentElement;
+  if (!image || !viewer) return;
+  const state = deliveryPhotoZoomState;
+  const scale = Math.max(1, Math.min(DELIVERY_PHOTO_MAX_ZOOM, Number(nextScale) || 1));
+  if (scale <= 1.001) {
+    state.scale = 1;
+    state.x = 0;
+    state.y = 0;
+    renderDeliveryPhotoZoom();
+    return;
+  }
+  const rect = viewer.getBoundingClientRect();
+  const focusX = Number.isFinite(clientX) ? clientX : rect.left + rect.width / 2;
+  const focusY = Number.isFinite(clientY) ? clientY : rect.top + rect.height / 2;
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const oldScale = Math.max(1, state.scale);
+  const anchorX = (focusX - centerX - state.x) / oldScale;
+  const anchorY = (focusY - centerY - state.y) / oldScale;
+  state.scale = scale;
+  state.x = focusX - centerX - anchorX * scale;
+  state.y = focusY - centerY - anchorY * scale;
+  renderDeliveryPhotoZoom();
+}
+
+function toggleDeliveryPhotoZoomAt(clientX, clientY) {
+  if (deliveryPhotoZoomState.scale > 1.001) {
+    setDeliveryPhotoZoomAt(1);
+  } else {
+    setDeliveryPhotoZoomAt(DELIVERY_PHOTO_DOUBLE_TAP_ZOOM, clientX, clientY);
+  }
+}
+
+function beginDeliveryPhotoGesture() {
+  const image = $('delivery-photo-viewer-img');
+  const viewer = image && image.parentElement;
+  const points = [...deliveryPhotoZoomState.pointers.values()];
+  if (!viewer || !points.length) {
+    deliveryPhotoZoomState.gesture = null;
+    return;
+  }
+  if (points.length >= 2) {
+    const first = points[0];
+    const second = points[1];
+    const midX = (first.x + second.x) / 2;
+    const midY = (first.y + second.y) / 2;
+    const rect = viewer.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    deliveryPhotoZoomState.gesture = {
+      type: 'pinch',
+      startDistance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+      startScale: deliveryPhotoZoomState.scale,
+      anchorX: (midX - centerX - deliveryPhotoZoomState.x) / deliveryPhotoZoomState.scale,
+      anchorY: (midY - centerY - deliveryPhotoZoomState.y) / deliveryPhotoZoomState.scale,
+      moved: false
+    };
+    deliveryPhotoZoomState.suppressTapUntil = Date.now() + 450;
+    return;
+  }
+  const point = points[0];
+  deliveryPhotoZoomState.gesture = {
+    type: 'pan',
+    pointerId: point.id,
+    startPointerX: point.x,
+    startPointerY: point.y,
+    startX: deliveryPhotoZoomState.x,
+    startY: deliveryPhotoZoomState.y,
+    moved: false
+  };
+}
+
+function handleDeliveryPhotoPointerDown(event) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  const image = $('delivery-photo-viewer-img');
+  if (!image || !modalIsOpen('modal-delivery-photo')) return;
+  deliveryPhotoZoomState.pointers.set(event.pointerId, {
+    id: event.pointerId,
+    x: event.clientX,
+    y: event.clientY
+  });
+  try { image.setPointerCapture(event.pointerId); } catch (e) {}
+  beginDeliveryPhotoGesture();
+  event.preventDefault();
+}
+
+function handleDeliveryPhotoPointerMove(event) {
+  const point = deliveryPhotoZoomState.pointers.get(event.pointerId);
+  if (!point) return;
+  point.x = event.clientX;
+  point.y = event.clientY;
+  const state = deliveryPhotoZoomState;
+  const gesture = state.gesture;
+  const points = [...state.pointers.values()];
+  const image = $('delivery-photo-viewer-img');
+  if (!gesture || !image) return;
+
+  if (gesture.type === 'pinch' && points.length >= 2) {
+    const first = points[0];
+    const second = points[1];
+    const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
+    const midX = (first.x + second.x) / 2;
+    const midY = (first.y + second.y) / 2;
+    const rect = image.parentElement.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    state.scale = Math.max(
+      1,
+      Math.min(DELIVERY_PHOTO_MAX_ZOOM, gesture.startScale * distance / gesture.startDistance)
+    );
+    state.x = midX - centerX - gesture.anchorX * state.scale;
+    state.y = midY - centerY - gesture.anchorY * state.scale;
+    gesture.moved = true;
+    state.suppressTapUntil = Date.now() + 450;
+    renderDeliveryPhotoZoom();
+  } else if (gesture.type === 'pan' && points.length === 1) {
+    const current = points[0];
+    const deltaX = current.x - gesture.startPointerX;
+    const deltaY = current.y - gesture.startPointerY;
+    if (Math.hypot(deltaX, deltaY) > 6) gesture.moved = true;
+    if (state.scale > 1.001) {
+      state.x = gesture.startX + deltaX;
+      state.y = gesture.startY + deltaY;
+      image.classList.toggle('is-panning', gesture.moved);
+      renderDeliveryPhotoZoom();
+    }
+  }
+  event.preventDefault();
+}
+
+function handleDeliveryPhotoTouchTap(event) {
+  const state = deliveryPhotoZoomState;
+  const now = Date.now();
+  const closeToLastTap = Math.hypot(event.clientX - state.lastTapX, event.clientY - state.lastTapY) <= 42;
+  if (state.lastTapAt && now - state.lastTapAt <= 330 && closeToLastTap) {
+    state.lastTapAt = 0;
+    toggleDeliveryPhotoZoomAt(event.clientX, event.clientY);
+    return;
+  }
+  state.lastTapAt = now;
+  state.lastTapX = event.clientX;
+  state.lastTapY = event.clientY;
+}
+
+function finishDeliveryPhotoPointer(event, cancelled = false) {
+  const state = deliveryPhotoZoomState;
+  const gesture = state.gesture;
+  const wasTap = !cancelled &&
+    event.pointerType !== 'mouse' &&
+    gesture &&
+    gesture.type === 'pan' &&
+    !gesture.moved &&
+    Date.now() >= state.suppressTapUntil;
+  state.pointers.delete(event.pointerId);
+  const image = $('delivery-photo-viewer-img');
+  if (image) {
+    image.classList.remove('is-panning');
+    try { image.releasePointerCapture(event.pointerId); } catch (e) {}
+  }
+  beginDeliveryPhotoGesture();
+  if (wasTap) handleDeliveryPhotoTouchTap(event);
+  renderDeliveryPhotoZoom();
+  event.preventDefault();
+}
+
+function setupDeliveryPhotoZoomGestures() {
+  const image = $('delivery-photo-viewer-img');
+  if (!image) return;
+  image.addEventListener('pointerdown', handleDeliveryPhotoPointerDown);
+  image.addEventListener('pointermove', handleDeliveryPhotoPointerMove);
+  image.addEventListener('pointerup', event => finishDeliveryPhotoPointer(event));
+  image.addEventListener('pointercancel', event => finishDeliveryPhotoPointer(event, true));
+  image.addEventListener('dblclick', event => {
+    event.preventDefault();
+    toggleDeliveryPhotoZoomAt(event.clientX, event.clientY);
+  });
+  image.addEventListener('wheel', event => {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.2 : 1 / 1.2;
+    setDeliveryPhotoZoomAt(deliveryPhotoZoomState.scale * factor, event.clientX, event.clientY);
+  }, { passive: false });
+  image.addEventListener('dragstart', event => event.preventDefault());
+  image.addEventListener('load', renderDeliveryPhotoZoom);
+  window.addEventListener('resize', renderDeliveryPhotoZoom);
+}
+
 function clearEditPhotoEntries() {
   editPhotoLoadToken++;
   editPhotoEntries.forEach(entry => {
@@ -3550,11 +3827,13 @@ async function loadEditDeliveryPhotos(deliveryId) {
 function moveEditPhoto(delta) {
   if (!editPhotoEntries.length) return;
   editPhotoIndex = Math.max(0, Math.min(editPhotoEntries.length - 1, editPhotoIndex + delta));
+  resetDeliveryPhotoZoom();
   renderEditPhoto();
 }
 
 function openEditPhotoViewer() {
   if (!editPhotoEntries.length) return;
+  resetDeliveryPhotoZoom();
   $('delivery-photo-viewer-img').src = editPhotoEntries[editPhotoIndex].url;
   openModal('modal-delivery-photo');
   renderEditPhoto();
@@ -3562,6 +3841,7 @@ function openEditPhotoViewer() {
 
 function closeEditPhotoViewer() {
   closeModal('modal-delivery-photo');
+  resetDeliveryPhotoZoom();
 }
 
 function updateAppVersionLabels() {
@@ -8209,36 +8489,48 @@ function validateDeliveryPlacement(address, result, deliveryCourse = '') {
   if (fmt) {
     const inputRaw = String(address || '').normalize('NFKC').replace(/[‐‑‒–—―−ー]/g, '-');
 
-    // 郵便番号の照合 (〒マーカー付きのみ対象 — 番地との誤マッチを防ぐ)
-    // 東日本橋(〒103-0004)を日本橋(〒103-0027)と誤読するような
-    // 「近所の実在住所」型の誤りを確実に検出する
+    // 郵便番号は補助情報として使う。住所本体が一致しているのに、企業固有番号や
+    // OCRの1桁誤読だけで修正画面を出さないよう、町名・番地との複合不一致だけ警告する。
     const zipIn = inputRaw.match(/〒\s*(\d{3})-?(\d{4})/);
     const zipFmt = fmt.match(/〒\s*(\d{3})-?(\d{4})/);
+    let postalMismatchReason = '';
     if (zipIn && zipFmt) {
       const zin = zipIn[1] + zipIn[2];
       const zf = zipFmt[1] + zipFmt[2];
       if (zin !== zf) {
-        reasons.push(`郵便番号不一致(伝票〒${zipIn[1]}-${zipIn[2]}/検索結果〒${zipFmt[1]}-${zipFmt[2]})`);
+        postalMismatchReason =
+          `郵便番号不一致(伝票〒${zipIn[1]}-${zipIn[2]}/検索結果〒${zipFmt[1]}-${zipFmt[2]})`;
       }
     }
 
     const input = inputRaw
       .replace(/〒?\s*\d{3}-?\d{4}/, '')
       .trim();
+    const fmtAddressOnly = fmt
+      .replace(/〒?\s*\d{3}-?\d{4}/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const addressMismatchReasons = [];
     const banchiMatch = input.match(/\d+(?:-\d+)*\s*$/);
     if (banchiMatch) {
       const inputNums = banchiMatch[0].trim().split('-');
-      const fmtNums = (fmt.match(/\d+/g) || []).map(n => String(Number(n)));
+      const fmtNums = (fmtAddressOnly.match(/\d+/g) || []).map(n => String(Number(n)));
       const missing = inputNums.filter(n => !fmtNums.includes(String(Number(n))));
-      if (missing.length) reasons.push(`番地「${banchiMatch[0].trim()}」が検索結果と不一致`);
+      if (missing.length) {
+        addressMismatchReasons.push(`番地「${banchiMatch[0].trim()}」が検索結果と不一致`);
+      }
     }
     const townMatch = input.match(/([一-鿿][一-鿿ぁ-ゖァ-ヺ]{1,5})\s*\d/);
     if (townMatch) {
       const town = townMatch[1].slice(-3);
-      if (town.length >= 2 && !fmt.includes(town) && !fmt.includes(townMatch[1])) {
-        reasons.push(`町名「${townMatch[1]}」が検索結果と不一致`);
+      if (town.length >= 2 &&
+          !fmtAddressOnly.includes(town) &&
+          !fmtAddressOnly.includes(townMatch[1])) {
+        addressMismatchReasons.push(`町名「${townMatch[1]}」が検索結果と不一致`);
       }
     }
+    if (postalMismatchReason && addressMismatchReasons.length) reasons.push(postalMismatchReason);
+    reasons.push(...addressMismatchReasons);
   }
   return reasons;
 }
@@ -8375,6 +8667,15 @@ function normalizeSearchText(value) {
     .replace(/\s+/g, '');
 }
 
+function addressWithoutPostalCodeForList(value) {
+  return String(value || '')
+    .replace(
+      /^\s*(?:(?:〒|郵便番号[:：]?)\s*)?[0-9０-９]{3}\s*[-‐‑‒–—―−ー－]?\s*[0-9０-９]{4}\s*/,
+      ''
+    )
+    .trim();
+}
+
 function currentListSearchQuery() {
   return normalizeSearchText(listSearchQuery);
 }
@@ -8509,6 +8810,7 @@ function renderList() {
     const pickupTypeBadge = isOtherCoursePickup(d)
       ? '<div><span class="pickup-type-badge">集荷</span></div>'
       : '';
+    const listAddress = addressWithoutPostalCodeForList(d.address) || String(d.address || '');
     return `
       <div class="${cls}${timeWindowClass}" data-id="${d.id}"${timeWindowStyle}>
         <div class="num-badge">${escapeHtml(num)}${d.approx ? '?' : ''}</div>
@@ -8516,7 +8818,7 @@ function renderList() {
           ${pickupDisplay
             ? `<div class="pickup-company">${escapeHtml(pickupDisplay.company)}</div>
                <div class="pickup-detail">${escapeHtml(pickupDisplay.detail)}</div>`
-            : `<div class="addr">${escapeHtml(d.address)}</div>
+            : `<div class="addr">${escapeHtml(listAddress)}</div>
                ${d.note ? `<div class="note">${escapeHtml(d.note)}</div>` : ''}`}
           ${pickupTypeBadge}
           ${timeWindowBadge}
@@ -10067,8 +10369,14 @@ function queueImmediateBatchReview(id, options = {}) {
 async function finishImmediateBatchReview(id, options = {}) {
   if (batchReviewEditingId !== id) return;
   const resume = options.resume !== false;
+  const wasBatchReview = batchReviewSourceById.get(id) === 'batch';
   batchReviewEditingId = null;
   batchReviewSourceById.delete(id);
+  if (wasBatchReview && batchStats.review > 0) {
+    batchStats.review--;
+    batchStats.added++;
+    updateBatchPhotoUi();
+  }
 
   if (!resume) {
     batchReviewQueue.forEach(queuedId => batchReviewSourceById.delete(queuedId));
@@ -13662,6 +13970,7 @@ $('btn-edit-photo-next').addEventListener('click', () => moveEditPhoto(1));
 $('btn-delivery-photo-prev').addEventListener('click', () => moveEditPhoto(-1));
 $('btn-delivery-photo-next').addEventListener('click', () => moveEditPhoto(1));
 $('btn-delivery-photo-close').addEventListener('click', closeEditPhotoViewer);
+setupDeliveryPhotoZoomGestures();
 $('edit-time-window').addEventListener('change', () => {
   syncEditExactTimeField({ focus: true, clearWhenHidden: true });
 });
