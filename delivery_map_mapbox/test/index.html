@@ -2015,7 +2015,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.97</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.98</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2088,7 +2088,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.97</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.98</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2536,7 +2536,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.97';
+const APP_VERSION = 'v2026.06.24-test.98';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2600,6 +2600,9 @@ const ROAD_FLOW_API = '../api/route_flow_test.php';
 const GOOGLE_GUIDANCE_CONFIG_API = '../api/google_maps_config_test.php';
 const GOOGLE_GUIDANCE_ROUTE_API = '../api/google_guidance_test.php';
 const GUIDANCE_PROVIDER_KEY = 'rys-mapbox-test-guidance-provider-v1';
+const GUIDANCE_ROUTE_CACHE_KEY = 'rys-mapbox-test-guidance-route-cache-v1';
+const GUIDANCE_ROUTE_CACHE_VERSION = 1;
+const GUIDANCE_ROUTE_CACHE_MAX_AGE_MS = 18 * 60 * 60 * 1000;
 const GOOGLE_GUIDANCE_FEATURE_ENABLED = true;
 const FLOW_GUIDANCE_MAX_WALK_METERS = 60;
 const GEOCODE_CACHE_MAX_ITEMS = 500;
@@ -2832,6 +2835,9 @@ let gsiOverlayVisible = localStorage.getItem(GSI_OVERLAY_KEY) !== '0';
 let listSearchQuery = '';
 let listTimeWindowFilter = '';
 let optimizedRouteOrderedIds = [];
+let optimizedRouteGeometry = null;
+let cachedGuidanceRoute = null;
+let guidanceRestoreRefreshPending = false;
 let nextSegmentUpdateId = 0;
 let nextSegmentFailureToastAt = 0;
 let lastFlowGuidance = null;
@@ -3921,6 +3927,9 @@ function saveDeliveries() {
   if (appMode === 'pickup') {
     const sheetName = getSelectedPickupSheet();
     if (sheetName) saveRegularPickupCache(sheetName, deliveries);
+  }
+  if (appMode === 'delivery' && (optimizedRouteOrderedIds.length || temporaryGuidanceTargetId)) {
+    saveGuidanceRouteCache();
   }
   markDeliverySyncDirty();
 }
@@ -5664,9 +5673,12 @@ function addOptimizedRouteLayer() {
   }
 }
 
-function setOptimizedRouteGeometry(geometry, orderedIds) {
+function setOptimizedRouteGeometry(geometry, orderedIds, options = {}) {
   if (orderedIds) optimizedRouteOrderedIds = orderedIds.slice();
-  if (!map || !geometry) return;
+  if (!geometry) {
+    if (options.persist !== false) saveGuidanceRouteCache();
+    return;
+  }
 
   // Accept LineString; flatten MultiLineString to LineString
   let lineGeometry = geometry;
@@ -5676,6 +5688,9 @@ function setOptimizedRouteGeometry(geometry, orderedIds) {
   }
   if (!lineGeometry || lineGeometry.type !== 'LineString' ||
       !Array.isArray(lineGeometry.coordinates) || lineGeometry.coordinates.length < 2) return;
+  optimizedRouteGeometry = lineGeometry;
+  if (options.persist !== false) saveGuidanceRouteCache();
+  if (!map) return;
 
   const data = { type: 'Feature', geometry: lineGeometry, properties: {} };
 
@@ -5690,9 +5705,13 @@ function setOptimizedRouteGeometry(geometry, orderedIds) {
 }
 
 function clearOptimizedRouteGeometry() {
-  if (!map) return;
   optimizedRouteOrderedIds = [];
+  optimizedRouteGeometry = null;
+  cachedGuidanceRoute = null;
+  guidanceRestoreRefreshPending = false;
+  try { localStorage.removeItem(GUIDANCE_ROUTE_CACHE_KEY); } catch (e) {}
   clearNextSegmentLayer();
+  if (!map) return;
   if (map.getLayer(OPTIMIZED_ROUTE_LAYER_ID)) map.removeLayer(OPTIMIZED_ROUTE_LAYER_ID);
   if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) map.removeSource(OPTIMIZED_ROUTE_SOURCE_ID);
 }
@@ -5849,6 +5868,210 @@ function setFollowingSegmentGeometry(geometry) {
 function validRouteLineGeometry(geometry) {
   return !!geometry && geometry.type === 'LineString' &&
     Array.isArray(geometry.coordinates) && geometry.coordinates.length >= 2;
+}
+
+function guidanceCacheDayKey(timestamp = Date.now()) {
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function guidanceDeliverySignature(delivery) {
+  if (!delivery || !delivery.id ||
+      !Number.isFinite(Number(delivery.lat)) || !Number.isFinite(Number(delivery.lng))) return null;
+  return {
+    id: delivery.id,
+    lat: Number(delivery.lat),
+    lng: Number(delivery.lng)
+  };
+}
+
+function guidanceSignatureMatches(signature, delivery) {
+  const current = guidanceDeliverySignature(delivery);
+  return !!signature && !!current && signature.id === current.id &&
+    Math.abs(Number(signature.lat) - current.lat) < 0.000001 &&
+    Math.abs(Number(signature.lng) - current.lng) < 0.000001;
+}
+
+function currentGuidanceRouteTargets() {
+  const temporary = temporaryGuidanceTarget();
+  if (temporary && !temporary.completed && temporary.lat != null && temporary.lng != null) {
+    return { next: temporary, following: null };
+  }
+  const deliveryById = new Map(deliveries.map(delivery => [delivery.id, delivery]));
+  const pending = optimizedRouteOrderedIds
+    .map(id => deliveryById.get(id))
+    .filter(delivery => delivery && !delivery.completed && delivery.lat != null && delivery.lng != null);
+  return { next: pending[0] || null, following: pending[1] || null };
+}
+
+function cachedGuidanceRouteMatches(route, nextDelivery, followingDelivery, provider = guidanceProvider) {
+  if (!route || route.provider !== provider || !validRouteLineGeometry(route.orangeGeometry)) return false;
+  if (!guidanceSignatureMatches(route.next, nextDelivery)) return false;
+  if (followingDelivery) {
+    return guidanceSignatureMatches(route.following, followingDelivery) &&
+      validRouteLineGeometry(route.blueGeometry);
+  }
+  return !route.following;
+}
+
+function normalizeGuidanceRouteForCache(provider, flow, nextDelivery, followingDelivery, start) {
+  if (!flow || !validRouteLineGeometry(flow.orangeGeometry)) return null;
+  return {
+    provider,
+    next: guidanceDeliverySignature(nextDelivery),
+    following: guidanceDeliverySignature(followingDelivery),
+    start: start && Number.isFinite(Number(start.lat)) && Number.isFinite(Number(start.lng))
+      ? { lat: Number(start.lat), lng: Number(start.lng) }
+      : null,
+    orangeGeometry: flow.orangeGeometry,
+    blueGeometry: validRouteLineGeometry(flow.blueGeometry) ? flow.blueGeometry : null,
+    walkingGeometry: validRouteLineGeometry(flow.walkingGeometry) ? flow.walkingGeometry : null,
+    stop: flow.stop && Number.isFinite(Number(flow.stop.lat)) && Number.isFinite(Number(flow.stop.lng))
+      ? { lat: Number(flow.stop.lat), lng: Number(flow.stop.lng) }
+      : null,
+    mode: String(flow.mode || ''),
+    walkingDistance: Number.isFinite(Number(flow.walkingDistance)) ? Number(flow.walkingDistance) : null,
+    turnDegrees: Number.isFinite(Number(flow.turnDegrees)) ? Number(flow.turnDegrees) : null
+  };
+}
+
+function saveGuidanceRouteCache(options = {}) {
+  if (appMode !== 'delivery') return;
+  const existingIds = new Set(deliveries.map(delivery => delivery && delivery.id).filter(Boolean));
+  optimizedRouteOrderedIds = optimizedRouteOrderedIds.filter(id => existingIds.has(id));
+  const temporary = temporaryGuidanceTarget();
+  const temporaryId = temporary && !temporary.completed && temporary.lat != null && temporary.lng != null
+    ? temporary.id
+    : null;
+  if (!optimizedRouteOrderedIds.length && !temporaryId) {
+    cachedGuidanceRoute = null;
+    try { localStorage.removeItem(GUIDANCE_ROUTE_CACHE_KEY); } catch (e) {}
+    return;
+  }
+
+  const targets = currentGuidanceRouteTargets();
+  let route = Object.prototype.hasOwnProperty.call(options, 'route')
+    ? options.route
+    : cachedGuidanceRoute && cachedGuidanceRoute.route;
+  if (!cachedGuidanceRouteMatches(route, targets.next, targets.following, route && route.provider)) {
+    route = null;
+  }
+
+  const payload = {
+    version: GUIDANCE_ROUTE_CACHE_VERSION,
+    savedAt: Date.now(),
+    dayKey: guidanceCacheDayKey(),
+    orderedIds: optimizedRouteOrderedIds.slice(),
+    temporaryTargetId: temporaryId,
+    optimizedGeometry: validRouteLineGeometry(optimizedRouteGeometry) ? optimizedRouteGeometry : null,
+    route
+  };
+  cachedGuidanceRoute = payload;
+  try {
+    localStorage.setItem(GUIDANCE_ROUTE_CACHE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    // 容量不足でも配送順だけは残す。
+    payload.optimizedGeometry = null;
+    payload.route = null;
+    cachedGuidanceRoute = payload;
+    try { localStorage.setItem(GUIDANCE_ROUTE_CACHE_KEY, JSON.stringify(payload)); } catch (e) {}
+  }
+}
+
+function cacheRenderedGuidanceRoute(provider, flow, nextDelivery, followingDelivery, start) {
+  const route = normalizeGuidanceRouteForCache(
+    provider,
+    flow,
+    nextDelivery,
+    followingDelivery,
+    start
+  );
+  saveGuidanceRouteCache({ route });
+}
+
+function prepareGuidanceRouteCache(nextDelivery, followingDelivery, provider) {
+  const route = cachedGuidanceRoute && cachedGuidanceRoute.route;
+  if (!cachedGuidanceRouteMatches(route, nextDelivery, followingDelivery, provider)) {
+    saveGuidanceRouteCache({ route: null });
+  }
+}
+
+function restoreGuidanceRouteState() {
+  let parsed = null;
+  try { parsed = JSON.parse(localStorage.getItem(GUIDANCE_ROUTE_CACHE_KEY) || 'null'); } catch (e) {}
+  const savedAt = Number(parsed && parsed.savedAt);
+  const validAge = Number.isFinite(savedAt) && Date.now() - savedAt >= 0 &&
+    Date.now() - savedAt <= GUIDANCE_ROUTE_CACHE_MAX_AGE_MS;
+  if (!parsed || parsed.version !== GUIDANCE_ROUTE_CACHE_VERSION || !validAge ||
+      parsed.dayKey !== guidanceCacheDayKey(savedAt) || parsed.dayKey !== guidanceCacheDayKey()) {
+    try { localStorage.removeItem(GUIDANCE_ROUTE_CACHE_KEY); } catch (e) {}
+    return false;
+  }
+
+  const deliveryById = new Map(deliveries.map(delivery => [delivery.id, delivery]));
+  optimizedRouteOrderedIds = Array.isArray(parsed.orderedIds)
+    ? parsed.orderedIds.filter(id => deliveryById.has(id))
+    : [];
+  const temporary = parsed.temporaryTargetId && deliveryById.get(parsed.temporaryTargetId);
+  temporaryGuidanceTargetId = temporary && !temporary.completed && temporary.lat != null && temporary.lng != null
+    ? temporary.id
+    : null;
+  optimizedRouteGeometry = validRouteLineGeometry(parsed.optimizedGeometry)
+    ? parsed.optimizedGeometry
+    : null;
+  cachedGuidanceRoute = {
+    ...parsed,
+    orderedIds: optimizedRouteOrderedIds.slice(),
+    temporaryTargetId: temporaryGuidanceTargetId,
+    optimizedGeometry: optimizedRouteGeometry
+  };
+
+  const targets = currentGuidanceRouteTargets();
+  if (!cachedGuidanceRouteMatches(parsed.route, targets.next, targets.following, parsed.route && parsed.route.provider)) {
+    cachedGuidanceRoute.route = null;
+  }
+  if (!targets.next) {
+    optimizedRouteOrderedIds = [];
+    optimizedRouteGeometry = null;
+    temporaryGuidanceTargetId = null;
+    cachedGuidanceRoute = null;
+    guidanceRestoreRefreshPending = false;
+    try { localStorage.removeItem(GUIDANCE_ROUTE_CACHE_KEY); } catch (e) {}
+    return false;
+  }
+  guidanceRestoreRefreshPending = true;
+  return true;
+}
+
+async function renderCachedGuidanceRoute() {
+  if (!cachedGuidanceRoute || appMode !== 'delivery') return false;
+  if (validRouteLineGeometry(optimizedRouteGeometry)) {
+    setOptimizedRouteGeometry(optimizedRouteGeometry, optimizedRouteOrderedIds, { persist: false });
+  }
+  if (workMode !== 'delivery') return false;
+  const targets = currentGuidanceRouteTargets();
+  const route = cachedGuidanceRoute.route;
+  if (!cachedGuidanceRouteMatches(route, targets.next, targets.following, guidanceProvider)) return false;
+
+  if (route.provider === 'google') {
+    try {
+      await ensureGoogleGuidanceMap();
+      return renderGoogleGuidanceFlow(route, targets.next, targets.following);
+    } catch (error) {
+      console.warn('cached Google guidance restore failed', error);
+      return false;
+    }
+  }
+
+  showMapboxGuidanceSurface();
+  if (validRouteLineGeometry(route.blueGeometry)) setFollowingSegmentGeometry(route.blueGeometry);
+  setNextSegmentGeometry(route.orangeGeometry);
+  setFlowGuidance(route, targets.next.id);
+  updateGuidanceProviderUi();
+  return true;
 }
 
 function updateGuidanceProviderUi() {
@@ -6821,6 +7044,7 @@ async function refreshTemporaryGuidanceLine(options = {}) {
 
   const targetId = target.id;
   const updateId = ++nextSegmentUpdateId;
+  prepareGuidanceRouteCache(target, null, guidanceProvider);
   temporaryGuidanceBusy = true;
   updateTemporaryGuidanceUi();
   removeNextSegmentLayer();
@@ -6841,6 +7065,7 @@ async function refreshTemporaryGuidanceLine(options = {}) {
       googleGuidanceBusy = false;
       updateTemporaryGuidanceUi();
       updateGuidanceProviderUi();
+      cacheRenderedGuidanceRoute('google', flow, target, null, start);
       renderGoogleGuidanceFlow(flow, target, null);
       if (options.announce !== false) {
         const message = options.refresh
@@ -6853,6 +7078,7 @@ async function refreshTemporaryGuidanceLine(options = {}) {
       if (updateId !== nextSegmentUpdateId || temporaryGuidanceTargetId !== targetId) return false;
       googleGuidanceBusy = false;
       fallbackToMapboxGuidance(error.message || 'Google一時案内を取得できませんでした。');
+      prepareGuidanceRouteCache(target, null, 'mapbox');
     }
   }
 
@@ -6863,11 +7089,13 @@ async function refreshTemporaryGuidanceLine(options = {}) {
   temporaryGuidanceBusy = false;
   updateTemporaryGuidanceUi();
   if (!geometry) {
+    await renderCachedGuidanceRoute();
     showToast('一時案内の道路線を取得できません。↻で再取得するかナビを使ってください', true);
     return false;
   }
 
   setNextSegmentGeometry(geometry);
+  cacheRenderedGuidanceRoute('mapbox', { orangeGeometry: geometry }, target, null, start);
   if (options.announce !== false) {
     const message = options.refresh
       ? '現在地から一時案内線を引き直しました'
@@ -6891,6 +7119,7 @@ async function startTemporaryGuidance(id) {
 
   temporaryGuidanceTargetId = target.id;
   temporaryGuidanceBusy = false;
+  saveGuidanceRouteCache({ route: null });
   activeDeliveryId = target.id;
   updateTemporaryGuidanceUi();
   updateMarkerZIndexes();
@@ -6905,6 +7134,7 @@ function clearTemporaryGuidance(options = {}) {
   temporaryGuidanceBusy = false;
   nextSegmentUpdateId++;
   clearNextSegmentLayer();
+  saveGuidanceRouteCache({ route: null });
   updateTemporaryGuidanceUi();
 
   const normalNext = nextOptimizedPendingDelivery();
@@ -6963,6 +7193,7 @@ async function updateNextSegmentHighlight() {
   }
 
   const start = getRouteStartPoint();
+  prepareGuidanceRouteCache(nextDelivery, followingDelivery || null, guidanceProvider);
   // 道路検索が失敗した直線を案内線に見せない。成功した道路形状だけ表示する。
   removeNextSegmentLayer();
   removeFollowingSegmentLayer();
@@ -6979,6 +7210,7 @@ async function updateNextSegmentHighlight() {
       googleGuidanceBusy = false;
       updateGuidanceProviderUi();
       if (renderGoogleGuidanceFlow(googleFlow, nextDelivery, followingDelivery)) {
+        cacheRenderedGuidanceRoute('google', googleFlow, nextDelivery, followingDelivery || null, start);
         announceFlowWalkingStop(googleFlow, nextDelivery.id);
         return true;
       }
@@ -6987,6 +7219,7 @@ async function updateNextSegmentHighlight() {
       if (updateId !== nextSegmentUpdateId) return;
       googleGuidanceBusy = false;
       fallbackToMapboxGuidance(error.message || 'Google案内線を取得できませんでした。');
+      prepareGuidanceRouteCache(nextDelivery, followingDelivery || null, 'mapbox');
     }
   }
 
@@ -7015,14 +7248,20 @@ async function updateNextSegmentHighlight() {
   if (followingGeometry) setFollowingSegmentGeometry(followingGeometry);
   if (nextGeometry) {
     setNextSegmentGeometry(nextGeometry);
+    cacheRenderedGuidanceRoute('mapbox', flow || {
+      orangeGeometry: nextGeometry,
+      blueGeometry: followingGeometry
+    }, nextDelivery, followingDelivery || null, start);
     if (flow) {
       setFlowGuidance(flow, nextDelivery.id);
       announceFlowWalkingStop(flow, nextDelivery.id);
     }
-  }
-  else if (Date.now() - nextSegmentFailureToastAt > 60000) {
-    nextSegmentFailureToastAt = Date.now();
-    showToast('道路に沿った案内線を取得できません。次の場所はナビで確認してください', true);
+  } else {
+    await renderCachedGuidanceRoute();
+    if (Date.now() - nextSegmentFailureToastAt > 60000) {
+      nextSegmentFailureToastAt = Date.now();
+      showToast('道路に沿った案内線を取得できません。次の場所はナビで確認してください', true);
+    }
   }
 }
 
@@ -8997,7 +9236,7 @@ async function commitPlacement() {
 
   if (temporaryGuidanceTargetId === d.id) {
     refreshTemporaryGuidanceLine({ announce: false });
-  } else if (guidanceProvider === 'google' && optimizedRouteOrderedIds.length > 0) {
+  } else if (optimizedRouteOrderedIds.length > 0) {
     updateNextSegmentHighlight();
   }
 
@@ -9426,6 +9665,8 @@ async function reGeocodeEditedItem() {
   editingItemId = null;
   if (temporaryGuidanceTargetId === editedId) {
     refreshTemporaryGuidanceLine({ announce: false });
+  } else if (optimizedRouteOrderedIds.length > 0) {
+    updateNextSegmentHighlight();
   }
   const message = result.approx ? '概算位置で更新しました' : '住所検索でピン位置を更新しました';
   showToast(locationSynced ? message : `${message}（固定位置の共有保存は未完了）`, !locationSynced);
@@ -9533,6 +9774,8 @@ async function saveEditedItem() {
   editingItemId = null;
   if (locationChanged && temporaryGuidanceTargetId === editedId) {
     refreshTemporaryGuidanceLine({ announce: false });
+  } else if (locationChanged && optimizedRouteOrderedIds.length > 0) {
+    updateNextSegmentHighlight();
   }
   showToast(locationSynced ? '更新しました' : '更新しました（固定位置の共有保存は未完了）', !locationSynced);
   if (immediatePhotoReview) await finishImmediateBatchReview(editedId);
@@ -9561,6 +9804,7 @@ function deleteEditedItem() {
       saveDeliveries();
       renderMarkers();
       renderList();
+      if (optimizedRouteOrderedIds.length > 0) updateNextSegmentHighlight();
       closeModal('modal-edit');
       clearEditPhotoEntries();
       editingItemId = null;
@@ -10195,7 +10439,8 @@ async function readPendingPhoto() {
     // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
     const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address || '');
     hideLoading();
-    const photoForDelivery = { file: pendingPhotoFile, rotation: pendingPhotoRotation };
+    const savedPhotoRotation = ((pendingPhotoRotation + (Number(data.autoRotated) || 0)) % 360 + 360) % 360;
+    const photoForDelivery = { file: pendingPhotoFile, rotation: savedPhotoRotation };
     const packageTypeForDelivery = pendingPhotoPackageType;
     $('add-address').value = resolved.address;
     $('add-note').value = note;
@@ -10600,6 +10845,9 @@ async function openNativeBatchCamera(options = {}) {
       toBack: true,           // WebViewの背後に描画 (ページ側を透過して見せる)
       disableAudio: true,
       enableHighResolution: true,
+      // Android側でEXIFの向きを画素へ反映し、縦固定の撮影方向もJPEGへ揃える。
+      disableExifHeaderStripping: false,
+      lockAndroidOrientation: true,
       storeToFile: false
     });
   } catch (e) {
@@ -10952,42 +11200,70 @@ function blobToBase64(blob) {
   });
 }
 
-function compressImage(file, maxSize, quality, rotation = 0) {
+async function loadImageForCanvas(file) {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      return {
+        source: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        close: () => bitmap.close()
+      };
+    } catch (e) {}
+  }
   return new Promise((resolve, reject) => {
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(objectUrl);
-      let { width, height } = img;
-      const normalizedRotation = ((rotation % 360) + 360) % 360;
-      if (width > maxSize || height > maxSize) {
-        const r = Math.min(maxSize / width, maxSize / height);
-        width = Math.round(width * r);
-        height = Math.round(height * r);
-      }
-      const canvas = document.createElement('canvas');
-      const swap = normalizedRotation === 90 || normalizedRotation === 270;
-      canvas.width = swap ? height : width;
-      canvas.height = swap ? width : height;
-      const ctx = canvas.getContext('2d');
-      ctx.save();
-      if (normalizedRotation === 90) {
-        ctx.translate(canvas.width, 0);
-        ctx.rotate(Math.PI / 2);
-      } else if (normalizedRotation === 180) {
-        ctx.translate(canvas.width, canvas.height);
-        ctx.rotate(Math.PI);
-      } else if (normalizedRotation === 270) {
-        ctx.translate(0, canvas.height);
-        ctx.rotate(Math.PI * 1.5);
-      }
-      ctx.drawImage(img, 0, 0, width, height);
-      ctx.restore();
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error('Canvas blob failed')), 'image/jpeg', quality);
+      resolve({ source: img, width: img.naturalWidth || img.width, height: img.naturalHeight || img.height, close: () => {} });
     };
     img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Image load failed')); };
     img.src = objectUrl;
   });
+}
+
+async function compressImage(file, maxSize, quality, rotation = 0) {
+  const image = await loadImageForCanvas(file);
+  try {
+    let width = image.width;
+    let height = image.height;
+    const normalizedRotation = ((rotation % 360) + 360) % 360;
+    if (width > maxSize || height > maxSize) {
+      const ratio = Math.min(maxSize / width, maxSize / height);
+      width = Math.round(width * ratio);
+      height = Math.round(height * ratio);
+    }
+    const canvas = document.createElement('canvas');
+    const swap = normalizedRotation === 90 || normalizedRotation === 270;
+    canvas.width = swap ? height : width;
+    canvas.height = swap ? width : height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas context failed');
+    ctx.save();
+    if (normalizedRotation === 90) {
+      ctx.translate(canvas.width, 0);
+      ctx.rotate(Math.PI / 2);
+    } else if (normalizedRotation === 180) {
+      ctx.translate(canvas.width, canvas.height);
+      ctx.rotate(Math.PI);
+    } else if (normalizedRotation === 270) {
+      ctx.translate(0, canvas.height);
+      ctx.rotate(Math.PI * 1.5);
+    }
+    ctx.drawImage(image.source, 0, 0, width, height);
+    ctx.restore();
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        blob => blob ? resolve(blob) : reject(new Error('Canvas blob failed')),
+        'image/jpeg',
+        quality
+      );
+    });
+  } finally {
+    image.close();
+  }
 }
 
 function copyListToClipboard() {
@@ -13687,6 +13963,12 @@ function updateUserLocation(pos, moveMap = false) {
   lastKnownGps = { lat: latitude, lng: longitude, heading, speed, accuracy };
   updateGoogleGuidanceUserMarker();
   banchiSchedulePrefetch(longitude, latitude);
+  if (guidanceRestoreRefreshPending && workMode === 'delivery' && guidanceHasRouteTarget()) {
+    guidanceRestoreRefreshPending = false;
+    setTimeout(() => {
+      updateNextSegmentHighlight().catch(error => console.warn('restored guidance refresh failed', error));
+    }, 0);
+  }
 
   const startupCenterAllowed = gpsInitialCenterStartedAt &&
     Date.now() - gpsInitialCenterStartedAt <= 60000;
@@ -14152,6 +14434,7 @@ registerNativeBackButtonHandler();
     mapboxConfig = await loadMapboxConfig();
     const mapReady = initMap();
     loadDeliveries();
+    const restoredGuidanceState = restoreGuidanceRouteState();
     loadPackageTypeCatalog();
     updateBatchPhotoUi();
     if (appMode === 'pickup') {
@@ -14163,6 +14446,7 @@ registerNativeBackButtonHandler();
     const rokugoPinRepair = await repairExistingRokugoPins();
     renderMarkers();
     renderList();
+    if (restoredGuidanceState) await renderCachedGuidanceRoute();
     updateGpsButton();
     updateModeUi();
     ensureGpsWatching();
