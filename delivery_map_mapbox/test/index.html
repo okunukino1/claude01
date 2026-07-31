@@ -678,6 +678,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .temporary-guidance-copy small {
+    min-height: 13px;
+    color: #374151;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .temporary-guidance-copy small[hidden] { display: none; }
   .temporary-guidance-banner button {
     flex: 0 0 auto;
     min-width: 40px;
@@ -690,10 +697,6 @@
     font-weight: 800;
   }
   .temporary-guidance-banner button:disabled { opacity: 0.5; }
-  #btn-temporary-guidance-clear {
-    background: #f97316;
-    color: #fff;
-  }
 
   /* ===== List section ===== */
   .list-section {
@@ -1999,7 +2002,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.99</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.100</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2026,11 +2029,11 @@
 
 <div class="temporary-guidance-banner" id="temporary-guidance-banner" role="status" aria-live="polite" hidden>
   <div class="temporary-guidance-copy">
-    <span>一時案内中</span>
+    <span id="guidance-banner-mode">次の目的地</span>
     <strong id="temporary-guidance-target"></strong>
+    <small id="guidance-banner-distance" hidden></small>
   </div>
   <button id="btn-temporary-guidance-refresh" type="button" title="現在地から案内線を引き直す" aria-label="現在地から案内線を引き直す">↻</button>
-  <button id="btn-temporary-guidance-clear" type="button" title="元の配送コースへ戻す">↩ 戻す</button>
 </div>
 
 <div class="add-bar input-only-control">
@@ -2072,7 +2075,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.99</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.100</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2513,7 +2516,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.99';
+const APP_VERSION = 'v2026.06.24-test.100';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2819,6 +2822,7 @@ let lastFlowGuidance = null;
 let lastFlowNoticeKey = '';
 let temporaryGuidanceTargetId = null;
 let temporaryGuidanceBusy = false;
+let guidanceRefreshBusy = false;
 let guidanceProvider = GOOGLE_GUIDANCE_FEATURE_ENABLED &&
   localStorage.getItem(GUIDANCE_PROVIDER_KEY) !== 'mapbox' ? 'google' : 'mapbox';
 let googleGuidanceConfigPromise = null;
@@ -4103,6 +4107,7 @@ function setWorkMode(mode, options = {}) {
     setBatchPhotoMode(false, { summary: false, toast: false });
   }
   updateWorkModeUi();
+  updateGuidanceBannerUi();
   setTimeout(() => {
     if (map) map.resize();
     if (googleGuidanceMap && window.google && google.maps && google.maps.event) {
@@ -5686,6 +5691,7 @@ function clearOptimizedRouteGeometry() {
   guidanceRestoreRefreshPending = false;
   try { localStorage.removeItem(GUIDANCE_ROUTE_CACHE_KEY); } catch (e) {}
   clearNextSegmentLayer();
+  updateGuidanceBannerUi();
   if (!map) return;
   if (map.getLayer(OPTIMIZED_ROUTE_LAYER_ID)) map.removeLayer(OPTIMIZED_ROUTE_LAYER_ID);
   if (map.getSource(OPTIMIZED_ROUTE_SOURCE_ID)) map.removeSource(OPTIMIZED_ROUTE_SOURCE_ID);
@@ -5965,6 +5971,7 @@ function cacheRenderedGuidanceRoute(provider, flow, nextDelivery, followingDeliv
     start
   );
   saveGuidanceRouteCache({ route });
+  updateGuidanceBannerUi();
 }
 
 function prepareGuidanceRouteCache(nextDelivery, followingDelivery, provider) {
@@ -6034,7 +6041,9 @@ async function renderCachedGuidanceRoute() {
   if (route.provider === 'google') {
     try {
       await ensureGoogleGuidanceMap();
-      return renderGoogleGuidanceFlow(route, targets.next, targets.following);
+      const rendered = renderGoogleGuidanceFlow(route, targets.next, targets.following);
+      updateGuidanceBannerUi();
+      return rendered;
     } catch (error) {
       console.warn('cached Google guidance restore failed', error);
       return false;
@@ -6046,6 +6055,7 @@ async function renderCachedGuidanceRoute() {
   setNextSegmentGeometry(route.orangeGeometry);
   setFlowGuidance(route, targets.next.id);
   updateGuidanceProviderUi();
+  updateGuidanceBannerUi();
   return true;
 }
 
@@ -6978,17 +6988,66 @@ function nextOptimizedPendingDelivery() {
     .find(d => d && !d.completed && d.lat != null && d.lng != null) || null;
 }
 
-function updateTemporaryGuidanceUi() {
-  const target = temporaryGuidanceTarget();
-  const active = !!target && !target.completed && target.lat != null && target.lng != null;
+function guidanceBannerTargetLabel(delivery) {
+  if (!delivery) return '';
+  return delivery.address || temporaryGuidanceTargetLabel(delivery);
+}
+
+function guidanceLineDistanceMeters(geometry) {
+  if (!validRouteLineGeometry(geometry)) return null;
+  let total = 0;
+  for (let index = 1; index < geometry.coordinates.length; index++) {
+    const previous = geometry.coordinates[index - 1];
+    const current = geometry.coordinates[index];
+    if (!Array.isArray(previous) || !Array.isArray(current)) continue;
+    const from = { lng: Number(previous[0]), lat: Number(previous[1]) };
+    const to = { lng: Number(current[0]), lat: Number(current[1]) };
+    if (![from.lng, from.lat, to.lng, to.lat].every(Number.isFinite)) continue;
+    total += distanceMeters(from, to);
+  }
+  return total > 0 ? total : null;
+}
+
+function guidanceRouteDistanceMeters(target) {
+  const route = cachedGuidanceRoute && cachedGuidanceRoute.route;
+  if (!route || !guidanceSignatureMatches(route.next, target)) return null;
+  let total = guidanceLineDistanceMeters(route.orangeGeometry);
+  if (!Number.isFinite(total)) return null;
+  const walkingLineDistance = guidanceLineDistanceMeters(route.walkingGeometry);
+  if (Number.isFinite(walkingLineDistance)) {
+    total += walkingLineDistance;
+  } else if (Number.isFinite(Number(route.walkingDistance)) && Number(route.walkingDistance) > 0) {
+    total += Number(route.walkingDistance);
+  }
+  return total;
+}
+
+function updateGuidanceBannerUi() {
+  const temporaryTarget = temporaryGuidanceTarget();
+  const isTemporary = !!temporaryTarget && !temporaryTarget.completed &&
+    temporaryTarget.lat != null && temporaryTarget.lng != null;
+  const target = isTemporary ? temporaryTarget : nextOptimizedPendingDelivery();
+  const active = appMode === 'delivery' && workMode === 'delivery' && !!target &&
+    !target.completed && target.lat != null && target.lng != null;
   const banner = $('temporary-guidance-banner');
   if (banner) banner.hidden = !active;
+  const modeLabel = $('guidance-banner-mode');
+  if (modeLabel) modeLabel.textContent = isTemporary ? '一時案内中' : '次の目的地';
   const targetLabel = $('temporary-guidance-target');
-  if (targetLabel) targetLabel.textContent = active ? temporaryGuidanceTargetLabel(target) : '';
+  if (targetLabel) targetLabel.textContent = active ? guidanceBannerTargetLabel(target) : '';
+  const busy = temporaryGuidanceBusy || guidanceRefreshBusy || googleGuidanceBusy;
+  const distanceLabel = $('guidance-banner-distance');
+  if (distanceLabel) {
+    const distance = active ? guidanceRouteDistanceMeters(target) : null;
+    distanceLabel.hidden = !active || (!busy && !Number.isFinite(distance));
+    distanceLabel.textContent = Number.isFinite(distance)
+      ? `距離: 約${formatKm(distance)}`
+      : (busy ? '距離: 計算中…' : '');
+  }
   const refreshBtn = $('btn-temporary-guidance-refresh');
   if (refreshBtn) {
-    refreshBtn.disabled = !active || temporaryGuidanceBusy;
-    refreshBtn.textContent = temporaryGuidanceBusy ? '…' : '↻';
+    refreshBtn.disabled = !active || busy;
+    refreshBtn.textContent = busy ? '…' : '↻';
   }
 
   const editBtn = $('btn-edit-temporary-guidance');
@@ -7000,6 +7059,32 @@ function updateTemporaryGuidanceUi() {
     const editingIsTarget = canGuide && editing.id === temporaryGuidanceTargetId;
     editBtn.classList.toggle('active', !!editingIsTarget);
     editBtn.textContent = editingIsTarget ? '↩ 元のコースへ戻す' : '➜ このピンへ一時案内';
+  }
+}
+
+async function refreshCurrentGuidanceLine() {
+  const target = currentGuidanceRouteTargets().next;
+  if (!target) {
+    showToast('案内する目的地がありません', true);
+    return false;
+  }
+
+  guidanceRefreshBusy = true;
+  updateGuidanceBannerUi();
+  try {
+    if (temporaryGuidanceTargetId) {
+      return await refreshTemporaryGuidanceLine({ announce: true, refresh: true });
+    }
+    const refreshed = await updateNextSegmentHighlight();
+    if (refreshed) showToast('現在地から案内線を引き直しました');
+    return refreshed;
+  } catch (error) {
+    console.warn('guidance refresh failed', error);
+    showToast('現在地から案内線を引き直せませんでした', true);
+    return false;
+  } finally {
+    guidanceRefreshBusy = false;
+    updateGuidanceBannerUi();
   }
 }
 
@@ -7021,7 +7106,7 @@ async function refreshTemporaryGuidanceLine(options = {}) {
   const updateId = ++nextSegmentUpdateId;
   prepareGuidanceRouteCache(target, null, guidanceProvider);
   temporaryGuidanceBusy = true;
-  updateTemporaryGuidanceUi();
+  updateGuidanceBannerUi();
   removeNextSegmentLayer();
   removeFollowingSegmentLayer();
   removeFlowGuidanceLayers();
@@ -7038,7 +7123,7 @@ async function refreshTemporaryGuidanceLine(options = {}) {
       if (updateId !== nextSegmentUpdateId || temporaryGuidanceTargetId !== targetId) return false;
       temporaryGuidanceBusy = false;
       googleGuidanceBusy = false;
-      updateTemporaryGuidanceUi();
+      updateGuidanceBannerUi();
       updateGuidanceProviderUi();
       cacheRenderedGuidanceRoute('google', flow, target, null, start);
       renderGoogleGuidanceFlow(flow, target, null);
@@ -7062,7 +7147,7 @@ async function refreshTemporaryGuidanceLine(options = {}) {
   if (updateId !== nextSegmentUpdateId || temporaryGuidanceTargetId !== targetId) return false;
 
   temporaryGuidanceBusy = false;
-  updateTemporaryGuidanceUi();
+  updateGuidanceBannerUi();
   if (!geometry) {
     await renderCachedGuidanceRoute();
     showToast('一時案内の道路線を取得できません。↻で再取得するかナビを使ってください', true);
@@ -7096,7 +7181,7 @@ async function startTemporaryGuidance(id) {
   temporaryGuidanceBusy = false;
   saveGuidanceRouteCache({ route: null });
   activeDeliveryId = target.id;
-  updateTemporaryGuidanceUi();
+  updateGuidanceBannerUi();
   updateMarkerZIndexes();
   renderMarkers();
   renderList();
@@ -7110,7 +7195,7 @@ function clearTemporaryGuidance(options = {}) {
   nextSegmentUpdateId++;
   clearNextSegmentLayer();
   saveGuidanceRouteCache({ route: null });
-  updateTemporaryGuidanceUi();
+  updateGuidanceBannerUi();
 
   const normalNext = nextOptimizedPendingDelivery();
   if (normalNext) activeDeliveryId = normalNext.id;
@@ -7150,10 +7235,15 @@ async function updateNextSegmentHighlight() {
     }
     temporaryGuidanceTargetId = null;
     temporaryGuidanceBusy = false;
-    updateTemporaryGuidanceUi();
+    updateGuidanceBannerUi();
   }
+  updateGuidanceBannerUi();
   const updateId = ++nextSegmentUpdateId;
-  if (!map || optimizedRouteOrderedIds.length === 0) { clearNextSegmentLayer(); return; }
+  if (!map || optimizedRouteOrderedIds.length === 0) {
+    clearNextSegmentLayer();
+    updateGuidanceBannerUi();
+    return false;
+  }
   const deliveryById = new Map(deliveries.map(d => [d.id, d]));
   const pendingDeliveries = optimizedRouteOrderedIds
     .map(id => deliveryById.get(id))
@@ -7164,7 +7254,8 @@ async function updateNextSegmentHighlight() {
   if (!nextDelivery) {
     clearNextSegmentLayer();
     updateGuidanceProviderUi();
-    return;
+    updateGuidanceBannerUi();
+    return false;
   }
 
   const start = getRouteStartPoint();
@@ -7178,12 +7269,14 @@ async function updateNextSegmentHighlight() {
   if (guidanceProvider === 'google' && workMode === 'delivery') {
     googleGuidanceBusy = true;
     updateGuidanceProviderUi();
+    updateGuidanceBannerUi();
     try {
       await ensureGoogleGuidanceMap();
       const googleFlow = await fetchGoogleGuidanceSegments(start, nextDelivery, followingDelivery || null);
       if (updateId !== nextSegmentUpdateId) return;
       googleGuidanceBusy = false;
       updateGuidanceProviderUi();
+      updateGuidanceBannerUi();
       if (renderGoogleGuidanceFlow(googleFlow, nextDelivery, followingDelivery)) {
         cacheRenderedGuidanceRoute('google', googleFlow, nextDelivery, followingDelivery || null, start);
         announceFlowWalkingStop(googleFlow, nextDelivery.id);
@@ -7193,6 +7286,7 @@ async function updateNextSegmentHighlight() {
     } catch (error) {
       if (updateId !== nextSegmentUpdateId) return;
       googleGuidanceBusy = false;
+      updateGuidanceBannerUi();
       fallbackToMapboxGuidance(error.message || 'Google案内線を取得できませんでした。');
       prepareGuidanceRouteCache(nextDelivery, followingDelivery || null, 'mapbox');
     }
@@ -7231,12 +7325,14 @@ async function updateNextSegmentHighlight() {
       setFlowGuidance(flow, nextDelivery.id);
       announceFlowWalkingStop(flow, nextDelivery.id);
     }
+    return true;
   } else {
     await renderCachedGuidanceRoute();
     if (Date.now() - nextSegmentFailureToastAt > 60000) {
       nextSegmentFailureToastAt = Date.now();
       showToast('道路に沿った案内線を取得できません。次の場所はナビで確認してください', true);
     }
+    return false;
   }
 }
 
@@ -9475,7 +9571,7 @@ function openEdit(id) {
   if (cancelBtn) cancelBtn.textContent = immediatePhotoReview
     ? (singlePhotoReview ? '後で確認' : '連写を終了')
     : 'キャンセル';
-  updateTemporaryGuidanceUi();
+  updateGuidanceBannerUi();
   openModal('modal-edit');
   resetEditModalScroll();
   loadEditDeliveryPhotos(id);
@@ -14334,9 +14430,8 @@ $('btn-list-search-clear').addEventListener('click', () => {
 });
 document.querySelector('.placement-banner').addEventListener('click', cancelPlacement);
 $('btn-temporary-guidance-refresh').addEventListener('click', () => {
-  refreshTemporaryGuidanceLine({ announce: true, refresh: true });
+  refreshCurrentGuidanceLine();
 });
-$('btn-temporary-guidance-clear').addEventListener('click', () => clearTemporaryGuidance());
 window.addEventListener('online', () => retryPendingPickupProgress({ silent: false }));
 window.addEventListener('beforeinstallprompt', event => {
   event.preventDefault();
@@ -14387,6 +14482,7 @@ registerNativeBackButtonHandler();
     const rokugoPinRepair = await repairExistingRokugoPins();
     renderMarkers();
     renderList();
+    updateGuidanceBannerUi();
     if (restoredGuidanceState) await renderCachedGuidanceRoute();
     updateGpsButton();
     updateModeUi();
