@@ -1364,22 +1364,6 @@
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
-    transition: transform 0.15s ease;
-  }
-  .photo-rotate-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-  .photo-rotate-actions button {
-    min-height: 42px;
-    border: 2px solid var(--ink);
-    border-radius: 6px;
-    background: white;
-    color: var(--ink);
-    font-weight: 700;
-    cursor: pointer;
   }
   .edit-photo-panel {
     margin: 4px 0 12px;
@@ -2015,7 +1999,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.98</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.99</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2088,7 +2072,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.98</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.99</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2379,16 +2363,9 @@
     <div class="photo-preview">
       <img id="photo-preview-img" alt="伝票写真プレビュー">
     </div>
-    <div class="photo-rotate-actions">
-      <button id="btn-photo-rotate-left" type="button">左に90°</button>
-      <button id="btn-photo-rotate-right" type="button">右に90°</button>
-    </div>
-    <div class="modal-help">
-      横向きになっている場合は回転してから読み取ってください。
-    </div>
     <div class="modal-actions">
       <button class="cancel" id="btn-photo-cancel" type="button">キャンセル</button>
-      <button class="primary" id="btn-photo-read" type="button">この向きで読み取り</button>
+      <button class="primary" id="btn-photo-read" type="button">写真を読み取る</button>
     </div>
   </div>
 </div>
@@ -2536,7 +2513,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.98';
+const APP_VERSION = 'v2026.06.24-test.99';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2798,11 +2775,9 @@ let pickupLastSyncedAt = null;
 let pickupLastSpotTouchAt = 0;
 let pendingPhotoFile = null;
 let pendingPhotoUrl = '';
-let pendingPhotoRotation = 0;
 let pendingPhotoPackageType = '';
 let pendingAddPhoto = null;
 let pendingOcrJob = null;      // { rotation, controller, promise } — プレビュー表示中に先行実行するOCR
-let pendingOcrRestartTimer = null;
 let lastKnownGps = null;       // { lat, lng } — 要確認ピン判定に使う最新GPS
 const reviewPhotoUrls = new Map(); // IndexedDB保存失敗時の要確認写真フォールバック
 let deliveryPhotoDbPromise = null;
@@ -10216,18 +10191,11 @@ function resetPhotoPreviewState() {
   if (pendingPhotoUrl) URL.revokeObjectURL(pendingPhotoUrl);
   pendingPhotoFile = null;
   pendingPhotoUrl = '';
-  pendingPhotoRotation = 0;
   pendingPhotoPackageType = '';
   const img = $('photo-preview-img');
   if (img) {
     img.removeAttribute('src');
-    img.style.transform = '';
   }
-}
-
-function updatePhotoPreviewRotation() {
-  const img = $('photo-preview-img');
-  if (img) img.style.transform = `rotate(${pendingPhotoRotation}deg)`;
 }
 
 // 1回分のOCR呼び出し (回転角度つき・バイナリ送信)
@@ -10261,7 +10229,6 @@ async function ocrWithRotationRetry(attempt, baseRotation, onRetry) {
     tried.add(rotation);
     const { ok, data } = await attempt(rotation);
     if (ok && data.address) {
-      if (i > 0) data.autoRotated = norm(rotation - baseRotation);
       return data;
     }
     lastError = (data && data.error) || '住所が読み取れませんでした';
@@ -10285,7 +10252,7 @@ async function ocrWithRotationRetry(attempt, baseRotation, onRetry) {
 // ユーザーが向きを確認して「読み取り」を押す頃には結果が届いていることが多い。
 function startPendingPhotoOcr() {
   if (!pendingPhotoFile) return null;
-  const rotation = pendingPhotoRotation;
+  const rotation = 0;
   if (pendingOcrJob && pendingOcrJob.rotation === rotation) return pendingOcrJob;
   cancelPendingPhotoOcr();
   const controller = ('AbortController' in window) ? new AbortController() : null;
@@ -10307,10 +10274,6 @@ function startPendingPhotoOcr() {
 }
 
 function cancelPendingPhotoOcr() {
-  if (pendingOcrRestartTimer) {
-    clearTimeout(pendingOcrRestartTimer);
-    pendingOcrRestartTimer = null;
-  }
   if (pendingOcrJob && pendingOcrJob.controller) {
     try { pendingOcrJob.controller.abort(); } catch (e) {}
   }
@@ -10324,24 +10287,10 @@ function openPhotoPreview(file, packageType = capturePackageTypeValue()) {
   pendingPhotoFile = file;
   pendingPhotoPackageType = normalizePackageType(packageType);
   pendingPhotoUrl = URL.createObjectURL(file);
-  pendingPhotoRotation = 0;
   $('photo-preview-img').src = pendingPhotoUrl;
-  updatePhotoPreviewRotation();
   updateBatchPhotoUi();
   openModal('modal-photo-preview');
   startPendingPhotoOcr(); // プレビューを見ている間に裏で読み取り開始
-}
-
-function rotatePendingPhoto(delta) {
-  if (!pendingPhotoFile) return;
-  pendingPhotoRotation = (pendingPhotoRotation + delta + 360) % 360;
-  updatePhotoPreviewRotation();
-  // 回転が確定するのを少し待ってから新しい向きで読み取り直す
-  cancelPendingPhotoOcr();
-  pendingOcrRestartTimer = setTimeout(() => {
-    pendingOcrRestartTimer = null;
-    startPendingPhotoOcr();
-  }, 700);
 }
 
 function closePhotoPreview() {
@@ -10420,10 +10369,6 @@ function splitOcrAddressFields(data) {
 
 async function readPendingPhoto() {
   if (!pendingPhotoFile) return;
-  if (pendingOcrRestartTimer) {
-    clearTimeout(pendingOcrRestartTimer);
-    pendingOcrRestartTimer = null;
-  }
   const job = startPendingPhotoOcr(); // 先行実行済みならそれを再利用
   closeModal('modal-photo-preview');
   showLoading('AI で住所を読み取り中...');
@@ -10439,8 +10384,8 @@ async function readPendingPhoto() {
     // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
     const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address || '');
     hideLoading();
-    const savedPhotoRotation = ((pendingPhotoRotation + (Number(data.autoRotated) || 0)) % 360 + 360) % 360;
-    const photoForDelivery = { file: pendingPhotoFile, rotation: savedPhotoRotation };
+    // OCRは読み取り用コピーだけを回転する。撮影写真の保存向きは変更しない。
+    const photoForDelivery = { file: pendingPhotoFile, rotation: 0 };
     const packageTypeForDelivery = pendingPhotoPackageType;
     $('add-address').value = resolved.address;
     $('add-note').value = note;
@@ -10454,18 +10399,15 @@ async function readPendingPhoto() {
       showToast('現在地に近い方をお届け先として採用しました (発送元側を除外)');
     } else if (String(data.confidence || '').toLowerCase() === 'low') {
       showToast('⚠ 読み取りの自信度が低めです。住所をよく確認してください', true);
-    } else if (data.autoRotated) {
-      showToast('向きを自動補正して読み取りました');
     }
     prefetchGeocodeAddress(resolved.address);
     cancelPendingPhotoOcr();
     resetPhotoPreviewState();
   } catch (e) {
     hideLoading();
-    // 写真を保持したままプレビューに戻す — 撮り直し不要で回転や再試行ができる
+    // 写真を保持したままプレビューに戻すため、撮り直さず再試行できる。
     pendingOcrJob = null;
     showToast('読み取り失敗: ' + e.message, true);
-    updatePhotoPreviewRotation();
     openModal('modal-photo-preview');
   }
 }
@@ -11092,7 +11034,8 @@ async function processBatchPhoto(file, options = {}) {
     // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
     const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address);
     const address = resolved.address;
-    const photoRotation = Number(data.autoRotated) || 0;
+    // OCRの再試行角度は保存写真へ反映しない。EXIFの正立処理だけに任せる。
+    const photoRotation = 0;
 
     // 同じ住所 = 複数個口。未完了の既存ピンの個数を自動で増やす
     // (連写中に確認ダイアログは出さない。完了済みしか無ければ新規ピン)
@@ -11169,7 +11112,7 @@ async function processBatchPhoto(file, options = {}) {
       if (trackBatchStats) batchStats.added++;
       showToast(
         photoSaved
-          ? `✅ 追加: ${address}${resolved.swapped ? ' (発送元側を除外)' : ''}${data.autoRotated ? ' (向き自動補正)' : ''}`
+          ? `✅ 追加: ${address}${resolved.swapped ? ' (発送元側を除外)' : ''}`
           : `ピンは追加しましたが、伝票写真を保存できませんでした`,
         !photoSaved
       );
@@ -14185,8 +14128,6 @@ $('file-photo-multi').addEventListener('change', (e) => {
   e.target.value = '';
   if (list.length) importPhotosFromGallery(list);
 });
-$('btn-photo-rotate-left').addEventListener('click', () => rotatePendingPhoto(-90));
-$('btn-photo-rotate-right').addEventListener('click', () => rotatePendingPhoto(90));
 $('btn-photo-cancel').addEventListener('click', closePhotoPreview);
 $('btn-photo-read').addEventListener('click', readPendingPhoto);
 $('btn-add-manual').addEventListener('click', openManualAddModal);
