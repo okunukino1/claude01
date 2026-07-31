@@ -2002,7 +2002,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.100</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.101</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2075,7 +2075,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.100</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.101</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2516,7 +2516,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.100';
+const APP_VERSION = 'v2026.06.24-test.101';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -7027,7 +7027,7 @@ function updateGuidanceBannerUi() {
   const isTemporary = !!temporaryTarget && !temporaryTarget.completed &&
     temporaryTarget.lat != null && temporaryTarget.lng != null;
   const target = isTemporary ? temporaryTarget : nextOptimizedPendingDelivery();
-  const active = appMode === 'delivery' && workMode === 'delivery' && !!target &&
+  const active = appMode === 'delivery' && (isTemporary || workMode === 'delivery') && !!target &&
     !target.completed && target.lat != null && target.lng != null;
   const banner = $('temporary-guidance-banner');
   if (banner) banner.hidden = !active;
