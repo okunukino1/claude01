@@ -1396,6 +1396,8 @@
     border-radius: 6px;
     background: #111;
     cursor: zoom-in;
+    touch-action: pan-y;
+    user-select: none;
   }
   .edit-photo-image-button img {
     display: block;
@@ -2002,7 +2004,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.102</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.103</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2075,7 +2077,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.102</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.103</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2516,7 +2518,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.102';
+const APP_VERSION = 'v2026.06.24-test.103';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2541,6 +2543,9 @@ const DELIVERY_PHOTO_MAX_SIZE = 1600;
 const DELIVERY_PHOTO_QUALITY = 0.82;
 const DELIVERY_PHOTO_MAX_ZOOM = 4;
 const DELIVERY_PHOTO_DOUBLE_TAP_ZOOM = 2.5;
+const DELIVERY_PHOTO_SWIPE_MIN_DISTANCE = 52;
+const DELIVERY_PHOTO_CLOSE_SWIPE_MIN_DISTANCE = 72;
+const DELIVERY_PHOTO_SWIPE_AXIS_RATIO = 1.2;
 const MANUAL_ADDRESS_STATE_KEY = 'rys-mapbox-test-manual-address-state-v1';
 const PICKUP_STORAGE_KEY = 'rys-mapbox-test-pickup-deliveries-v1';
 const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
@@ -2789,6 +2794,14 @@ let deliveryPhotoStorageWarningShown = false;
 let editPhotoEntries = [];
 let editPhotoIndex = 0;
 let editPhotoLoadToken = 0;
+const editPhotoSwipeState = {
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  lastX: 0,
+  lastY: 0,
+  suppressClickUntil: 0
+};
 const deliveryPhotoZoomState = {
   scale: 1,
   x: 0,
@@ -3708,10 +3721,50 @@ function handleDeliveryPhotoTouchTap(event) {
   state.lastTapY = event.clientY;
 }
 
+function getDeliveryPhotoFlickAction(deltaX, deltaY, allowClose) {
+  const absX = Math.abs(deltaX);
+  const absY = Math.abs(deltaY);
+  if (
+    allowClose &&
+    deltaY <= -DELIVERY_PHOTO_CLOSE_SWIPE_MIN_DISTANCE &&
+    absY >= absX * DELIVERY_PHOTO_SWIPE_AXIS_RATIO
+  ) {
+    return 'close';
+  }
+  if (
+    absX >= DELIVERY_PHOTO_SWIPE_MIN_DISTANCE &&
+    absX >= absY * DELIVERY_PHOTO_SWIPE_AXIS_RATIO
+  ) {
+    return deltaX < 0 ? 'next' : 'previous';
+  }
+  return '';
+}
+
 function finishDeliveryPhotoPointer(event, cancelled = false) {
   const state = deliveryPhotoZoomState;
   const gesture = state.gesture;
-  const wasTap = !cancelled &&
+  const point = state.pointers.get(event.pointerId);
+  if (point) {
+    point.x = event.clientX;
+    point.y = event.clientY;
+  }
+  const deltaX = point && gesture && gesture.type === 'pan'
+    ? point.x - gesture.startPointerX
+    : 0;
+  const deltaY = point && gesture && gesture.type === 'pan'
+    ? point.y - gesture.startPointerY
+    : 0;
+  const flickAction = !cancelled &&
+    event.pointerType !== 'mouse' &&
+    gesture &&
+    gesture.type === 'pan' &&
+    gesture.pointerId === event.pointerId &&
+    state.pointers.size === 1 &&
+    state.scale <= 1.001
+      ? getDeliveryPhotoFlickAction(deltaX, deltaY, true)
+      : '';
+  const wasTap = !flickAction &&
+    !cancelled &&
     event.pointerType !== 'mouse' &&
     gesture &&
     gesture.type === 'pan' &&
@@ -3722,6 +3775,15 @@ function finishDeliveryPhotoPointer(event, cancelled = false) {
   if (image) {
     image.classList.remove('is-panning');
     try { image.releasePointerCapture(event.pointerId); } catch (e) {}
+  }
+  if (flickAction) {
+    state.gesture = null;
+    state.lastTapAt = 0;
+    state.suppressTapUntil = Date.now() + 450;
+    if (flickAction === 'close') closeEditPhotoViewer();
+    else moveEditPhoto(flickAction === 'next' ? 1 : -1);
+    event.preventDefault();
+    return;
   }
   beginDeliveryPhotoGesture();
   if (wasTap) handleDeliveryPhotoTouchTap(event);
@@ -3827,6 +3889,61 @@ function openEditPhotoViewer() {
 function closeEditPhotoViewer() {
   closeModal('modal-delivery-photo');
   resetDeliveryPhotoZoom();
+}
+
+function resetEditPhotoSwipePointer() {
+  editPhotoSwipeState.pointerId = null;
+  editPhotoSwipeState.startX = 0;
+  editPhotoSwipeState.startY = 0;
+  editPhotoSwipeState.lastX = 0;
+  editPhotoSwipeState.lastY = 0;
+}
+
+function setupEditPhotoSwipeGestures() {
+  const button = $('btn-edit-photo-open');
+  if (!button) return;
+  button.addEventListener('pointerdown', event => {
+    if (event.pointerType === 'mouse' || editPhotoSwipeState.pointerId !== null) return;
+    editPhotoSwipeState.pointerId = event.pointerId;
+    editPhotoSwipeState.startX = event.clientX;
+    editPhotoSwipeState.startY = event.clientY;
+    editPhotoSwipeState.lastX = event.clientX;
+    editPhotoSwipeState.lastY = event.clientY;
+    try { button.setPointerCapture(event.pointerId); } catch (e) {}
+  });
+  button.addEventListener('pointermove', event => {
+    if (editPhotoSwipeState.pointerId !== event.pointerId) return;
+    editPhotoSwipeState.lastX = event.clientX;
+    editPhotoSwipeState.lastY = event.clientY;
+    const deltaX = event.clientX - editPhotoSwipeState.startX;
+    const deltaY = event.clientY - editPhotoSwipeState.startY;
+    if (Math.abs(deltaX) > 8 && Math.abs(deltaX) > Math.abs(deltaY)) event.preventDefault();
+  });
+  const finish = (event, cancelled = false) => {
+    if (editPhotoSwipeState.pointerId !== event.pointerId) return;
+    editPhotoSwipeState.lastX = event.clientX;
+    editPhotoSwipeState.lastY = event.clientY;
+    const deltaX = editPhotoSwipeState.lastX - editPhotoSwipeState.startX;
+    const deltaY = editPhotoSwipeState.lastY - editPhotoSwipeState.startY;
+    const flickAction = cancelled ? '' : getDeliveryPhotoFlickAction(deltaX, deltaY, false);
+    try { button.releasePointerCapture(event.pointerId); } catch (e) {}
+    resetEditPhotoSwipePointer();
+    if (!flickAction) return;
+    editPhotoSwipeState.suppressClickUntil = Date.now() + 450;
+    moveEditPhoto(flickAction === 'next' ? 1 : -1);
+    event.preventDefault();
+  };
+  button.addEventListener('pointerup', event => finish(event));
+  button.addEventListener('pointercancel', event => finish(event, true));
+}
+
+function handleEditPhotoOpenClick(event) {
+  if (Date.now() < editPhotoSwipeState.suppressClickUntil) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
+  openEditPhotoViewer();
 }
 
 function updateAppVersionLabels() {
@@ -14284,12 +14401,13 @@ $('btn-edit-done').addEventListener('click', toggleEditedItemDone);
 $('btn-edit-navi').addEventListener('click', openEditedItemNavigation);
 $('btn-edit-temporary-guidance').addEventListener('click', toggleEditedItemTemporaryGuidance);
 $('btn-edit-delete').addEventListener('click', deleteEditedItem);
-$('btn-edit-photo-open').addEventListener('click', openEditPhotoViewer);
+$('btn-edit-photo-open').addEventListener('click', handleEditPhotoOpenClick);
 $('btn-edit-photo-prev').addEventListener('click', () => moveEditPhoto(-1));
 $('btn-edit-photo-next').addEventListener('click', () => moveEditPhoto(1));
 $('btn-delivery-photo-prev').addEventListener('click', () => moveEditPhoto(-1));
 $('btn-delivery-photo-next').addEventListener('click', () => moveEditPhoto(1));
 $('btn-delivery-photo-close').addEventListener('click', closeEditPhotoViewer);
+setupEditPhotoSwipeGestures();
 setupDeliveryPhotoZoomGestures();
 $('edit-time-window').addEventListener('change', () => {
   syncEditExactTimeField({ focus: true, clearWhenHidden: true });
