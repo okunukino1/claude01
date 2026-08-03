@@ -658,6 +658,9 @@
   body:not(.work-mode-delivery) .temporary-guidance-banner {
     bottom: calc(var(--list-height) + var(--native-app-bottom-inset) + env(safe-area-inset-bottom) + var(--input-bar-height) + 8px);
   }
+  body.app-mode-pickup .temporary-guidance-banner {
+    bottom: calc(var(--list-height) + var(--native-app-bottom-inset) + env(safe-area-inset-bottom) + 8px);
+  }
   .temporary-guidance-banner[hidden] { display: none; }
   .temporary-guidance-copy {
     display: flex;
@@ -736,6 +739,9 @@
     border-radius: 6px;
     background: white;
     flex: 0 0 auto;
+  }
+  .work-mode-switch[hidden] {
+    display: none;
   }
   .work-mode-switch button {
     width: 46px;
@@ -1163,6 +1169,9 @@
     border-color: var(--paper);
   }
   body.work-mode-delivery .input-only-control {
+    display: none !important;
+  }
+  body.app-mode-pickup .input-only-control {
     display: none !important;
   }
 
@@ -2004,7 +2013,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.103</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.104</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2077,7 +2086,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.103</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.104</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2518,7 +2527,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.103';
+const APP_VERSION = 'v2026.06.24-test.104';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -4198,12 +4207,25 @@ function modeLabel() {
 }
 
 function updateWorkModeUi() {
+  const inputModeAvailable = appMode === 'delivery';
+  const inputModeActive = inputModeAvailable && workMode === 'input';
   const deliveryMode = workMode === 'delivery';
+  document.body.classList.toggle('app-mode-pickup', !inputModeAvailable);
   document.body.classList.toggle('work-mode-delivery', deliveryMode);
   if (!deliveryMode) {
     showMapboxGuidanceSurface();
   }
   updateGuidanceProviderUi();
+  const switcher = document.querySelector('.work-mode-switch');
+  if (switcher) {
+    switcher.hidden = !inputModeAvailable;
+    switcher.inert = !inputModeAvailable;
+    switcher.setAttribute('aria-hidden', inputModeAvailable ? 'false' : 'true');
+  }
+  document.querySelectorAll('.input-only-control').forEach(control => {
+    control.inert = !inputModeActive;
+    control.setAttribute('aria-hidden', inputModeActive ? 'false' : 'true');
+  });
   const inputButton = $('btn-work-mode-input');
   const deliveryButton = $('btn-work-mode-delivery');
   if (inputButton) {
@@ -4218,6 +4240,7 @@ function updateWorkModeUi() {
 
 function setWorkMode(mode, options = {}) {
   if (mode !== 'input' && mode !== 'delivery') return;
+  if (appMode !== 'delivery') return;
   workMode = mode;
   localStorage.setItem(WORK_MODE_KEY, workMode);
   if (workMode === 'delivery' && batchPhotoMode) {
@@ -4463,6 +4486,10 @@ function updatePickupListTabs() {
 }
 
 function updateModeUi() {
+  if (appMode === 'pickup' && batchPhotoMode) {
+    setBatchPhotoMode(false, { summary: false, toast: false });
+  }
+  updateWorkModeUi();
   renderCourseSelectorUi();
   const menuBtn = $('menu-toggle-mode');
   if (menuBtn) {
