@@ -637,6 +637,13 @@
   }
   body.placing-mode .placement-banner { display: block; }
 
+  body.road-memory-placing #map {
+    box-shadow: inset 0 0 0 4px #dc2626;
+  }
+  body.road-memory-placing .placement-banner {
+    background: #dc2626;
+  }
+
   .temporary-guidance-banner {
     position: fixed;
     left: 50%;
@@ -1361,6 +1368,55 @@
     color: #c2410c;
     border-color: #f97316;
   }
+  .edit-location-memory-status {
+    display: none;
+    margin: -4px 0 10px;
+    color: #047857;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.45;
+  }
+  .edit-location-memory-status.show { display: block; }
+  .approach-memory-row {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #cfc9b8;
+  }
+  .approach-memory-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 7px;
+  }
+  .approach-memory-heading strong {
+    font-size: 13px;
+  }
+  .approach-memory-heading span {
+    color: #5f5a49;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: right;
+  }
+  .approach-memory-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+  }
+  .approach-memory-actions button {
+    min-height: 42px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .approach-memory-actions button.primary {
+    background: #047857;
+    color: #fff;
+  }
+  .approach-memory-actions button[hidden] { display: none; }
   .photo-preview {
     width: 100%;
     height: min(52dvh, 420px);
@@ -1811,6 +1867,53 @@
     white-space: pre-wrap;
   }
 
+  .road-memory-summary {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border-left: 4px solid #dc2626;
+    background: #fef2f2;
+    color: #7f1d1d;
+    font-size: calc(12px * var(--text-scale));
+    font-weight: 700;
+    line-height: 1.5;
+  }
+  .road-memory-list {
+    max-height: 42dvh;
+    overflow-y: auto;
+  }
+  .road-memory-row {
+    padding: 9px 0;
+    border-bottom: 1px solid #d8d0b7;
+  }
+  .road-memory-row strong {
+    display: block;
+    font-size: calc(13px * var(--text-scale));
+  }
+  .road-memory-row small {
+    display: block;
+    margin-top: 3px;
+    color: #5f5a49;
+    font-size: calc(11px * var(--text-scale));
+    line-height: 1.4;
+  }
+  .road-memory-row-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-top: 7px;
+  }
+  .road-memory-row-actions button {
+    min-height: 38px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    background: #fff;
+    font-weight: 800;
+  }
+  .road-memory-row-actions button.danger {
+    background: #dc2626;
+    color: #fff;
+  }
+
   .route-area-intro {
     margin: 0 0 12px;
     color: var(--ink-soft);
@@ -2013,7 +2116,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.104</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.105</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2036,7 +2139,7 @@
   <div class="course-selector-row" id="course-mode-row" aria-label="配送・集荷"></div>
 </div>
 
-<div class="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
+<div class="placement-banner" id="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
 
 <div class="temporary-guidance-banner" id="temporary-guidance-banner" role="status" aria-live="polite" hidden>
   <div class="temporary-guidance-copy">
@@ -2086,7 +2189,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.104</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.105</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2100,6 +2203,7 @@
       <button id="menu-optimize-recommended" type="button">📐 エリア相談 → 直線距離で比較（道路未考慮）</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
+      <button id="menu-road-memory" type="button">🚧 Mapbox案内線: 通れない道路・進入方向</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
       <button id="menu-delivery-sync" type="button">🔗 デバイス間データ共有</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
@@ -2122,6 +2226,21 @@
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-menu">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-road-memory">
+  <div class="modal">
+    <h3>通れない道路・進入方向</h3>
+    <div class="modal-help">
+      地図上で通れない道路を指定すると、次回からMapboxのオレンジ・青の案内線がその道路を避けます。進入方向は各配送先の編集画面で記憶します。Google案内は変更しません。
+    </div>
+    <button class="inline-action" id="btn-road-memory-add" type="button">🚧 地図で通れない道路を指定</button>
+    <div class="road-memory-summary" id="road-memory-summary"></div>
+    <div class="road-memory-list" id="road-memory-list"></div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-road-memory">閉じる</button>
     </div>
   </div>
 </div>
@@ -2405,6 +2524,7 @@
     <label for="edit-address">住所</label>
     <input type="text" id="edit-address">
     <button class="inline-action" id="btn-edit-geocode" type="button">住所再検索</button>
+    <div class="edit-location-memory-status" id="edit-location-memory-status"></div>
     <label for="edit-note">備考</label>
     <textarea id="edit-note"></textarea>
     <label for="edit-package-type">荷物情報（任意）</label>
@@ -2429,6 +2549,16 @@
     <label for="edit-package-count">荷物の個数 (複数個口)</label>
     <input type="number" id="edit-package-count" min="1" step="1" inputmode="numeric">
     <button class="temporary-guidance-action" id="btn-edit-temporary-guidance" type="button">➜ このピンへ一時案内</button>
+    <div class="approach-memory-row" id="edit-approach-memory-row">
+      <div class="approach-memory-heading">
+        <strong>車の進入方向</strong>
+        <span id="edit-approach-memory-status">未登録</span>
+      </div>
+      <div class="approach-memory-actions">
+        <button class="primary" id="btn-edit-remember-approach" type="button">今の到着方向を記憶</button>
+        <button id="btn-edit-clear-approach" type="button" hidden>解除</button>
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="done" id="btn-edit-done" type="button">完了</button>
       <button class="go" id="btn-edit-navi" type="button">ナビ</button>
@@ -2527,7 +2657,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.104';
+const APP_VERSION = 'v2026.06.24-test.105';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2597,6 +2727,10 @@ const GUIDANCE_PROVIDER_KEY = 'rys-mapbox-test-guidance-provider-v1';
 const GUIDANCE_ROUTE_CACHE_KEY = 'rys-mapbox-test-guidance-route-cache-v1';
 const GUIDANCE_ROUTE_CACHE_VERSION = 1;
 const GUIDANCE_ROUTE_CACHE_MAX_AGE_MS = 18 * 60 * 60 * 1000;
+const ROAD_MEMORY_KEY = 'rys-mapbox-test-road-memory-v1';
+const ROAD_MEMORY_MAX_BLOCKED_ITEMS = 200;
+const ROAD_MEMORY_ROUTE_POINT_LIMIT = 50;
+const ROAD_MEMORY_ROUTE_RADIUS_METERS = 15000;
 const GOOGLE_GUIDANCE_FEATURE_ENABLED = true;
 const FLOW_GUIDANCE_MAX_WALK_METERS = 60;
 const GEOCODE_CACHE_MAX_ITEMS = 500;
@@ -2768,6 +2902,7 @@ let userMarker = null;
 let userMarkerEl = null;
 let placingItemId = null;
 let pendingPlacementCoord = null;
+let roadMemoryPlacementMode = false;
 let editingItemId = null;
 let confirmCallback = null;
 let routeAreaPlannerState = null;
@@ -2796,6 +2931,8 @@ let pendingPhotoPackageType = '';
 let pendingAddPhoto = null;
 let pendingOcrJob = null;      // { rotation, controller, promise } — プレビュー表示中に先行実行するOCR
 let lastKnownGps = null;       // { lat, lng } — 要確認ピン判定に使う最新GPS
+let lastReliableGpsHeading = null;
+let recentGpsTrail = [];
 const reviewPhotoUrls = new Map(); // IndexedDB保存失敗時の要確認写真フォールバック
 let deliveryPhotoDbPromise = null;
 let deliveryPhotoPersistenceRequested = false;
@@ -2847,6 +2984,8 @@ let temporaryGuidanceBusy = false;
 let guidanceRefreshBusy = false;
 let guidanceProvider = GOOGLE_GUIDANCE_FEATURE_ENABLED &&
   localStorage.getItem(GUIDANCE_PROVIDER_KEY) !== 'mapbox' ? 'google' : 'mapbox';
+let roadMemoryState = null;
+let roadMemoryWarningAt = 0;
 let googleGuidanceConfigPromise = null;
 let googleGuidanceScriptPromise = null;
 let googleGuidanceMap = null;
@@ -4944,8 +5083,19 @@ function initMap() {
     $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
   });
   map.on('click', (e) => {
-    if (!placingItemId) return;
     pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+    if (roadMemoryPlacementMode) {
+      showConfirm(
+        '通れない道路を記憶',
+        'この場所の道路を、今後の案内線から避けますか？',
+        () => commitRoadBlockPlacement()
+      );
+      return;
+    }
+    if (!placingItemId) {
+      pendingPlacementCoord = null;
+      return;
+    }
     const d = deliveries.find(x => x.id === placingItemId);
     showConfirm(
       '位置を変更',
@@ -5004,6 +5154,7 @@ function initMap() {
       addGeoshapeNeighborhoodLayers();
       addGsiOverlayLayer();
       addBanchiLayer();
+      renderRoadMemoryMapLayers();
       banchiScheduleUpdate(0);
       updateZoomBadge();
       resolve();
@@ -5055,6 +5206,9 @@ const FLOW_WALK_SOURCE_ID = 'flow-walk';
 const FLOW_WALK_LAYER_ID = 'flow-walk-line';
 const FLOW_STOP_SOURCE_ID = 'flow-stop';
 const FLOW_STOP_LAYER_ID = 'flow-stop-circle';
+const ROAD_MEMORY_SOURCE_ID = 'road-memory-blocks';
+const ROAD_MEMORY_CIRCLE_LAYER_ID = 'road-memory-block-circles';
+const ROAD_MEMORY_LABEL_LAYER_ID = 'road-memory-block-labels';
 
 function addNeighborhoodLayer(layer) {
   if (map.getLayer(layer.id)) return;
@@ -7069,12 +7223,14 @@ async function fetchDrivingSegmentGeometry(start, destination) {
     if (Number.isFinite(start.heading)) body.heading = start.heading;
     if (Number.isFinite(start.speed)) body.speed = start.speed;
     if (Number.isFinite(start.accuracy)) body.accuracy = start.accuracy;
+    appendRoadMemoryRouteOptions(body, start, destination);
     const res = await fetch(ROAD_SEGMENT_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     const data = res.ok ? await res.json() : null;
+    announceRoadMemoryRouteResult(data, body);
     const geometry = data && data.ok ? data.geometry : null;
     if (!validRouteLineGeometry(geometry)) return null;
     return geometry;
@@ -7094,6 +7250,7 @@ async function fetchFlowAwareSegments(start, destination, following) {
     if (Number.isFinite(start.heading)) body.heading = start.heading;
     if (Number.isFinite(start.speed)) body.speed = start.speed;
     if (Number.isFinite(start.accuracy)) body.accuracy = start.accuracy;
+    appendRoadMemoryRouteOptions(body, start, destination, following);
     const res = await fetch(ROAD_FLOW_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -7104,6 +7261,7 @@ async function fetchFlowAwareSegments(start, destination, following) {
     if (!res.ok || !data || !data.ok ||
         !validRouteLineGeometry(data.orangeGeometry) ||
         !validRouteLineGeometry(data.blueGeometry)) return null;
+    announceRoadMemoryRouteResult(data, body);
     return data;
   } catch (e) {
     return null;
@@ -9387,7 +9545,11 @@ async function startPlacement(id) {
   if (!d) return;
   if (isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
   showMapboxGuidanceSurface();
+  roadMemoryPlacementMode = false;
   placingItemId = id;
+  const banner = $('placement-banner');
+  if (banner) banner.textContent = '📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)';
+  document.body.classList.remove('road-memory-placing');
   document.body.classList.add('placing-mode');
   showToast('地図上で位置をタップしてください');
 }
@@ -9460,11 +9622,13 @@ async function commitPlacement() {
 }
 
 function cancelPlacement() {
+  const wasRoadMemory = roadMemoryPlacementMode;
   placingItemId = null;
   pendingPlacementCoord = null;
-  document.body.classList.remove('placing-mode');
+  roadMemoryPlacementMode = false;
+  document.body.classList.remove('placing-mode', 'road-memory-placing');
   if (guidanceProvider === 'google' && guidanceHasRouteTarget()) updateNextSegmentHighlight();
-  showToast('位置修正をキャンセル');
+  showToast(wasRoadMemory ? '通れない道路の登録をキャンセル' : '位置修正をキャンセル');
 }
 
 function setEditFieldVisible(id, visible) {
@@ -9493,6 +9657,8 @@ function setEditModalProcessingLayout(processing) {
     $('btn-edit-navi').hidden = true;
     $('btn-edit-delete').hidden = true;
     $('btn-edit-temporary-guidance').hidden = true;
+    $('edit-approach-memory-row').hidden = true;
+    $('edit-location-memory-status').classList.remove('show');
     $('btn-edit-cancel').textContent = '閉じる';
     $('btn-edit-save').textContent = '住所処理中…';
     $('btn-edit-save').disabled = true;
@@ -9716,6 +9882,7 @@ function openEdit(id) {
   if (cancelBtn) cancelBtn.textContent = immediatePhotoReview
     ? (singlePhotoReview ? '後で確認' : '連写を終了')
     : 'キャンセル';
+  updateEditRoadMemoryUi(d);
   updateGuidanceBannerUi();
   openModal('modal-edit');
   resetEditModalScroll();
@@ -12981,6 +13148,381 @@ function distanceMeters(a, b) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
+function emptyRoadMemoryState() {
+  return { version: 1, blocked: [], approaches: {}, updatedAt: 0 };
+}
+
+function normalizeRoadMemoryState(value) {
+  const normalized = emptyRoadMemoryState();
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return normalized;
+
+  const usedIds = new Set();
+  const blocked = Array.isArray(value.blocked) ? value.blocked : [];
+  blocked.forEach(item => {
+    if (!item || !Number.isFinite(Number(item.lat)) || !Number.isFinite(Number(item.lng))) return;
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
+    const id = String(item.id || uid());
+    if (usedIds.has(id)) return;
+    usedIds.add(id);
+    normalized.blocked.push({
+      id,
+      lat,
+      lng,
+      createdAt: Number(item.createdAt || Date.now()),
+      updatedAt: Number(item.updatedAt || item.createdAt || Date.now())
+    });
+  });
+  normalized.blocked.sort((a, b) => b.updatedAt - a.updatedAt);
+  normalized.blocked = normalized.blocked.slice(0, ROAD_MEMORY_MAX_BLOCKED_ITEMS);
+
+  const approaches = value.approaches && typeof value.approaches === 'object' && !Array.isArray(value.approaches)
+    ? value.approaches
+    : {};
+  Object.entries(approaches).forEach(([key, item]) => {
+    if (!key || !item || !Number.isFinite(Number(item.heading))) return;
+    const heading = ((Math.round(Number(item.heading)) % 360) + 360) % 360;
+    normalized.approaches[key] = {
+      heading,
+      address: String(item.address || '').slice(0, 300),
+      createdAt: Number(item.createdAt || item.updatedAt || Date.now()),
+      updatedAt: Number(item.updatedAt || item.createdAt || Date.now())
+    };
+  });
+  normalized.updatedAt = Number(value.updatedAt || 0);
+  return normalized;
+}
+
+function loadRoadMemoryState() {
+  if (roadMemoryState) return roadMemoryState;
+  try {
+    roadMemoryState = normalizeRoadMemoryState(JSON.parse(localStorage.getItem(ROAD_MEMORY_KEY) || '{}'));
+  } catch (e) {
+    roadMemoryState = emptyRoadMemoryState();
+  }
+  return roadMemoryState;
+}
+
+function persistRoadMemoryState() {
+  const state = loadRoadMemoryState();
+  state.updatedAt = Date.now();
+  localStorage.setItem(ROAD_MEMORY_KEY, JSON.stringify(state));
+  renderRoadMemoryMapLayers();
+  renderRoadMemoryModal();
+}
+
+function roadMemoryApproachKey(delivery) {
+  return canonicalAddressForCache(delivery && delivery.address || '');
+}
+
+function roadMemoryApproachForDelivery(delivery) {
+  const key = roadMemoryApproachKey(delivery);
+  return key ? loadRoadMemoryState().approaches[key] || null : null;
+}
+
+function roadMemoryHeadingForDelivery(delivery) {
+  const item = roadMemoryApproachForDelivery(delivery);
+  return item && Number.isFinite(Number(item.heading)) ? Number(item.heading) : null;
+}
+
+function compassHeadingLabel(value) {
+  if (!Number.isFinite(Number(value))) return '未登録';
+  const heading = ((Number(value) % 360) + 360) % 360;
+  const labels = ['北向き', '北東向き', '東向き', '南東向き', '南向き', '南西向き', '西向き', '北西向き'];
+  return `${labels[Math.round(heading / 45) % 8]} (${Math.round(heading)}°)`;
+}
+
+function roadMemoryRoutePoints(start, destination, following = null) {
+  const referencePoints = [start, destination, following]
+    .filter(point => point && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng)))
+    .map(point => ({ lat: Number(point.lat), lng: Number(point.lng) }));
+  if (!referencePoints.length) return [];
+  return loadRoadMemoryState().blocked
+    .map(item => ({
+      id: item.id,
+      lat: Number(item.lat),
+      lng: Number(item.lng),
+      distance: Math.min(...referencePoints.map(point => distanceMeters(point, item)))
+    }))
+    .filter(item => Number.isFinite(item.distance) && item.distance <= ROAD_MEMORY_ROUTE_RADIUS_METERS)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, ROAD_MEMORY_ROUTE_POINT_LIMIT)
+    .map(({ lat, lng }) => ({ lat, lng }));
+}
+
+function appendRoadMemoryRouteOptions(body, start, destination, following = null) {
+  const blockedPoints = roadMemoryRoutePoints(start, destination, following);
+  if (blockedPoints.length) body.blocked_points = blockedPoints;
+  const destinationHeading = roadMemoryHeadingForDelivery(destination);
+  if (destinationHeading !== null) body.destination_heading = destinationHeading;
+  const followingHeading = roadMemoryHeadingForDelivery(following);
+  if (followingHeading !== null) body.following_heading = followingHeading;
+  return body;
+}
+
+function announceRoadMemoryRouteResult(result, requestBody) {
+  if (!result || Date.now() - roadMemoryWarningAt < 60000) return;
+  if (result.roadMemoryUnavoidable) {
+    roadMemoryWarningAt = Date.now();
+    showToast('Mapboxでは登録した通れない道路を避け切れませんでした。現地標識を優先してください', true);
+    return;
+  }
+  const destinationRequested = requestBody
+    && Object.prototype.hasOwnProperty.call(requestBody, 'destination_heading');
+  const followingRequested = requestBody
+    && Object.prototype.hasOwnProperty.call(requestBody, 'following_heading');
+  const approachMissed = (destinationRequested && result.destinationHeadingApplied === false)
+    || (followingRequested && result.followingHeadingApplied === false);
+  if (approachMissed) {
+    roadMemoryWarningAt = Date.now();
+    showToast('記憶した進入方向で経路を作れなかったため、通常のMapbox経路を表示します', true);
+  }
+}
+
+function roadMemoryFeatureCollection() {
+  return {
+    type: 'FeatureCollection',
+    features: loadRoadMemoryState().blocked.map(item => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [Number(item.lng), Number(item.lat)] },
+      properties: { id: item.id }
+    }))
+  };
+}
+
+function addRoadMemoryLayer(layer) {
+  if (!map || map.getLayer(layer.id)) return;
+  try {
+    map.addLayer(layer);
+  } catch (e) {
+    try {
+      const { slot, ...fallback } = layer;
+      map.addLayer(fallback);
+    } catch (ignored) {}
+  }
+}
+
+function renderRoadMemoryMapLayers() {
+  if (!map || !mapStyleLoaded) return;
+  const data = roadMemoryFeatureCollection();
+  const source = map.getSource(ROAD_MEMORY_SOURCE_ID);
+  if (source) {
+    source.setData(data);
+  } else {
+    map.addSource(ROAD_MEMORY_SOURCE_ID, { type: 'geojson', data });
+  }
+  addRoadMemoryLayer({
+    id: ROAD_MEMORY_CIRCLE_LAYER_ID,
+    type: 'circle',
+    source: ROAD_MEMORY_SOURCE_ID,
+    minzoom: 13,
+    slot: 'top',
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 6, 17, 10],
+      'circle-color': '#dc2626',
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 3,
+      'circle-opacity': 0.95
+    }
+  });
+  addRoadMemoryLayer({
+    id: ROAD_MEMORY_LABEL_LAYER_ID,
+    type: 'symbol',
+    source: ROAD_MEMORY_SOURCE_ID,
+    minzoom: 13,
+    slot: 'top',
+    layout: {
+      'text-field': '×',
+      'text-size': ['interpolate', ['linear'], ['zoom'], 13, 12, 17, 18],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true
+    },
+    paint: {
+      'text-color': '#ffffff',
+      'text-halo-color': '#7f1d1d',
+      'text-halo-width': 1
+    }
+  });
+}
+
+function renderRoadMemoryModal() {
+  const summary = $('road-memory-summary');
+  const list = $('road-memory-list');
+  if (!summary || !list) return;
+  const state = loadRoadMemoryState();
+  const approachCount = Object.keys(state.approaches).length;
+  summary.textContent = `通れない道路 ${state.blocked.length}件 / 進入方向 ${approachCount}件を記憶中`;
+  if (!state.blocked.length) {
+    list.innerHTML = '<div class="modal-help">通れない道路はまだ登録されていません。</div>';
+    return;
+  }
+  list.innerHTML = state.blocked.map((item, index) => {
+    const date = new Date(item.updatedAt || item.createdAt || Date.now());
+    const dateText = Number.isNaN(date.getTime()) ? '' : date.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return `
+      <div class="road-memory-row" data-road-memory-id="${escapeHtml(item.id)}">
+        <strong>通れない道路 ${index + 1}</strong>
+        <small>${escapeHtml(dateText)} / ${Number(item.lat).toFixed(6)}, ${Number(item.lng).toFixed(6)}</small>
+        <div class="road-memory-row-actions">
+          <button type="button" data-road-memory-action="focus">地図で見る</button>
+          <button class="danger" type="button" data-road-memory-action="delete">解除</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function openRoadMemoryModal() {
+  closeModal('modal-menu');
+  renderRoadMemoryModal();
+  openModal('modal-road-memory');
+}
+
+function startRoadBlockPlacement() {
+  closeModal('modal-road-memory');
+  closeModal('modal-menu');
+  showMapboxGuidanceSurface();
+  placingItemId = null;
+  pendingPlacementCoord = null;
+  roadMemoryPlacementMode = true;
+  const banner = $('placement-banner');
+  if (banner) banner.textContent = '🚧 通れない道路を地図でタップ (この帯を押すとキャンセル)';
+  document.body.classList.add('placing-mode', 'road-memory-placing');
+  showToast('通れない道路の中央付近を地図でタップしてください');
+}
+
+function commitRoadBlockPlacement() {
+  if (!roadMemoryPlacementMode || !pendingPlacementCoord) return;
+  const state = loadRoadMemoryState();
+  state.blocked.unshift({
+    id: uid(),
+    lat: Number(pendingPlacementCoord.lat),
+    lng: Number(pendingPlacementCoord.lng),
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  });
+  state.blocked = state.blocked.slice(0, ROAD_MEMORY_MAX_BLOCKED_ITEMS);
+  roadMemoryPlacementMode = false;
+  pendingPlacementCoord = null;
+  document.body.classList.remove('placing-mode', 'road-memory-placing');
+  persistRoadMemoryState();
+  refreshGuidanceAfterRoadMemoryChange();
+  showToast('この道路を通れない道路として記憶しました');
+}
+
+function focusRoadMemoryItem(id) {
+  const item = loadRoadMemoryState().blocked.find(row => row.id === id);
+  if (!item || !map) return;
+  closeModal('modal-road-memory');
+  showMapboxGuidanceSurface();
+  map.flyTo({ center: [item.lng, item.lat], zoom: Math.max(map.getZoom(), 18), speed: 1.2 });
+}
+
+function deleteRoadMemoryItem(id) {
+  const item = loadRoadMemoryState().blocked.find(row => row.id === id);
+  if (!item) return;
+  showConfirm('通れない道路を解除', 'この道路を、避ける対象から外しますか？', () => {
+    const state = loadRoadMemoryState();
+    state.blocked = state.blocked.filter(row => row.id !== id);
+    persistRoadMemoryState();
+    refreshGuidanceAfterRoadMemoryChange();
+    showToast('通れない道路の記憶を解除しました');
+  });
+}
+
+function bestArrivalHeading(delivery) {
+  if (lastKnownGps && lastKnownGps.heading !== null && Number.isFinite(Number(lastKnownGps.heading))) {
+    return Number(lastKnownGps.heading);
+  }
+  if (recentGpsTrail.length >= 2) {
+    const latest = recentGpsTrail[recentGpsTrail.length - 1];
+    for (let index = recentGpsTrail.length - 2; index >= 0; index--) {
+      const earlier = recentGpsTrail[index];
+      const moved = distanceMeters(earlier, latest);
+      if (moved >= 8 && moved <= 200) {
+        const heading = routeBearingDegrees(earlier, latest);
+        if (Number.isFinite(heading)) return heading;
+      }
+    }
+  }
+  if (lastKnownGps && delivery && Number.isFinite(Number(delivery.lat)) && Number.isFinite(Number(delivery.lng))) {
+    const remaining = distanceMeters(lastKnownGps, delivery);
+    if (remaining >= 8 && remaining <= 500) {
+      const heading = routeBearingDegrees(lastKnownGps, delivery);
+      if (Number.isFinite(heading)) return heading;
+    }
+  }
+  return lastReliableGpsHeading !== null && Number.isFinite(Number(lastReliableGpsHeading))
+    ? Number(lastReliableGpsHeading)
+    : null;
+}
+
+function updateEditRoadMemoryUi(delivery) {
+  const locationStatus = $('edit-location-memory-status');
+  if (locationStatus) {
+    const cached = delivery ? getCachedGeocode(geocodeCacheKey(delivery.address)) : null;
+    const remembered = !!(cached && cached.manual);
+    locationStatus.textContent = remembered ? '✓ この住所は、手動で直したピン位置を記憶済みです' : '';
+    locationStatus.classList.toggle('show', remembered);
+  }
+
+  const row = $('edit-approach-memory-row');
+  const status = $('edit-approach-memory-status');
+  const clearButton = $('btn-edit-clear-approach');
+  const immediatePhotoReview = !!(delivery && batchReviewEditingId === delivery.id);
+  if (row) row.hidden = !delivery || immediatePhotoReview;
+  const approach = delivery ? roadMemoryApproachForDelivery(delivery) : null;
+  if (status) status.textContent = approach ? compassHeadingLabel(approach.heading) : '未登録';
+  if (clearButton) clearButton.hidden = !approach;
+}
+
+function rememberEditedApproach() {
+  const delivery = deliveries.find(item => item.id === editingItemId);
+  if (!delivery) return;
+  const heading = bestArrivalHeading(delivery);
+  if (!Number.isFinite(Number(heading))) {
+    showToast('進行方向を取得できません。GPS追跡中に少し移動してから、もう一度押してください', true);
+    return;
+  }
+  const key = roadMemoryApproachKey(delivery);
+  if (!key) return;
+  const now = Date.now();
+  const state = loadRoadMemoryState();
+  const existing = state.approaches[key];
+  state.approaches[key] = {
+    heading: ((Math.round(Number(heading)) % 360) + 360) % 360,
+    address: delivery.address || '',
+    createdAt: existing ? existing.createdAt : now,
+    updatedAt: now
+  };
+  persistRoadMemoryState();
+  updateEditRoadMemoryUi(delivery);
+  refreshGuidanceAfterRoadMemoryChange();
+  showToast(`この住所への進入方向を${compassHeadingLabel(heading)}で記憶しました`);
+}
+
+function clearEditedApproach() {
+  const delivery = deliveries.find(item => item.id === editingItemId);
+  const key = roadMemoryApproachKey(delivery);
+  if (!delivery || !key || !loadRoadMemoryState().approaches[key]) return;
+  showConfirm('進入方向を解除', 'この住所に記憶した進入方向を解除しますか？', () => {
+    delete loadRoadMemoryState().approaches[key];
+    persistRoadMemoryState();
+    updateEditRoadMemoryUi(delivery);
+    refreshGuidanceAfterRoadMemoryChange();
+    showToast('進入方向の記憶を解除しました');
+  });
+}
+
+function refreshGuidanceAfterRoadMemoryChange() {
+  saveGuidanceRouteCache({ route: null });
+  if (temporaryGuidanceTargetId) {
+    refreshTemporaryGuidanceLine({ announce: false, refresh: true });
+  } else if (optimizedRouteOrderedIds.length) {
+    updateNextSegmentHighlight();
+  }
+}
+
 const ROUTE_AREA_UNKNOWN_KEY = '__route_area_unknown__';
 const ROUTE_AREA_UNKNOWN_LABEL = 'エリア不明';
 const ROUTE_AREA_FARTHEST_KEY = '__route_area_farthest__';
@@ -14144,6 +14686,15 @@ function updateUserLocation(pos, moveMap = false) {
       && (!Number.isFinite(accuracy) || accuracy <= 50)
     ? ((rawHeading % 360) + 360) % 360
     : null;
+  if (Number.isFinite(heading)) lastReliableGpsHeading = heading;
+  const trailPoint = { lat: latitude, lng: longitude, at: Date.now() };
+  const previousTrailPoint = recentGpsTrail[recentGpsTrail.length - 1];
+  if (!previousTrailPoint || distanceMeters(previousTrailPoint, trailPoint) >= 3) {
+    recentGpsTrail.push(trailPoint);
+  }
+  recentGpsTrail = recentGpsTrail
+    .filter(point => Date.now() - Number(point.at || 0) <= 2 * 60 * 1000)
+    .slice(-12);
   lastKnownGps = { lat: latitude, lng: longitude, heading, speed, accuracy };
   updateGoogleGuidanceUserMarker();
   banchiSchedulePrefetch(longitude, latitude);
@@ -14427,6 +14978,8 @@ $('btn-edit-geocode').addEventListener('click', reGeocodeEditedItem);
 $('btn-edit-done').addEventListener('click', toggleEditedItemDone);
 $('btn-edit-navi').addEventListener('click', openEditedItemNavigation);
 $('btn-edit-temporary-guidance').addEventListener('click', toggleEditedItemTemporaryGuidance);
+$('btn-edit-remember-approach').addEventListener('click', rememberEditedApproach);
+$('btn-edit-clear-approach').addEventListener('click', clearEditedApproach);
 $('btn-edit-delete').addEventListener('click', deleteEditedItem);
 $('btn-edit-photo-open').addEventListener('click', handleEditPhotoOpenClick);
 $('btn-edit-photo-prev').addEventListener('click', () => moveEditPhoto(-1));
@@ -14450,6 +15003,15 @@ $('menu-optimize-recommended').addEventListener('click', optimizeRecommendedRout
 $('menu-optimize-road-blocks').addEventListener('click', optimizeRoadBlockRouteOrder);
 $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
 $('menu-optimize-google').addEventListener('click', optimizeGoogleCarRouteOrder);
+$('menu-road-memory').addEventListener('click', openRoadMemoryModal);
+$('btn-road-memory-add').addEventListener('click', startRoadBlockPlacement);
+$('road-memory-list').addEventListener('click', event => {
+  const button = event.target.closest('[data-road-memory-action]');
+  const row = button && button.closest('[data-road-memory-id]');
+  if (!button || !row) return;
+  if (button.dataset.roadMemoryAction === 'focus') focusRoadMemoryItem(row.dataset.roadMemoryId);
+  if (button.dataset.roadMemoryAction === 'delete') deleteRoadMemoryItem(row.dataset.roadMemoryId);
+});
 $('route-area-first').addEventListener('change', event => {
   if (!routeAreaPlannerState) return;
   routeAreaPlannerState.selectedFirstKey = event.target.value;
@@ -14574,7 +15136,7 @@ $('btn-list-search-clear').addEventListener('click', () => {
   renderList();
   renderMarkers();
 });
-document.querySelector('.placement-banner').addEventListener('click', cancelPlacement);
+$('placement-banner').addEventListener('click', cancelPlacement);
 $('btn-temporary-guidance-refresh').addEventListener('click', () => {
   refreshCurrentGuidanceLine();
 });
@@ -14603,6 +15165,8 @@ registerNativeBackButtonHandler();
     applyTextSize(currentTextSize(), false);
     updateWorkModeUi();
     updateGuidanceProviderUi();
+    loadRoadMemoryState();
+    renderRoadMemoryModal();
     if (localStorage.getItem(LIST_COLLAPSED_KEY) === '1') {
       document.body.classList.add('list-collapsed');
     }

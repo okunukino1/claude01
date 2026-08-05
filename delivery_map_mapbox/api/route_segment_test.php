@@ -55,6 +55,42 @@ function normalize_segment_point($value) {
   return ['lat' => $lat, 'lng' => $lng];
 }
 
+function normalize_segment_heading($value) {
+  if (!is_numeric($value)) return null;
+  $heading = (float)$value;
+  if (!is_finite($heading) || $heading < 0 || $heading > 360) return null;
+  return fmod($heading + 360.0, 360.0);
+}
+
+function normalize_segment_blocked_points($value) {
+  if (!is_array($value)) return [];
+  $points = [];
+  foreach ($value as $candidate) {
+    $point = normalize_segment_point($candidate);
+    if (!$point) continue;
+    $key = number_format($point['lat'], 7, '.', '') . ',' . number_format($point['lng'], 7, '.', '');
+    $points[$key] = $point;
+    if (count($points) >= 50) break;
+  }
+  return array_values($points);
+}
+
+function segment_point_exclusions($points) {
+  return implode(',', array_map(function($point) {
+    return 'point(' . number_format((float)$point['lng'], 7, '.', '') . ' '
+      . number_format((float)$point['lat'], 7, '.', '') . ')';
+  }, $points));
+}
+
+function segment_has_point_exclusion_violation($value) {
+  if (!is_array($value)) return false;
+  if (($value['subtype'] ?? '') === 'pointExclusion') return true;
+  foreach ($value as $child) {
+    if (is_array($child) && segment_has_point_exclusion_violation($child)) return true;
+  }
+  return false;
+}
+
 $start = normalize_segment_point($input['start'] ?? null);
 $destination = normalize_segment_point($input['destination'] ?? null);
 if (!$start || !$destination) {
@@ -63,13 +99,9 @@ if (!$start || !$destination) {
   exit;
 }
 
-$heading = null;
-if (isset($input['heading']) && is_numeric($input['heading'])) {
-  $candidateHeading = (float)$input['heading'];
-  if (is_finite($candidateHeading) && $candidateHeading >= 0 && $candidateHeading <= 360) {
-    $heading = $candidateHeading;
-  }
-}
+$heading = normalize_segment_heading($input['heading'] ?? null);
+$destinationHeading = normalize_segment_heading($input['destination_heading'] ?? null);
+$blockedPoints = normalize_segment_blocked_points($input['blocked_points'] ?? null);
 
 $speed = isset($input['speed']) && is_numeric($input['speed'])
   ? max(0.0, min(60.0, (float)$input['speed']))
@@ -98,7 +130,7 @@ function segment_request_origin() {
   return ($https ? 'https://' : 'http://') . $host . '/';
 }
 
-function call_segment_directions($profile, $start, $destination, $token, $heading, $useCurb, $useSafetySnap, $avoidManeuverRadius, $originSnapRadius) {
+function call_segment_directions($profile, $start, $destination, $token, $heading, $destinationHeading, $blockedPoints, $useCurb, $useSafetySnap, $avoidManeuverRadius, $originSnapRadius) {
   $coords = rawurlencode((string)$start['lng']) . ',' . rawurlencode((string)$start['lat']) . ';'
     . rawurlencode((string)$destination['lng']) . ',' . rawurlencode((string)$destination['lat']);
   $params = [
@@ -107,11 +139,16 @@ function call_segment_directions($profile, $start, $destination, $token, $headin
     'overview' => 'full',
     'steps' => 'false',
     'language' => 'ja',
-    'continue_straight' => 'true'
+    'continue_straight' => 'true',
+    'notifications' => 'all'
   ];
   if ($profile === 'mapbox/driving-traffic') $params['depart_at'] = 'now';
   if ($useCurb) $params['approaches'] = 'unrestricted;curb';
-  if ($heading !== null) $params['bearings'] = round($heading, 1) . ',45;';
+  if ($heading !== null || $destinationHeading !== null) {
+    $params['bearings'] = ($heading === null ? '' : round($heading, 1) . ',45') . ';'
+      . ($destinationHeading === null ? '' : round($destinationHeading, 1) . ',45');
+  }
+  if (count($blockedPoints)) $params['exclude'] = segment_point_exclusions($blockedPoints);
   if ($useSafetySnap && $avoidManeuverRadius !== null) {
     $params['avoid_maneuver_radius'] = (string)$avoidManeuverRadius;
   }
@@ -164,12 +201,14 @@ function call_segment_directions($profile, $start, $destination, $token, $headin
 }
 
 $attempts = [
-  ['profile' => 'mapbox/driving-traffic', 'heading' => $heading, 'curb' => false, 'safety' => true],
-  ['profile' => 'mapbox/driving-traffic', 'heading' => $heading, 'curb' => false, 'safety' => false],
-  ['profile' => 'mapbox/driving-traffic', 'heading' => null, 'curb' => false, 'safety' => false],
-  ['profile' => 'mapbox/driving-traffic', 'heading' => null, 'curb' => true, 'safety' => false],
-  ['profile' => 'mapbox/driving', 'heading' => null, 'curb' => false, 'safety' => false],
-  ['profile' => 'mapbox/driving', 'heading' => null, 'curb' => true, 'safety' => false],
+  ['profile' => 'mapbox/driving-traffic', 'heading' => $heading, 'destinationHeading' => $destinationHeading, 'curb' => false, 'safety' => true],
+  ['profile' => 'mapbox/driving-traffic', 'heading' => $heading, 'destinationHeading' => $destinationHeading, 'curb' => false, 'safety' => false],
+  ['profile' => 'mapbox/driving-traffic', 'heading' => null, 'destinationHeading' => $destinationHeading, 'curb' => false, 'safety' => false],
+  ['profile' => 'mapbox/driving-traffic', 'heading' => null, 'destinationHeading' => null, 'curb' => false, 'safety' => false],
+  ['profile' => 'mapbox/driving-traffic', 'heading' => null, 'destinationHeading' => null, 'curb' => true, 'safety' => false],
+  ['profile' => 'mapbox/driving', 'heading' => null, 'destinationHeading' => $destinationHeading, 'curb' => false, 'safety' => false],
+  ['profile' => 'mapbox/driving', 'heading' => null, 'destinationHeading' => null, 'curb' => false, 'safety' => false],
+  ['profile' => 'mapbox/driving', 'heading' => null, 'destinationHeading' => null, 'curb' => true, 'safety' => false],
 ];
 
 $lastAttempt = null;
@@ -177,6 +216,7 @@ $attemptedSettings = [];
 foreach ($attempts as $settings) {
   if ($settings['safety'] && $avoidManeuverRadius === null && $originSnapRadius === null) continue;
   $settingsKey = $settings['profile'] . '|' . ($settings['heading'] === null ? '' : (string)$settings['heading']) . '|'
+    . ($settings['destinationHeading'] === null ? '' : (string)$settings['destinationHeading']) . '|'
     . ($settings['curb'] ? '1' : '0') . '|' . ($settings['safety'] ? '1' : '0');
   if (isset($attemptedSettings[$settingsKey])) continue;
   $attemptedSettings[$settingsKey] = true;
@@ -186,6 +226,8 @@ foreach ($attempts as $settings) {
     $destination,
     $token,
     $settings['heading'],
+    $settings['destinationHeading'],
+    $blockedPoints,
     $settings['curb'],
     $settings['safety'],
     $avoidManeuverRadius,
@@ -199,10 +241,13 @@ foreach ($attempts as $settings) {
     'ok' => true,
     'profile' => $settings['profile'],
     'headingApplied' => $settings['heading'] !== null,
+    'destinationHeadingApplied' => $settings['destinationHeading'] !== null,
     'curbApproachApplied' => $settings['curb'],
     'departureTimeApplied' => $settings['profile'] === 'mapbox/driving-traffic',
     'avoidManeuverRadius' => $settings['safety'] ? $avoidManeuverRadius : null,
     'originSnapRadius' => $settings['safety'] ? $originSnapRadius : null,
+    'roadMemoryApplied' => count($blockedPoints),
+    'roadMemoryUnavoidable' => count($blockedPoints) > 0 && segment_has_point_exclusion_violation($route),
     'distance' => isset($route['distance']) ? (float)$route['distance'] : null,
     'duration' => isset($route['duration']) ? (float)$route['duration'] : null,
     'geometry' => $route['geometry'],

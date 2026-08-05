@@ -54,6 +54,42 @@ function flow_normalize_point($value) {
   return ['lat' => $lat, 'lng' => $lng];
 }
 
+function flow_normalize_heading($value) {
+  if (!is_numeric($value)) return null;
+  $heading = (float)$value;
+  if (!is_finite($heading) || $heading < 0 || $heading > 360) return null;
+  return fmod($heading + 360.0, 360.0);
+}
+
+function flow_normalize_blocked_points($value) {
+  if (!is_array($value)) return [];
+  $points = [];
+  foreach ($value as $candidate) {
+    $point = flow_normalize_point($candidate);
+    if (!$point) continue;
+    $key = number_format($point['lat'], 7, '.', '') . ',' . number_format($point['lng'], 7, '.', '');
+    $points[$key] = $point;
+    if (count($points) >= 50) break;
+  }
+  return array_values($points);
+}
+
+function flow_point_exclusions($points) {
+  return implode(',', array_map(function($point) {
+    return 'point(' . number_format((float)$point['lng'], 7, '.', '') . ' '
+      . number_format((float)$point['lat'], 7, '.', '') . ')';
+  }, $points));
+}
+
+function flow_has_point_exclusion_violation($value) {
+  if (!is_array($value)) return false;
+  if (($value['subtype'] ?? '') === 'pointExclusion') return true;
+  foreach ($value as $child) {
+    if (is_array($child) && flow_has_point_exclusion_violation($child)) return true;
+  }
+  return false;
+}
+
 $start = flow_normalize_point($input['start'] ?? null);
 $destination = flow_normalize_point($input['destination'] ?? null);
 $following = flow_normalize_point($input['following'] ?? null);
@@ -63,13 +99,10 @@ if (!$start || !$destination || !$following) {
   exit;
 }
 
-$heading = null;
-if (isset($input['heading']) && is_numeric($input['heading'])) {
-  $candidateHeading = (float)$input['heading'];
-  if (is_finite($candidateHeading) && $candidateHeading >= 0 && $candidateHeading <= 360) {
-    $heading = $candidateHeading;
-  }
-}
+$heading = flow_normalize_heading($input['heading'] ?? null);
+$destinationHeading = flow_normalize_heading($input['destination_heading'] ?? null);
+$followingHeading = flow_normalize_heading($input['following_heading'] ?? null);
+$blockedPoints = flow_normalize_blocked_points($input['blocked_points'] ?? null);
 
 $speed = isset($input['speed']) && is_numeric($input['speed'])
   ? max(0.0, min(60.0, (float)$input['speed']))
@@ -104,7 +137,7 @@ function flow_request_origin() {
   return ($https ? 'https://' : 'http://') . $host . '/';
 }
 
-function flow_call_directions($profile, $points, $token, $heading = null, $useSafetySnap = false, $avoidManeuverRadius = null, $originSnapRadius = null) {
+function flow_call_directions($profile, $points, $token, $pointHeadings = [], $useSafetySnap = false, $avoidManeuverRadius = null, $originSnapRadius = null, $blockedPoints = []) {
   $coordText = implode(';', array_map(function($point) {
     return rawurlencode((string)$point['lng']) . ',' . rawurlencode((string)$point['lat']);
   }, $points));
@@ -114,13 +147,23 @@ function flow_call_directions($profile, $points, $token, $heading = null, $useSa
     'overview' => 'full',
     'steps' => 'true',
     'language' => 'ja',
-    'continue_straight' => 'true'
+    'continue_straight' => 'true',
+    'notifications' => 'all'
   ];
   if ($profile === 'mapbox/driving-traffic') $params['depart_at'] = 'now';
-  if ($heading !== null && $profile !== 'mapbox/walking') {
+  if ($profile !== 'mapbox/walking' && is_array($pointHeadings) && count($pointHeadings)) {
     $bearings = array_fill(0, count($points), '');
-    $bearings[0] = round($heading, 1) . ',45';
-    $params['bearings'] = implode(';', $bearings);
+    $hasBearing = false;
+    foreach ($pointHeadings as $index => $pointHeading) {
+      if (isset($bearings[$index]) && $pointHeading !== null && is_numeric($pointHeading)) {
+        $bearings[$index] = round((float)$pointHeading, 1) . ',45';
+        $hasBearing = true;
+      }
+    }
+    if ($hasBearing) $params['bearings'] = implode(';', $bearings);
+  }
+  if ($profile !== 'mapbox/walking' && count($blockedPoints)) {
+    $params['exclude'] = flow_point_exclusions($blockedPoints);
   }
   if ($profile !== 'mapbox/walking' && $useSafetySnap && $avoidManeuverRadius !== null) {
     $params['avoid_maneuver_radius'] = (string)$avoidManeuverRadius;
@@ -176,18 +219,22 @@ function flow_call_directions($profile, $points, $token, $heading = null, $useSa
   ];
 }
 
-function flow_vehicle_route($points, $token, $heading, $avoidManeuverRadius, $originSnapRadius) {
+function flow_vehicle_route($points, $token, $pointHeadings, $avoidManeuverRadius, $originSnapRadius, $blockedPoints) {
+  $startOnlyHeadings = [];
+  if (isset($pointHeadings[0]) && $pointHeadings[0] !== null) $startOnlyHeadings[0] = $pointHeadings[0];
   $attempts = [
-    ['profile' => 'mapbox/driving-traffic', 'heading' => $heading, 'safety' => true],
-    ['profile' => 'mapbox/driving-traffic', 'heading' => $heading, 'safety' => false],
-    ['profile' => 'mapbox/driving-traffic', 'heading' => null, 'safety' => false],
-    ['profile' => 'mapbox/driving', 'heading' => null, 'safety' => false],
+    ['profile' => 'mapbox/driving-traffic', 'headings' => $pointHeadings, 'safety' => true],
+    ['profile' => 'mapbox/driving-traffic', 'headings' => $pointHeadings, 'safety' => false],
+    ['profile' => 'mapbox/driving-traffic', 'headings' => $startOnlyHeadings, 'safety' => false],
+    ['profile' => 'mapbox/driving-traffic', 'headings' => [], 'safety' => false],
+    ['profile' => 'mapbox/driving', 'headings' => $pointHeadings, 'safety' => false],
+    ['profile' => 'mapbox/driving', 'headings' => [], 'safety' => false],
   ];
   $used = [];
   $last = null;
   foreach ($attempts as $settings) {
     if ($settings['safety'] && $avoidManeuverRadius === null && $originSnapRadius === null) continue;
-    $key = $settings['profile'] . '|' . ($settings['heading'] === null ? '' : (string)$settings['heading'])
+    $key = $settings['profile'] . '|' . json_encode($settings['headings'])
       . '|' . ($settings['safety'] ? '1' : '0');
     if (isset($used[$key])) continue;
     $used[$key] = true;
@@ -195,11 +242,13 @@ function flow_vehicle_route($points, $token, $heading, $avoidManeuverRadius, $or
       $settings['profile'],
       $points,
       $token,
-      $settings['heading'],
+      $settings['headings'],
       $settings['safety'],
       $avoidManeuverRadius,
-      $originSnapRadius
+      $originSnapRadius,
+      $blockedPoints
     );
+    $attempt['headingsApplied'] = $settings['headings'];
     $last = $attempt;
     if ($attempt['ok']) return $attempt;
   }
@@ -297,7 +346,7 @@ function flow_leg_geometry($leg) {
 }
 
 function flow_walking_route($stop, $destination, $token) {
-  $attempt = flow_call_directions('mapbox/walking', [$stop, $destination], $token, null);
+  $attempt = flow_call_directions('mapbox/walking', [$stop, $destination], $token, []);
   if (!$attempt || !$attempt['ok']) return null;
   $route = $attempt['route'];
   return [
@@ -318,6 +367,33 @@ function flow_bearing($a, $b) {
   return fmod($bearing + 360.0, 360.0);
 }
 
+function flow_heading_difference($a, $b) {
+  if ($a === null || $b === null) return INF;
+  $delta = abs((float)$a - (float)$b);
+  return $delta > 180.0 ? 360.0 - $delta : $delta;
+}
+
+function flow_closest_route_heading($geometry, $closest) {
+  $coords = $geometry['coordinates'] ?? [];
+  $index = isset($closest['segmentIndex']) ? (int)$closest['segmentIndex'] : -1;
+  if ($index < 0 || $index + 1 >= count($coords)) return null;
+  $heading = flow_bearing($coords[$index], $coords[$index + 1]);
+  if ($heading !== null) return $heading;
+  for ($offset = 1; $offset < 4; $offset++) {
+    $before = $index - $offset;
+    if ($before >= 0) {
+      $heading = flow_bearing($coords[$before], $coords[$before + 1]);
+      if ($heading !== null) return $heading;
+    }
+    $after = $index + $offset;
+    if ($after >= 0 && $after + 1 < count($coords)) {
+      $heading = flow_bearing($coords[$after], $coords[$after + 1]);
+      if ($heading !== null) return $heading;
+    }
+  }
+  return null;
+}
+
 function flow_turn_degrees($orange, $blue) {
   $a = $orange['coordinates'] ?? [];
   $b = $blue['coordinates'] ?? [];
@@ -334,14 +410,18 @@ function flow_turn_degrees($orange, $blue) {
 $directAttempt = flow_vehicle_route(
   [$start, $following],
   $token,
-  $heading,
+  [0 => $heading, 1 => $followingHeading],
   $avoidManeuverRadius,
-  $originSnapRadius
+  $originSnapRadius,
+  $blockedPoints
 );
 if ($directAttempt && $directAttempt['ok']) {
   $directGeometry = $directAttempt['route']['geometry'];
   $closest = flow_closest_route_point($directGeometry, $destination);
-  if ($closest && $closest['distance'] <= $maxWalkMeters) {
+  $closestHeading = $closest ? flow_closest_route_heading($directGeometry, $closest) : null;
+  $approachHeadingMatches = $destinationHeading === null
+    || flow_heading_difference($closestHeading, $destinationHeading) <= 60.0;
+  if ($closest && $closest['distance'] <= $maxWalkMeters && $approachHeadingMatches) {
     $stop = flow_coord_to_point($closest['coord']);
     $walking = null;
     $walkingAccepted = $closest['distance'] <= 8.0;
@@ -370,6 +450,11 @@ if ($directAttempt && $directAttempt['ok']) {
         'walkingDistance' => round($walkingDistance, 1),
         'buildingDistance' => round($closest['distance'], 1),
         'turnDegrees' => flow_turn_degrees($split['orange'], $split['blue']),
+        'destinationHeadingApplied' => $destinationHeading !== null,
+        'followingHeadingApplied' => $followingHeading !== null
+          && isset($directAttempt['headingsApplied'][1]),
+        'roadMemoryApplied' => count($blockedPoints),
+        'roadMemoryUnavoidable' => count($blockedPoints) > 0 && flow_has_point_exclusion_violation($directAttempt['route']),
       ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
       exit;
     }
@@ -381,9 +466,10 @@ if ($directAttempt && $directAttempt['ok']) {
 $throughAttempt = flow_vehicle_route(
   [$start, $destination, $following],
   $token,
-  $heading,
+  [0 => $heading, 1 => $destinationHeading, 2 => $followingHeading],
   $avoidManeuverRadius,
-  $originSnapRadius
+  $originSnapRadius,
+  $blockedPoints
 );
 if ($throughAttempt && $throughAttempt['ok']) {
   $route = $throughAttempt['route'];
@@ -431,6 +517,12 @@ if ($throughAttempt && $throughAttempt['ok']) {
       'walkingDistance' => $walkingDistance === null ? null : round($walkingDistance, 1),
       'buildingDistance' => round($buildingDistance, 1),
       'turnDegrees' => flow_turn_degrees($orange, $blue),
+      'destinationHeadingApplied' => $destinationHeading !== null
+        && isset($throughAttempt['headingsApplied'][1]),
+      'followingHeadingApplied' => $followingHeading !== null
+        && isset($throughAttempt['headingsApplied'][2]),
+      'roadMemoryApplied' => count($blockedPoints),
+      'roadMemoryUnavoidable' => count($blockedPoints) > 0 && flow_has_point_exclusion_violation($throughAttempt['route']),
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
   }
