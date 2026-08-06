@@ -1330,6 +1330,10 @@
     background: var(--danger);
     color: white;
   }
+  .modal-actions button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
   .modal-actions button.done {
     background: var(--done);
     color: white;
@@ -1794,6 +1798,38 @@
     margin: -4px 0 12px;
     min-height: 18px;
   }
+  .recovery-status-summary {
+    border-top: 1px solid #e5e1d5;
+    margin-top: 4px;
+  }
+  .recovery-status-row {
+    display: grid;
+    grid-template-columns: minmax(92px, 0.8fr) minmax(0, 1.5fr);
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #e5e1d5;
+    align-items: start;
+    font-size: calc(13px * var(--text-scale));
+    line-height: 1.45;
+  }
+  .recovery-status-row span {
+    color: var(--muted);
+    font-weight: 700;
+  }
+  .recovery-status-row strong {
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+  .recovery-status-note {
+    margin-top: 12px;
+    color: var(--muted);
+    font-size: calc(12px * var(--text-scale));
+    line-height: 1.55;
+  }
+  .recovery-status-note.error {
+    color: #b91c1c;
+    font-weight: 700;
+  }
 
   /* Text sizing is intentionally separate from map and marker dimensions. */
   .topbar h1,
@@ -2148,7 +2184,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.107</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.108</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2221,7 +2257,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.107</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.108</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2238,6 +2274,7 @@
       <button id="menu-road-memory" type="button">🚧 Mapbox案内線: 通行規制・進入方向</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
       <button id="menu-delivery-sync" type="button">🔗 デバイス間データ共有</button>
+      <button id="menu-recovery-status" type="button">💾 保存・復旧状況</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
       <button id="menu-clear-done" type="button">✓ 完了分を削除</button>
@@ -2445,6 +2482,31 @@
     </div>
     <div class="modal-actions">
       <button class="cancel" type="button" data-close="modal-delivery-sync">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-recovery-status">
+  <div class="modal">
+    <h3>保存・復旧状況</h3>
+    <div class="recovery-status-summary">
+      <div class="recovery-status-row"><span>最終保存</span><strong id="recovery-last-save">未保存</strong></div>
+      <div class="recovery-status-row"><span>配送先</span><strong id="recovery-deliveries">0件</strong></div>
+      <div class="recovery-status-row"><span>写真処理</span><strong id="recovery-photo-jobs">待ちなし</strong></div>
+      <div class="recovery-status-row"><span>今回の復元</span><strong id="recovery-restored">なし</strong></div>
+      <div class="recovery-status-row"><span>案内線</span><strong id="recovery-guidance">保存なし</strong></div>
+      <div class="recovery-status-row"><span>GPS</span><strong id="recovery-gps">確認中</strong></div>
+      <div class="recovery-status-row"><span>通信</span><strong id="recovery-network">確認中</strong></div>
+    </div>
+    <div class="recovery-status-note" id="recovery-status-note">
+      撮影写真は住所処理の前に端末へ退避し、アプリ終了後も再開できるようにします。
+    </div>
+    <div class="modal-actions">
+      <button id="btn-recovery-retry" type="button">写真処理を再開</button>
+      <button class="danger" id="btn-recovery-discard-failed" type="button">失敗分を削除</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-recovery-status">閉じる</button>
     </div>
   </div>
 </div>
@@ -2694,7 +2756,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.107';
+const APP_VERSION = 'v2026.06.24-test.108';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2713,8 +2775,13 @@ const PACKAGE_TYPE_FALLBACK_ITEMS = [
   { id: 'other', label: 'その他' }
 ];
 const DELIVERY_PHOTO_DB_NAME = 'rys-mapbox-test-delivery-photos-v1';
-const DELIVERY_PHOTO_DB_VERSION = 1;
+const DELIVERY_PHOTO_DB_VERSION = 2;
 const DELIVERY_PHOTO_STORE = 'photos';
+const DELIVERY_PHOTO_JOB_STORE = 'pendingPhotoJobs';
+const DELIVERY_RECOVERY_STATUS_KEY = 'rys-mapbox-test-recovery-status-v1';
+const DELIVERY_RECOVERY_BACKUP_SUFFIX = ':recovery-backup-v1';
+const DELIVERY_PHOTO_JOB_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+const DELIVERY_PHOTO_RETRY_DELAY_MS = 8000;
 const DELIVERY_PHOTO_MAX_SIZE = 1600;
 const DELIVERY_PHOTO_QUALITY = 0.82;
 const DELIVERY_PHOTO_MAX_ZOOM = 4;
@@ -2989,6 +3056,13 @@ const reviewPhotoUrls = new Map(); // IndexedDB保存失敗時の要確認写真
 let deliveryPhotoDbPromise = null;
 let deliveryPhotoPersistenceRequested = false;
 let deliveryPhotoStorageWarningShown = false;
+const recoveryPhotoJobs = new Map();
+const recoveryPhotoJobsInFlight = new Set();
+let recoveryRestoredPhotoJobCount = 0;
+let recoveryRestoredDeliveryCount = 0;
+let recoveryUsedDeliveryBackup = false;
+let recoveryLastError = '';
+let recoveryRetryTimer = null;
 let editPhotoEntries = [];
 let editPhotoIndex = 0;
 let editPhotoLoadToken = 0;
@@ -3017,6 +3091,9 @@ let activeSinglePhotoEditorSession = null;
 let gpsWatchId = null;
 let gpsActive = false;
 let gpsAutoFollow = false;
+let gpsLastUpdatedAt = 0;
+let gpsLastError = '';
+let gpsRestartTimer = null;
 let gpsInitialCenterPending = true;
 let gpsInitialCenterStartedAt = 0;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
@@ -3100,6 +3177,157 @@ function showLoading(msg) {
   $('loading').classList.add('show');
 }
 function hideLoading() { $('loading').classList.remove('show'); }
+
+function loadRecoveryStatusRecord() {
+  try {
+    const value = JSON.parse(localStorage.getItem(DELIVERY_RECOVERY_STATUS_KEY) || '{}');
+    return value && typeof value === 'object' ? value : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function updateRecoveryStatusRecord(patch = {}) {
+  try {
+    const current = loadRecoveryStatusRecord();
+    localStorage.setItem(DELIVERY_RECOVERY_STATUS_KEY, JSON.stringify({ ...current, ...patch }));
+  } catch (e) {
+    recoveryLastError = '保存状況の記録に失敗しました';
+  }
+  updateRecoveryStatusUi();
+}
+
+function formatRecoveryDateTime(value) {
+  const timestamp = Number(value || 0);
+  if (!timestamp) return '未保存';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '未保存';
+  const today = localDateKey(date) === localDateKey();
+  return date.toLocaleString('ja-JP', today
+    ? { hour: '2-digit', minute: '2-digit', second: '2-digit' }
+    : { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function recoveryPhotoJobCounts() {
+  const counts = { pending: 0, processing: 0, failed: 0, total: 0 };
+  recoveryPhotoJobs.forEach(job => {
+    if (!job) return;
+    counts.total++;
+    if (job.state === 'needs_attention') counts.failed++;
+    else if (job.state === 'processing' || recoveryPhotoJobsInFlight.has(job.id)) counts.processing++;
+    else counts.pending++;
+  });
+  return counts;
+}
+
+function cachedGuidanceStatusText() {
+  let payload = cachedGuidanceRoute;
+  if (!payload) {
+    try { payload = JSON.parse(localStorage.getItem(GUIDANCE_ROUTE_CACHE_KEY) || 'null'); } catch (e) {}
+  }
+  if (!payload || !Array.isArray(payload.orderedIds) || !payload.orderedIds.length) return '保存なし';
+  const routeLabel = payload.route && payload.route.orangeGeometry ? '案内線も保存済み' : '配送順を保存済み';
+  return `${payload.orderedIds.length}件 / ${routeLabel} (${formatRecoveryDateTime(payload.savedAt)})`;
+}
+
+function updateRecoveryStatusUi() {
+  const record = loadRecoveryStatusRecord();
+  const saveTimes = [record.lastDeliverySavedAt, record.lastPhotoSavedAt, record.lastGuidanceSavedAt]
+    .map(Number).filter(Number.isFinite);
+  const lastSaveAt = saveTimes.length ? Math.max(...saveTimes) : 0;
+  const counts = recoveryPhotoJobCounts();
+  const restoredParts = [];
+  if (recoveryRestoredDeliveryCount) restoredParts.push(`配送先${recoveryRestoredDeliveryCount}件`);
+  if (recoveryRestoredPhotoJobCount) restoredParts.push(`写真${recoveryRestoredPhotoJobCount}件`);
+  if (recoveryUsedDeliveryBackup) restoredParts.push('予備データを使用');
+
+  const lastSave = $('recovery-last-save');
+  if (lastSave) lastSave.textContent = formatRecoveryDateTime(lastSaveAt);
+  const deliveryText = $('recovery-deliveries');
+  if (deliveryText) deliveryText.textContent = `${deliveries.length}件を端末から読み込み済み`;
+  const photoJobs = $('recovery-photo-jobs');
+  if (photoJobs) {
+    const parts = [];
+    if (counts.processing) parts.push(`処理中 ${counts.processing}件`);
+    if (counts.pending) parts.push(`再開待ち ${counts.pending}件`);
+    if (counts.failed) parts.push(`再処理が必要 ${counts.failed}件`);
+    photoJobs.textContent = parts.length ? parts.join(' / ') : '待ちなし';
+  }
+  const restored = $('recovery-restored');
+  if (restored) restored.textContent = restoredParts.length ? `${restoredParts.join(' / ')}を復元済み` : 'なし';
+  const guidance = $('recovery-guidance');
+  if (guidance) guidance.textContent = cachedGuidanceStatusText();
+  const gps = $('recovery-gps');
+  if (gps) {
+    gps.textContent = gpsLastUpdatedAt
+      ? `受信中 / 最終 ${formatRecoveryDateTime(gpsLastUpdatedAt)}${gpsLastError ? ` / ${gpsLastError}` : ''}`
+      : (gpsActive ? '取得中' : (gpsLastError || '再取得待ち'));
+  }
+  const network = $('recovery-network');
+  if (network) network.textContent = navigator.onLine ? 'オンライン' : 'オフライン / 通信回復後に自動再開';
+  const note = $('recovery-status-note');
+  if (note) {
+    const error = recoveryLastError || String(record.lastError || '');
+    note.textContent = error
+      ? `注意: ${error}`
+      : '撮影写真は住所処理の前に端末へ退避し、アプリ終了後も再開できるようにします。';
+    note.classList.toggle('error', !!error);
+  }
+  const menuButton = $('menu-recovery-status');
+  if (menuButton) {
+    const pendingLabel = counts.total ? ` / 写真待ち${counts.total}件` : '';
+    menuButton.textContent = `💾 保存 ${formatRecoveryDateTime(lastSaveAt)}${pendingLabel}`;
+  }
+  const retryButton = $('btn-recovery-retry');
+  if (retryButton) retryButton.disabled = counts.total === 0 || !navigator.onLine;
+  const discardButton = $('btn-recovery-discard-failed');
+  if (discardButton) discardButton.disabled = counts.failed === 0;
+}
+
+function openRecoveryStatusModal() {
+  closeModal('modal-menu');
+  updateRecoveryStatusUi();
+  openModal('modal-recovery-status');
+  refreshRecoveryPhotoJobsFromStorage().catch(error => {
+    recoveryLastError = error.message || '写真処理の保存状態を確認できませんでした';
+    updateRecoveryStatusUi();
+  });
+}
+
+function recoveryBackupKey(key) {
+  return `${key}${DELIVERY_RECOVERY_BACKUP_SUFFIX}`;
+}
+
+function parseStoredDeliveryArray(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed : null;
+}
+
+function persistDeliveriesWithBackup(key, items) {
+  const serialized = JSON.stringify(items);
+  const previous = localStorage.getItem(key);
+  try {
+    if (previous && previous !== serialized && parseStoredDeliveryArray(previous)) {
+      localStorage.setItem(recoveryBackupKey(key), previous);
+    }
+  } catch (e) {
+    // 壊れた主データは予備保存へコピーしない。
+  }
+  try {
+    localStorage.setItem(key, serialized);
+    recoveryLastError = '';
+    updateRecoveryStatusRecord({
+      lastDeliverySavedAt: Date.now(),
+      lastDeliverySavedCount: Array.isArray(items) ? items.length : 0,
+      lastError: ''
+    });
+  } catch (error) {
+    recoveryLastError = '配送先を端末へ保存できませんでした。端末の空き容量を確認してください';
+    updateRecoveryStatusRecord({ lastError: recoveryLastError });
+    throw error;
+  }
+}
 
 function runWhenIdle(fn, timeout = 1200) {
   if (window.requestIdleCallback) {
@@ -3622,6 +3850,11 @@ function openDeliveryPhotoDb() {
         ? request.transaction.objectStore(DELIVERY_PHOTO_STORE)
         : db.createObjectStore(DELIVERY_PHOTO_STORE, { keyPath: 'id' });
       if (!store.indexNames.contains('deliveryId')) store.createIndex('deliveryId', 'deliveryId', { unique: false });
+      const jobStore = db.objectStoreNames.contains(DELIVERY_PHOTO_JOB_STORE)
+        ? request.transaction.objectStore(DELIVERY_PHOTO_JOB_STORE)
+        : db.createObjectStore(DELIVERY_PHOTO_JOB_STORE, { keyPath: 'id' });
+      if (!jobStore.indexNames.contains('state')) jobStore.createIndex('state', 'state', { unique: false });
+      if (!jobStore.indexNames.contains('createdAt')) jobStore.createIndex('createdAt', 'createdAt', { unique: false });
     };
     request.onsuccess = () => {
       const db = request.result;
@@ -3645,12 +3878,175 @@ async function requestDeliveryPhotoPersistence() {
   } catch (e) {}
 }
 
-async function archiveDeliveryPhoto(deliveryId, file, rotation = 0) {
+function normalizeRecoveryPhotoJob(value) {
+  if (!value || !value.id || !value.blob) return null;
+  const createdAt = Number(value.createdAt || Date.now());
+  return {
+    id: String(value.id),
+    candidateDeliveryId: String(value.candidateDeliveryId || uid()),
+    blob: value.blob,
+    source: String(value.source || 'batch'),
+    packageType: normalizePackageType(value.packageType),
+    draft: value.draft && typeof value.draft === 'object' ? { ...value.draft } : null,
+    state: ['pending', 'processing', 'waiting', 'needs_attention'].includes(value.state)
+      ? value.state
+      : 'pending',
+    attempts: Math.max(0, Number(value.attempts || 0)),
+    lastError: String(value.lastError || ''),
+    createdAt,
+    updatedAt: Number(value.updatedAt || createdAt)
+  };
+}
+
+async function putRecoveryPhotoJob(job) {
+  const normalized = normalizeRecoveryPhotoJob(job);
+  if (!normalized) throw new Error('写真処理の退避データが不正です');
+  const stored = job && typeof job === 'object' ? Object.assign(job, normalized) : normalized;
+  const db = await openDeliveryPhotoDb();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(DELIVERY_PHOTO_JOB_STORE, 'readwrite');
+    transaction.objectStore(DELIVERY_PHOTO_JOB_STORE).put(stored);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('処理前の写真を端末へ退避できませんでした'));
+    transaction.onabort = () => reject(transaction.error || new Error('写真の退避を中止しました'));
+  });
+  recoveryPhotoJobs.set(stored.id, stored);
+  requestDeliveryPhotoPersistence();
+  updateRecoveryStatusUi();
+  return stored;
+}
+
+async function deleteRecoveryPhotoJob(id) {
+  if (!id) return;
+  const db = await openDeliveryPhotoDb();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(DELIVERY_PHOTO_JOB_STORE, 'readwrite');
+    transaction.objectStore(DELIVERY_PHOTO_JOB_STORE).delete(id);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('処理済み写真の退避データを削除できませんでした'));
+  });
+  recoveryPhotoJobs.delete(id);
+  recoveryPhotoJobsInFlight.delete(id);
+  updateRecoveryStatusUi();
+}
+
+async function readRecoveryPhotoJobs() {
+  const db = await openDeliveryPhotoDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(DELIVERY_PHOTO_JOB_STORE, 'readonly');
+    const records = [];
+    const request = transaction.objectStore(DELIVERY_PHOTO_JOB_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const normalized = normalizeRecoveryPhotoJob(cursor.value);
+      if (normalized) records.push(normalized);
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error || new Error('処理待ち写真を読み込めませんでした'));
+    transaction.oncomplete = () => resolve(records.sort((a, b) => a.createdAt - b.createdAt));
+    transaction.onerror = () => reject(transaction.error || new Error('処理待ち写真を読み込めませんでした'));
+  });
+}
+
+function deliveryHasCaptureJob(id) {
+  return !!id && deliveries.some(delivery =>
+    Array.isArray(delivery.captureJobIds) && delivery.captureJobIds.includes(id));
+}
+
+function markDeliveryCaptureJob(delivery, id) {
+  if (!delivery || !id) return;
+  const ids = Array.isArray(delivery.captureJobIds) ? delivery.captureJobIds.filter(Boolean) : [];
+  if (!ids.includes(id)) ids.push(id);
+  delivery.captureJobIds = ids.slice(-200);
+}
+
+function restoreCompletedRecoveryPhotoDraft(job) {
+  if (!job || !job.id || !job.draft) return false;
+  const delivery = deliveries.find(item =>
+    Array.isArray(item.captureJobIds) && item.captureJobIds.includes(job.id));
+  if (!delivery) return false;
+  const status = String(delivery.id) === String(job.candidateDeliveryId) ? 'added' : 'stacked';
+  applySinglePhotoDraftToDelivery({ draft: { ...job.draft } }, { id: delivery.id, status });
+  return true;
+}
+
+async function refreshRecoveryPhotoJobsFromStorage(options = {}) {
+  const stored = await readRecoveryPhotoJobs();
+  const now = Date.now();
+  const usable = [];
+  let removed = 0;
+  for (const job of stored) {
+    const tooOld = now - Number(job.createdAt || 0) > DELIVERY_PHOTO_JOB_MAX_AGE_MS;
+    if (deliveryHasCaptureJob(job.id)) {
+      restoreCompletedRecoveryPhotoDraft(job);
+      await deleteRecoveryPhotoJob(job.id);
+      removed++;
+      continue;
+    }
+    if (tooOld) {
+      await deleteRecoveryPhotoJob(job.id);
+      removed++;
+      continue;
+    }
+    usable.push(job);
+  }
+  const currentJobs = new Map(recoveryPhotoJobs);
+  recoveryPhotoJobs.clear();
+  usable.forEach(job => {
+    const current = recoveryPhotoJobsInFlight.has(job.id) && currentJobs.get(job.id);
+    recoveryPhotoJobs.set(job.id, current || job);
+  });
+  if (options.markRestored) recoveryRestoredPhotoJobCount = usable.length;
+  if (removed && options.markRestored) {
+    updateRecoveryStatusRecord({ lastRecoveryCleanupAt: now });
+  }
+  updateRecoveryStatusUi();
+  return usable;
+}
+
+async function createRecoveryPhotoJob(file, options = {}) {
+  if (!file) return null;
+  const now = Date.now();
+  const job = {
+    id: uid(),
+    candidateDeliveryId: uid(),
+    blob: file,
+    source: String(options.source || 'batch'),
+    packageType: normalizePackageType(options.packageType),
+    draft: options.draft && typeof options.draft === 'object' ? { ...options.draft } : null,
+    state: 'pending',
+    attempts: 0,
+    lastError: '',
+    createdAt: now,
+    updatedAt: now
+  };
+  try {
+    return await putRecoveryPhotoJob(job);
+  } catch (error) {
+    recoveryLastError = '撮影写真を処理前に端末へ退避できませんでした。この1枚はアプリ終了後に復元できません';
+    updateRecoveryStatusRecord({ lastError: recoveryLastError });
+    console.warn('recovery photo job save failed', error);
+    return null;
+  }
+}
+
+async function updateRecoveryPhotoJobDraft(session) {
+  const id = session && session.recoveryJobId;
+  const job = id && recoveryPhotoJobs.get(id);
+  if (!job || !session.draft) return;
+  job.draft = { ...session.draft };
+  job.updatedAt = Date.now();
+  try { await putRecoveryPhotoJob(job); }
+  catch (error) { console.warn('recovery photo draft save failed', error); }
+}
+
+async function archiveDeliveryPhoto(deliveryId, file, rotation = 0, recordId = '') {
   if (!deliveryId || !file) return null;
   const blob = await compressImage(file, DELIVERY_PHOTO_MAX_SIZE, DELIVERY_PHOTO_QUALITY, rotation);
   const db = await openDeliveryPhotoDb();
   const record = {
-    id: uid(),
+    id: recordId || uid(),
     deliveryId,
     blob,
     createdAt: Date.now()
@@ -3663,6 +4059,7 @@ async function archiveDeliveryPhoto(deliveryId, file, rotation = 0) {
     transaction.onabort = () => reject(transaction.error || new Error('伝票写真の保存を中止しました'));
   });
   requestDeliveryPhotoPersistence();
+  updateRecoveryStatusRecord({ lastPhotoSavedAt: Date.now() });
   return record.id;
 }
 
@@ -3675,10 +4072,10 @@ function addReviewPhotoFallback(deliveryId, file) {
   } catch (e) {}
 }
 
-async function persistDeliveryPhoto(deliveryId, file, rotation = 0) {
+async function persistDeliveryPhoto(deliveryId, file, rotation = 0, recordId = '') {
   if (!deliveryId || !file) return false;
   try {
-    await archiveDeliveryPhoto(deliveryId, file, rotation);
+    await archiveDeliveryPhoto(deliveryId, file, rotation, recordId);
     return true;
   } catch (e) {
     console.warn('delivery photo save failed', e);
@@ -4163,12 +4560,39 @@ function currentStorageKey() {
 }
 
 function loadStoredDeliveries(key) {
-  try {
-    const stored = JSON.parse(localStorage.getItem(key) || '[]');
-    return Array.isArray(stored) ? stored : [];
-  } catch (e) {
+  const primary = localStorage.getItem(key);
+  if (primary) {
+    try {
+      const stored = parseStoredDeliveryArray(primary);
+      if (stored) return stored;
+      recoveryLastError = '配送先の主データ形式が不正だったため、予備データを確認しました';
+    } catch (error) {
+      recoveryLastError = '配送先の主データを読み込めなかったため、予備データを確認しました';
+    }
+  } else if (!localStorage.getItem(recoveryBackupKey(key))) {
     return [];
+  } else {
+    recoveryLastError = '配送先の主データが見つからなかったため、予備データを確認しました';
   }
+  try {
+    const backup = parseStoredDeliveryArray(localStorage.getItem(recoveryBackupKey(key)) || '');
+    if (backup) {
+      recoveryUsedDeliveryBackup = true;
+      recoveryLastError = '';
+      localStorage.setItem(key, JSON.stringify(backup));
+      updateRecoveryStatusRecord({
+        lastDeliverySavedAt: Date.now(),
+        lastDeliverySavedCount: backup.length,
+        lastBackupRestoredAt: Date.now(),
+        lastError: ''
+      });
+      return backup;
+    }
+  } catch (backupError) {
+    recoveryLastError = '配送先の主データと予備データを読み込めませんでした';
+  }
+  if (recoveryLastError) updateRecoveryStatusRecord({ lastError: recoveryLastError });
+  return [];
 }
 
 function storedPickupIdentity(d) {
@@ -4210,7 +4634,7 @@ function removePickupRecordsFromDeliveryState() {
   const activeWasPickup = activeDeliveryId && !keptDeliveries.some(d => d.id === activeDeliveryId);
   deliveries = keptDeliveries;
   if (activeWasPickup) activeDeliveryId = null;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(deliveries));
+  persistDeliveriesWithBackup(STORAGE_KEY, deliveries);
   return true;
 }
 
@@ -4224,7 +4648,7 @@ function migrateMisfiledPickupDeliveries() {
 
 function saveDeliveries() {
   removePickupRecordsFromDeliveryState();
-  localStorage.setItem(currentStorageKey(), JSON.stringify(deliveries));
+  persistDeliveriesWithBackup(currentStorageKey(), deliveries);
   if (appMode === 'pickup') {
     const sheetName = getSelectedPickupSheet();
     if (sheetName) saveRegularPickupCache(sheetName, deliveries);
@@ -4237,6 +4661,7 @@ function saveDeliveries() {
 function loadDeliveries() {
   migrateMisfiledPickupDeliveries();
   deliveries = loadStoredDeliveries(currentStorageKey());
+  recoveryRestoredDeliveryCount = deliveries.length;
   removePickupRecordsFromDeliveryState();
   if (appMode === 'pickup') {
     const deduped = dedupeStoredSpotPickups(deliveries);
@@ -6287,6 +6712,7 @@ function saveGuidanceRouteCache(options = {}) {
   if (!optimizedRouteOrderedIds.length && !temporaryId) {
     cachedGuidanceRoute = null;
     try { localStorage.removeItem(GUIDANCE_ROUTE_CACHE_KEY); } catch (e) {}
+    updateRecoveryStatusUi();
     return;
   }
 
@@ -6317,6 +6743,7 @@ function saveGuidanceRouteCache(options = {}) {
     cachedGuidanceRoute = payload;
     try { localStorage.setItem(GUIDANCE_ROUTE_CACHE_KEY, JSON.stringify(payload)); } catch (e) {}
   }
+  updateRecoveryStatusRecord({ lastGuidanceSavedAt: payload.savedAt });
 }
 
 function cacheRenderedGuidanceRoute(provider, flow, nextDelivery, followingDelivery, start) {
@@ -9820,6 +10247,26 @@ function readSinglePhotoEditorDraft(session) {
   };
 }
 
+function scheduleSinglePhotoDraftSave() {
+  const session = activeSinglePhotoEditorSession;
+  if (!session) return;
+  session.draft = readSinglePhotoEditorDraft(session);
+  clearTimeout(singlePhotoDraftSaveTimer);
+  singlePhotoDraftSaveTimer = setTimeout(() => {
+    singlePhotoDraftSaveTimer = null;
+    updateRecoveryPhotoJobDraft(session).catch(error => console.warn('single photo draft recovery save failed', error));
+  }, 250);
+}
+
+function flushSinglePhotoDraftSave() {
+  const session = activeSinglePhotoEditorSession;
+  if (!session) return Promise.resolve();
+  session.draft = readSinglePhotoEditorDraft(session);
+  clearTimeout(singlePhotoDraftSaveTimer);
+  singlePhotoDraftSaveTimer = null;
+  return updateRecoveryPhotoJobDraft(session);
+}
+
 function combineSinglePhotoNotes(existing, draft) {
   const lines = [existing, draft]
     .flatMap(value => String(value || '').split(/\r?\n/))
@@ -9879,6 +10326,11 @@ function applySinglePhotoDraftToEditor(session, result) {
 function finishSinglePhotoEditorSession(session, result) {
   session.result = result;
   const editorIsOpen = activeSinglePhotoEditorSession === session;
+  if (editorIsOpen) {
+    session.draft = readSinglePhotoEditorDraft(session);
+    const recoveryJob = session.recoveryJobId && recoveryPhotoJobs.get(session.recoveryJobId);
+    if (recoveryJob) recoveryJob.draft = { ...session.draft };
+  }
   if (!result || result.status === 'failed' || !result.id) {
     if (!editorIsOpen) return;
     const banner = $('edit-review-banner');
@@ -9901,8 +10353,8 @@ function finishSinglePhotoEditorSession(session, result) {
     return;
   }
 
-  session.draft = readSinglePhotoEditorDraft(session);
   activeSinglePhotoEditorSession = null;
+  applySinglePhotoDraftToDelivery(session, result);
   if (result.status === 'review') {
     batchReviewSourceById.set(result.id, 'single');
     batchReviewEditingId = result.id;
@@ -9979,6 +10431,7 @@ function cancelEditedItem() {
     const session = activeSinglePhotoEditorSession;
     const failed = session.result && session.result.status === 'failed';
     session.draft = readSinglePhotoEditorDraft(session);
+    updateRecoveryPhotoJobDraft(session).catch(error => console.warn('single photo draft recovery save failed', error));
     session.cancelled = true;
     activeSinglePhotoEditorSession = null;
     closeModal('modal-edit');
@@ -10707,7 +11160,7 @@ async function ocrExtractAddress(file, rotation, signal, imageProfile = null) {
   });
   let data = null;
   try { data = await res.json(); } catch (e) {}
-  return { ok: res.ok, data: data || {} };
+  return { ok: res.ok, status: res.status, data: data || {} };
 }
 
 // 向き自動リカバリー付きOCR。
@@ -10720,11 +11173,14 @@ async function ocrWithRotationRetry(attempt, baseRotation, onRetry) {
   let lastError = '';
   for (let i = 0; i < 4; i++) {
     tried.add(rotation);
-    const { ok, data } = await attempt(rotation);
+    const { ok, status, data } = await attempt(rotation);
     if (ok && data.address) {
       return data;
     }
     lastError = (data && data.error) || '住所が読み取れませんでした';
+    if (!ok && (Number(status) === 429 || Number(status) >= 500)) {
+      throw new Error(`HTTP ${status}: ${lastError}`);
+    }
     const hint = Number(data && data.rotation_hint);
     let next = null;
     if (hint === 90 || hint === 180 || hint === 270) {
@@ -10953,6 +11409,146 @@ let batchReviewResumeNativeCamera = false;
 const singlePhotoQueue = [];
 let singlePhotoWorkerRunning = false;
 let singlePhotoPending = 0;
+let singlePhotoDraftSaveTimer = null;
+
+function isRetryablePhotoProcessingError(error) {
+  if (!navigator.onLine) return true;
+  const message = String((error && error.message) || error || '').toLowerCase();
+  return /failed to fetch|network|通信|タイムアウト|timeout|temporar|http\s*(429|5\d\d)|abort/.test(message);
+}
+
+async function runRecoveryPhotoJob(job, file, options = {}, onResult = null) {
+  const storedJob = job && recoveryPhotoJobs.get(job.id) || job;
+  if (storedJob && recoveryPhotoJobsInFlight.has(storedJob.id)) return null;
+  if (storedJob && deliveryHasCaptureJob(storedJob.id)) {
+    restoreCompletedRecoveryPhotoDraft(storedJob);
+    try { await deleteRecoveryPhotoJob(storedJob.id); }
+    catch (error) { console.warn('already processed recovery job cleanup failed', error); }
+    return { status: 'already-processed', id: null };
+  }
+
+  if (storedJob) {
+    storedJob.state = 'processing';
+    storedJob.attempts = Math.max(0, Number(storedJob.attempts || 0)) + 1;
+    storedJob.lastError = '';
+    storedJob.updatedAt = Date.now();
+    recoveryPhotoJobsInFlight.add(storedJob.id);
+    try { await putRecoveryPhotoJob(storedJob); }
+    catch (error) { console.warn('recovery photo processing state save failed', error); }
+  }
+
+  let result;
+  try {
+    result = await processBatchPhoto(file, {
+      ...options,
+      recoveryJobId: storedJob ? storedJob.id : '',
+      recoveryDeliveryId: storedJob ? storedJob.candidateDeliveryId : ''
+    });
+    if (onResult) {
+      try { await onResult(result); }
+      catch (callbackError) { console.warn('recovery photo result handling failed', callbackError); }
+    }
+    if (storedJob) {
+      if (result && result.status !== 'failed') {
+        try {
+          await deleteRecoveryPhotoJob(storedJob.id);
+          recoveryLastError = '';
+          updateRecoveryStatusRecord({ lastError: '', lastPhotoJobCompletedAt: Date.now() });
+        } catch (deleteError) {
+          recoveryLastError = '処理済み写真の待機情報を整理できませんでした。次回起動時に自動整理します';
+          updateRecoveryStatusRecord({ lastError: recoveryLastError });
+          console.warn('completed recovery photo job cleanup failed', deleteError);
+        }
+      } else {
+        storedJob.state = result && result.retryable ? 'waiting' : 'needs_attention';
+        storedJob.lastError = String(result && result.error || '写真処理に失敗しました');
+        storedJob.updatedAt = Date.now();
+        await putRecoveryPhotoJob(storedJob);
+      }
+    }
+  } catch (error) {
+    result = { status: 'failed', error: error.message || String(error), retryable: isRetryablePhotoProcessingError(error) };
+    if (storedJob) {
+      storedJob.state = result.retryable ? 'waiting' : 'needs_attention';
+      storedJob.lastError = result.error;
+      storedJob.updatedAt = Date.now();
+      try { await putRecoveryPhotoJob(storedJob); }
+      catch (saveError) { console.warn('recovery photo failure state save failed', saveError); }
+    }
+  } finally {
+    if (storedJob) recoveryPhotoJobsInFlight.delete(storedJob.id);
+    updateRecoveryStatusUi();
+  }
+  return result;
+}
+
+async function processPhotoWithRecovery(file, options = {}, onResult = null) {
+  const job = await createRecoveryPhotoJob(file, {
+    source: options.source,
+    packageType: options.packageType,
+    draft: options.draft
+  });
+  return runRecoveryPhotoJob(job, file, options, onResult);
+}
+
+async function retryRecoveryPhotoJobs(options = {}) {
+  clearTimeout(recoveryRetryTimer);
+  recoveryRetryTimer = null;
+  if (!navigator.onLine) {
+    updateRecoveryStatusUi();
+    if (options.announce) showToast('通信回復後に写真処理を自動再開します', true);
+    return 0;
+  }
+  const includeFailed = !!options.includeFailed;
+  const jobs = [...recoveryPhotoJobs.values()].filter(job =>
+    !recoveryPhotoJobsInFlight.has(job.id) &&
+    (job.state !== 'needs_attention' || includeFailed));
+  if (!jobs.length) {
+    if (options.announce) showToast('再開する写真処理はありません');
+    updateRecoveryStatusUi();
+    return 0;
+  }
+  if (options.announce) showToast(`保存済み写真 ${jobs.length}件の処理を再開します`);
+  let next = 0;
+  const worker = async () => {
+    while (next < jobs.length) {
+      const job = jobs[next++];
+      job.state = 'pending';
+      const result = await runRecoveryPhotoJob(job, job.blob, {
+        source: 'recovery',
+        packageType: job.packageType,
+        immediateReview: true,
+        reviewSource: 'single',
+        trackBatchStats: false
+      }, async processed => {
+        if (!job.draft || !processed || !processed.id || processed.status === 'failed') return;
+        applySinglePhotoDraftToDelivery({ draft: job.draft }, processed);
+      });
+      if (result && result.status === 'failed' && result.retryable && Number(job.attempts || 0) < 2) {
+        scheduleRecoveryPhotoRetry();
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, worker));
+  updateRecoveryStatusUi();
+  return jobs.length;
+}
+
+function scheduleRecoveryPhotoRetry() {
+  if (recoveryRetryTimer || !navigator.onLine) return;
+  recoveryRetryTimer = setTimeout(() => {
+    recoveryRetryTimer = null;
+    retryRecoveryPhotoJobs().catch(error => console.warn('recovery photo retry failed', error));
+  }, DELIVERY_PHOTO_RETRY_DELAY_MS);
+}
+
+async function discardFailedRecoveryPhotoJobs() {
+  const failed = [...recoveryPhotoJobs.values()].filter(job => job.state === 'needs_attention');
+  for (const job of failed) await deleteRecoveryPhotoJob(job.id);
+  recoveryLastError = '';
+  updateRecoveryStatusRecord({ lastError: '' });
+  showToast(`再処理できない写真 ${failed.length}件を削除しました`);
+}
 
 function updateBatchPhotoUi() {
   const btn = $('btn-add-photo');
@@ -10990,6 +11586,7 @@ function updateBatchPhotoUi() {
     const packageType = capturePackageTypeValue();
     nativePackageType.textContent = packageType ? `荷物: ${packageType}` : '時間・荷物情報は撮影後に入力';
   }
+  updateRecoveryStatusUi();
 }
 
 function releaseReviewPhoto(id) {
@@ -11354,10 +11951,14 @@ async function captureNativeBatchPhoto() {
       await closeNativeBatchCamera();
       completedSingleShot = true;
       nativeCaptureInFlight = false;
-      enqueueSinglePhotoForBackground(blob, { packageType });
+      await enqueueSinglePhotoForBackground(blob, { packageType });
       return;
     }
-    processBatchPhoto(blob, { immediateReview: true, packageType }); // awaitしない — カメラはそのまま次の撮影へ
+    processPhotoWithRecovery(blob, {
+      source: 'batch',
+      immediateReview: true,
+      packageType
+    }).catch(error => console.warn('native batch photo recovery processing failed', error)); // awaitしない — カメラはそのまま次の撮影へ
   } catch (e) {
     if (shutter) shutter.classList.remove('is-capturing');
     showNativeCameraFeedback('撮影できませんでした', 900);
@@ -11387,15 +11988,19 @@ async function importPhotosFromGallery(files) {
     failed: batchStats.failed
   };
   const packageType = capturePackageTypeValue();
-  showToast(`📥 ${list.length}枚の写真を読み込み開始（裏で処理します）`);
+  showToast(`📥 ${list.length}枚を端末へ退避してから、裏で処理します`);
+  const queued = await Promise.all(list.map(async file => ({
+    file,
+    job: await createRecoveryPhotoJob(file, { source: 'gallery', packageType })
+  })));
   let next = 0;
   const worker = async () => {
-    while (next < list.length) {
-      const file = list[next++];
-      await processBatchPhoto(file, { packageType });
+    while (next < queued.length) {
+      const item = queued[next++];
+      await runRecoveryPhotoJob(item.job, item.file, { source: 'gallery', packageType });
     }
   };
-  await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker)); // 4並列で待ち時間を短縮
+  await Promise.all(Array.from({ length: Math.min(4, queued.length) }, worker)); // 4並列で待ち時間を短縮
   const added = batchStats.added - before.added;
   const stacked = batchStats.stacked - before.stacked;
   const review = batchStats.review - before.review;
@@ -11404,7 +12009,7 @@ async function importPhotosFromGallery(files) {
   if (stacked) parts.push(`📦複数個口+${stacked}`);
   if (review) parts.push(`❗要確認${review}件`);
   if (failed) parts.push(`失敗${failed}件`);
-  showToast(`📥 まとめ読み込み完了: ${parts.join(' / ')}${failed ? ' — 失敗分は個別に撮り直してください' : ''}`, (review + failed) > 0);
+  showToast(`📥 まとめ読み込み完了: ${parts.join(' / ')}${failed ? ' — 失敗分は保存・復旧状況から再処理できます' : ''}`, (review + failed) > 0);
 }
 
 function resetBatchPhotoStats() {
@@ -11446,30 +12051,38 @@ function toggleBatchPhotoMode(options = {}) {
   setBatchPhotoMode(!batchPhotoMode, options);
 }
 
-function enqueueSinglePhotoForBackground(file, options = {}) {
+async function enqueueSinglePhotoForBackground(file, options = {}) {
   if (!file) return;
   const initialPackageType = normalizePackageType(options.packageType);
+  const draft = {
+    note: '',
+    packageType: initialPackageType,
+    timeWindowId: '',
+    exactTime: '',
+    packageCount: 1,
+    packageCountChanged: false
+  };
+  singlePhotoPending++;
+  updateBatchPhotoUi();
+  const job = await createRecoveryPhotoJob(file, {
+    source: 'single',
+    packageType: initialPackageType,
+    draft
+  });
   const session = {
     id: uid(),
     file,
     initialPackageType,
-    draft: {
-      note: '',
-      packageType: initialPackageType,
-      timeWindowId: '',
-      exactTime: '',
-      packageCount: 1,
-      packageCountChanged: false
-    },
+    recoveryJobId: job ? job.id : '',
+    draft,
     cancelled: false,
     result: null
   };
   singlePhotoQueue.push({
     file,
-    session
+    session,
+    job
   });
-  singlePhotoPending++;
-  updateBatchPhotoUi();
   openSinglePhotoProcessingEditor(session);
   drainSinglePhotoQueue().catch(e => console.warn('single photo queue failed', e));
 }
@@ -11481,14 +12094,16 @@ async function drainSinglePhotoQueue() {
     while (singlePhotoQueue.length) {
       const queued = singlePhotoQueue.shift();
       try {
-        const result = await processBatchPhoto(queued.file, {
+        await runRecoveryPhotoJob(queued.job, queued.file, {
+          source: 'single',
           immediateReview: true,
           reviewSource: 'single',
           packageType: '',
           deferImmediateReview: true,
           trackBatchStats: false
+        }, async result => {
+          finishSinglePhotoEditorSession(queued.session, result);
         });
-        finishSinglePhotoEditorSession(queued.session, result);
       } finally {
         singlePhotoPending = Math.max(0, singlePhotoPending - 1);
         updateBatchPhotoUi();
@@ -11502,6 +12117,15 @@ async function drainSinglePhotoQueue() {
 async function processBatchPhoto(file, options = {}) {
   const trackBatchStats = options.trackBatchStats !== false;
   const packageType = normalizePackageType(options.packageType);
+  const recoveryJobId = String(options.recoveryJobId || '');
+  const recoveryDeliveryId = String(options.recoveryDeliveryId || '');
+  if (recoveryJobId) {
+    const processed = deliveries.find(delivery =>
+      Array.isArray(delivery.captureJobIds) && delivery.captureJobIds.includes(recoveryJobId));
+    if (processed) {
+      return { status: 'already-processed', id: processed.id, address: processed.address || '' };
+    }
+  }
   if (trackBatchStats) {
     batchStats.pending++;
     updateBatchPhotoUi();
@@ -11540,13 +12164,19 @@ async function processBatchPhoto(file, options = {}) {
           canonicalAddressForCache(d.address || '') === canon)
       : null;
     if (dupActive) {
+      let photoSaved = true;
+      if (recoveryJobId) {
+        photoSaved = await persistDeliveryPhoto(dupActive.id, file, photoRotation, recoveryJobId);
+        if (!photoSaved) throw new Error('伝票写真を端末へ保存できませんでした');
+      }
       dupActive.packageCount = (Number(dupActive.packageCount) || 1) + 1;
       dupActive.packageType = combinePackageTypes(dupActive.packageType, packageType);
+      markDeliveryCaptureJob(dupActive, recoveryJobId);
       dupActive.updatedAt = Date.now();
       saveDeliveries();
       renderMarkers();
       renderList();
-      const photoSaved = await persistDeliveryPhoto(dupActive.id, file, photoRotation);
+      if (!recoveryJobId) photoSaved = await persistDeliveryPhoto(dupActive.id, file, photoRotation);
       if (trackBatchStats) batchStats.stacked++;
       showToast(
         photoSaved
@@ -11563,8 +12193,13 @@ async function processBatchPhoto(file, options = {}) {
     const resolvedDeliveryCourse = appMode === 'delivery' ? getSelectedDeliveryCourse() : '';
     const reviewReasons = validateDeliveryPlacement(address, result, resolvedDeliveryCourse);
     if (String(data.confidence || '').toLowerCase() === 'low') reviewReasons.push('読み取り自信度低');
-    const newId = uid();
-    deliveries.push({
+    const newId = recoveryDeliveryId || uid();
+    let photoSaved = true;
+    if (recoveryJobId) {
+      photoSaved = await persistDeliveryPhoto(newId, file, photoRotation, recoveryJobId);
+      if (!photoSaved) throw new Error('伝票写真を端末へ保存できませんでした');
+    }
+    const newDelivery = {
       id: newId,
       address,
       note,
@@ -11583,11 +12218,13 @@ async function processBatchPhoto(file, options = {}) {
       deliveryKind: 'delivery',
       createdAt: Date.now(),
       updatedAt: Date.now()
-    });
+    };
+    markDeliveryCaptureJob(newDelivery, recoveryJobId);
+    deliveries.push(newDelivery);
     saveDeliveries();
     renderMarkers();
     renderList();
-    const photoSaved = await persistDeliveryPhoto(newId, file, photoRotation);
+    if (!recoveryJobId) photoSaved = await persistDeliveryPhoto(newId, file, photoRotation);
     if (reviewReasons.length > 0) {
       if (trackBatchStats) batchStats.review++;
       if (options.immediateReview && !options.deferImmediateReview) {
@@ -11613,8 +12250,16 @@ async function processBatchPhoto(file, options = {}) {
     }
   } catch (e) {
     if (trackBatchStats) batchStats.failed++;
-    showToast(`❌ 読み取り失敗 — その伝票を撮り直してください (${e.message})`, true);
-    return { status: 'failed', error: (e && e.message) || String(e) };
+    const retryable = isRetryablePhotoProcessingError(e);
+    showToast(
+      recoveryJobId && retryable
+        ? `写真を端末に保存しました。通信回復後に再開します (${e.message})`
+        : recoveryJobId
+          ? `読み取り失敗。写真は復旧状況から再処理できます (${e.message})`
+          : `読み取り失敗。写真をもう一度撮影してください (${e.message})`,
+      true
+    );
+    return { status: 'failed', error: (e && e.message) || String(e), retryable };
   } finally {
     if (trackBatchStats) {
       batchStats.pending--;
@@ -11729,6 +12374,7 @@ function clearCompleted() {
     clearTemporaryGuidance({ resume: false, render: false, silent: true });
     clearOptimizedRouteGeometry();
     saveDeliveries();
+    try { localStorage.removeItem(recoveryBackupKey(currentStorageKey())); } catch (e) {}
     renderMarkers();
     renderList();
     showToast(`${n}件 削除しました`);
@@ -11746,6 +12392,7 @@ function clearAll() {
     clearTemporaryGuidance({ resume: false, render: false, silent: true });
     clearOptimizedRouteGeometry();
     saveDeliveries();
+    try { localStorage.removeItem(recoveryBackupKey(currentStorageKey())); } catch (e) {}
     renderMarkers();
     renderList();
     showToast('全件削除しました');
@@ -11809,6 +12456,7 @@ function findOtherDeliveryLists() {
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (!key || key === currentStorageKey() || key === PICKUP_STORAGE_KEY) continue;
+    if (key.endsWith(DELIVERY_RECOVERY_BACKUP_SUFFIX) || key === DELIVERY_RECOVERY_STATUS_KEY) continue;
     try {
       const data = JSON.parse(localStorage.getItem(key));
       if (Array.isArray(data) && data.length > 0) {
@@ -15411,12 +16059,17 @@ function updateGpsButton() {
 function updateGpsStatus(pos) {
   const el = $('gps-status');
   if (!el || !pos) return;
+  gpsLastUpdatedAt = Number(pos.timestamp || Date.now());
+  gpsLastError = '';
+  clearTimeout(gpsRestartTimer);
+  gpsRestartTimer = null;
   const accuracy = Math.round(pos.coords.accuracy || 0);
   const time = new Date(pos.timestamp || Date.now()).toLocaleTimeString('ja-JP', {
     hour: '2-digit', minute: '2-digit', second: '2-digit'
   });
   el.innerHTML = `GPS精度: 約${accuracy}m<br>更新: ${time}`;
   el.classList.add('show');
+  updateRecoveryStatusUi();
 }
 
 function updateUserLocation(pos, moveMap = false) {
@@ -15486,10 +16139,14 @@ function updateUserLocation(pos, moveMap = false) {
 }
 
 function ensureGpsWatching() {
-  if (!navigator.geolocation) { showToast('住置情報が利用できません', true); return false; }
+  if (!navigator.geolocation) { showToast('位置情報が利用できません', true); return false; }
   if (gpsActive && gpsWatchId !== null) return true;
 
+  clearTimeout(gpsRestartTimer);
+  gpsRestartTimer = null;
   gpsActive = true;
+  gpsLastError = '';
+  updateRecoveryStatusUi();
   if (!gpsInitialCenterStartedAt) gpsInitialCenterStartedAt = Date.now();
   gpsWatchId = navigator.geolocation.watchPosition(
     (pos) => { updateUserLocation(pos, gpsAutoFollow); },
@@ -15498,6 +16155,7 @@ function ensureGpsWatching() {
       if (err.code === 1) msg = '位置情報の許可が必要です';
       else if (err.code === 2) msg = '現在地を取得できませんでした';
       else if (err.code === 3) msg = 'GPS取得がタイムアウトしました';
+      gpsLastError = msg;
       showToast(msg, true);
       if (gpsWatchId !== null) {
         navigator.geolocation.clearWatch(gpsWatchId);
@@ -15506,10 +16164,20 @@ function ensureGpsWatching() {
       gpsActive = false;
       gpsAutoFollow = false;
       updateGpsButton();
+      updateRecoveryStatusUi();
+      if (err.code !== 1) scheduleGpsRestart();
     },
     { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
   );
   return true;
+}
+
+function scheduleGpsRestart(delay = DELIVERY_PHOTO_RETRY_DELAY_MS) {
+  if (gpsRestartTimer || document.hidden || !navigator.geolocation) return;
+  gpsRestartTimer = setTimeout(() => {
+    gpsRestartTimer = null;
+    if (!document.hidden && !gpsActive) ensureGpsWatching();
+  }, delay);
 }
 
 function toggleGpsTracking() {
@@ -15565,7 +16233,10 @@ function centerOnUser() {
   );
 }
 
-$('btn-menu').addEventListener('click', () => openModal('modal-menu'));
+$('btn-menu').addEventListener('click', () => {
+  updateRecoveryStatusUi();
+  openModal('modal-menu');
+});
 $('btn-gps').addEventListener('click', toggleGpsTracking);
 $('guidance-provider-switch').addEventListener('click', event => {
   const button = event.target.closest('[data-guidance-provider]');
@@ -15650,7 +16321,13 @@ $('native-camera-close').addEventListener('click', closeNativeBatchCamera);
 $('native-camera-torch').addEventListener('click', toggleNativeCameraTorch);
 $('native-camera-shutter').addEventListener('click', captureNativeBatchPhoto);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) closeNativeBatchCamera(); // 裏に回ったらカメラを解放
+  if (document.hidden) {
+    flushSinglePhotoDraftSave().catch(error => console.warn('single photo draft background save failed', error));
+    closeNativeBatchCamera(); // 裏に回ったらカメラを解放
+  }
+});
+window.addEventListener('pagehide', () => {
+  flushSinglePhotoDraftSave().catch(error => console.warn('single photo draft pagehide save failed', error));
 });
 $('file-photo').addEventListener('change', (e) => {
   const file = e.target.files && e.target.files[0];
@@ -15659,7 +16336,11 @@ $('file-photo').addEventListener('change', (e) => {
   e.target.value = '';
   if (!file) return;
   if (batchPhotoMode) {
-    processBatchPhoto(file, { immediateReview: true, packageType: photoContext.packageType }); // 裏で処理 (待たない)
+    processPhotoWithRecovery(file, {
+      source: 'batch',
+      immediateReview: true,
+      packageType: photoContext.packageType
+    }).catch(error => console.warn('batch photo recovery processing failed', error)); // 裏で処理 (待たない)
     // 続けて次の伝票を撮れるよう、すぐカメラを開き直す。
     // 端末側がブロックした場合は「📸連写」を再タップすれば同じ。
     setTimeout(() => {
@@ -15668,7 +16349,8 @@ $('file-photo').addEventListener('change', (e) => {
       }
     }, 300);
   } else {
-    enqueueSinglePhotoForBackground(file, photoContext);
+    enqueueSinglePhotoForBackground(file, photoContext)
+      .catch(error => showToast('写真処理を開始できませんでした: ' + error.message, true));
   }
 });
 $('menu-batch-photo').addEventListener('click', toggleBatchPhotoMode);
@@ -15753,6 +16435,13 @@ setupEditPhotoSwipeGestures();
 setupDeliveryPhotoZoomGestures();
 $('edit-time-window').addEventListener('change', () => {
   syncEditExactTimeField({ focus: true, clearWhenHidden: true });
+  scheduleSinglePhotoDraftSave();
+});
+['edit-note', 'edit-package-type', 'edit-exact-time', 'edit-package-count'].forEach(id => {
+  const field = $(id);
+  if (!field) return;
+  field.addEventListener('input', scheduleSinglePhotoDraftSave);
+  field.addEventListener('change', scheduleSinglePhotoDraftSave);
 });
 
 $('menu-center-user').addEventListener('click', centerOnUser);
@@ -15805,6 +16494,7 @@ $('btn-route-area-cancel').addEventListener('click', cancelRouteAreaPlanner);
 $('btn-route-area-build').addEventListener('click', confirmRouteAreaPlanner);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
 $('menu-delivery-sync').addEventListener('click', openDeliverySyncModal);
+$('menu-recovery-status').addEventListener('click', openRecoveryStatusModal);
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);
 $('menu-clear-done').addEventListener('click', clearCompleted);
@@ -15836,6 +16526,20 @@ $('menu-manual').addEventListener('click', () => {
 
 $('btn-delivery-sync-connect').addEventListener('click', connectDeliverySync);
 $('btn-delivery-sync-disconnect').addEventListener('click', disconnectDeliverySync);
+$('btn-recovery-retry').addEventListener('click', () => {
+  closeModal('modal-recovery-status');
+  retryRecoveryPhotoJobs({ includeFailed: true, announce: true })
+    .catch(error => showToast(error.message || '写真処理を再開できませんでした', true));
+});
+$('btn-recovery-discard-failed').addEventListener('click', () => {
+  const failed = recoveryPhotoJobCounts().failed;
+  if (!failed) return;
+  showConfirm(
+    '再処理できない写真を削除',
+    `保存中の失敗写真 ${failed}件を削除しますか？削除後は復元できません。撮り直し済みの場合だけ実行してください。`,
+    () => discardFailedRecoveryPhotoJobs().catch(error => showToast(error.message || '失敗写真を削除できませんでした', true))
+  );
+});
 $('btn-reset-usage').addEventListener('click', resetUsage);
 $('btn-pickup-import').addEventListener('click', importPickupSheet);
 $('btn-operator-save').addEventListener('click', saveOperatorFromModal);
@@ -15909,7 +16613,13 @@ $('placement-banner').addEventListener('click', cancelPlacement);
 $('btn-temporary-guidance-refresh').addEventListener('click', () => {
   refreshCurrentGuidanceLine();
 });
-window.addEventListener('online', () => retryPendingPickupProgress({ silent: false }));
+window.addEventListener('online', () => {
+  updateRecoveryStatusUi();
+  retryPendingPickupProgress({ silent: false });
+  retryRecoveryPhotoJobs().catch(error => console.warn('online recovery retry failed', error));
+  if (!gpsActive) scheduleGpsRestart(250);
+});
+window.addEventListener('offline', updateRecoveryStatusUi);
 window.addEventListener('beforeinstallprompt', event => {
   event.preventDefault();
   deferredInstallPrompt = event;
@@ -15922,7 +16632,10 @@ window.addEventListener('appinstalled', () => {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     retryPendingPickupProgress({ silent: true });
+    retryRecoveryPhotoJobs().catch(error => console.warn('resume recovery retry failed', error));
+    if (!gpsActive) scheduleGpsRestart(250);
     checkAppVersionUpdate();
+    updateRecoveryStatusUi();
   }
 });
 
@@ -15967,7 +16680,24 @@ registerNativeBackButtonHandler();
     updateModeUi();
     ensureGpsWatching();
     updateGpsButton();
+    updateRecoveryStatusUi();
     hideLoading();
+    refreshRecoveryPhotoJobsFromStorage({ markRestored: true }).then(jobs => {
+      updateRecoveryStatusUi();
+      if (recoveryUsedDeliveryBackup || jobs.length) {
+        const parts = [];
+        if (recoveryUsedDeliveryBackup) parts.push(`配送先${recoveryRestoredDeliveryCount}件`);
+        if (jobs.length) parts.push(`処理途中の写真${jobs.length}件`);
+        showToast(`${parts.join('と')}を復元しました`);
+      }
+      if (jobs.length) {
+        retryRecoveryPhotoJobs().catch(error => console.warn('startup recovery retry failed', error));
+      }
+    }).catch(error => {
+      recoveryLastError = error.message || '処理待ち写真を復元できませんでした';
+      updateRecoveryStatusRecord({ lastError: recoveryLastError });
+      console.warn('startup photo recovery failed', error);
+    });
     if (rokugoPinRepair.updated || rokugoPinRepair.failed) {
       const message = rokugoPinRepair.updated
         ? `六郷のピンを${rokugoPinRepair.updated}件、番地別に更新しました`
