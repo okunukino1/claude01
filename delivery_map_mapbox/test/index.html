@@ -1830,6 +1830,113 @@
     color: #b91c1c;
     font-weight: 700;
   }
+  .privacy-storage-summary,
+  .metrics-summary {
+    border-top: 1px solid #e5e1d5;
+    margin-top: 4px;
+  }
+  .privacy-status-note,
+  .metrics-status-note {
+    margin: 10px 0;
+    color: var(--muted);
+    font-size: calc(12px * var(--text-scale));
+    line-height: 1.55;
+  }
+  .privacy-status-note.error,
+  .metrics-status-note.error {
+    color: #b91c1c;
+    font-weight: 700;
+  }
+  .privacy-section-title,
+  .metrics-section-title {
+    margin: 16px 0 6px;
+    font-size: calc(13px * var(--text-scale));
+    color: var(--ink);
+  }
+  .privacy-inline-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+  .metrics-list {
+    max-height: 34dvh;
+    overflow-y: auto;
+    border-top: 1px solid #e5e1d5;
+  }
+  .metrics-row {
+    display: grid;
+    grid-template-columns: minmax(58px, auto) minmax(0, 1fr) minmax(66px, auto);
+    gap: 8px;
+    align-items: start;
+    padding: 9px 0;
+    border-bottom: 1px solid #e5e1d5;
+    font-size: calc(12px * var(--text-scale));
+    line-height: 1.4;
+  }
+  .metrics-row strong,
+  .metrics-row span { overflow-wrap: anywhere; }
+  .metrics-row small {
+    color: var(--muted);
+    text-align: right;
+  }
+  .app-lock-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: #f7f7f4;
+  }
+  .app-lock-screen[hidden] { display: none; }
+  .app-lock-panel {
+    width: min(100%, 360px);
+    padding: 22px;
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 12px 36px rgba(15, 23, 42, 0.22);
+  }
+  .app-lock-panel h2 {
+    margin: 0 0 8px;
+    font-size: calc(20px * var(--text-scale));
+    letter-spacing: 0;
+  }
+  .app-lock-panel p {
+    margin: 0 0 14px;
+    color: var(--muted);
+    font-size: calc(13px * var(--text-scale));
+    line-height: 1.5;
+  }
+  .app-lock-panel input {
+    width: 100%;
+    min-height: 48px;
+    margin-bottom: 10px;
+    border: 2px solid #94a3b8;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: calc(20px * var(--text-scale));
+    text-align: center;
+    letter-spacing: 0;
+  }
+  .app-lock-panel button {
+    width: 100%;
+    min-height: 48px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    font-size: calc(14px * var(--text-scale));
+    font-weight: 800;
+  }
+  .app-lock-error {
+    min-height: 20px;
+    margin-top: 10px;
+    color: #b91c1c;
+    font-size: calc(12px * var(--text-scale));
+    font-weight: 700;
+    text-align: center;
+  }
 
   /* Text sizing is intentionally separate from map and marker dimensions. */
   .topbar h1,
@@ -2184,7 +2291,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.108</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.109</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2257,7 +2364,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.108</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.109</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2275,6 +2382,8 @@
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
       <button id="menu-delivery-sync" type="button">🔗 デバイス間データ共有</button>
       <button id="menu-recovery-status" type="button">💾 保存・復旧状況</button>
+      <button id="menu-photo-privacy" type="button">🔒 写真・個人情報管理</button>
+      <button id="menu-delivery-metrics" type="button">📈 配送実績</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
       <button id="menu-clear-done" type="button">✓ 完了分を削除</button>
@@ -2511,6 +2620,79 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-photo-privacy">
+  <div class="modal">
+    <h3>写真・個人情報管理</h3>
+    <div class="privacy-storage-summary">
+      <div class="recovery-status-row"><span>保存済み写真</span><strong id="privacy-photo-usage">確認中</strong></div>
+      <div class="recovery-status-row"><span>処理待ち写真</span><strong id="privacy-pending-usage">確認中</strong></div>
+      <div class="recovery-status-row"><span>サイト全体</span><strong id="privacy-site-usage">確認中</strong></div>
+      <div class="recovery-status-row"><span>自動整理</span><strong id="privacy-cleanup-status">完了7日後</strong></div>
+    </div>
+    <div class="privacy-status-note" id="privacy-status-note">
+      完了から7日を過ぎた伝票写真だけを自動整理します。未完了と処理待ちの写真は対象外です。
+    </div>
+    <h4 class="privacy-section-title">写真の整理</h4>
+    <div class="modal-actions">
+      <button id="btn-privacy-refresh" type="button">容量を再確認</button>
+      <button class="danger" id="btn-privacy-delete-completed" type="button">完了写真を一括削除</button>
+    </div>
+    <div class="modal-actions">
+      <button class="danger" id="btn-privacy-delete-all" type="button">保存済み写真を全削除</button>
+    </div>
+    <h4 class="privacy-section-title">簡易PINロック（任意）</h4>
+    <div class="privacy-status-note" id="privacy-lock-status">PINは未設定です。</div>
+    <div class="privacy-inline-fields">
+      <input type="password" id="privacy-pin" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="4〜8桁">
+      <input type="password" id="privacy-pin-confirm" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="もう一度">
+    </div>
+    <div class="modal-actions">
+      <button id="btn-privacy-pin-save" type="button">PINを設定・変更</button>
+      <button class="danger" id="btn-privacy-pin-disable" type="button">PINを解除</button>
+    </div>
+    <div class="privacy-status-note">
+      起動時と、5分以上ほかの画面へ移った後にロックします。端末本体の画面ロックも必ず併用してください。
+    </div>
+    <div class="modal-actions">
+      <button id="btn-privacy-lock-now" type="button">今すぐロック</button>
+      <button class="cancel" type="button" data-close="modal-photo-privacy">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-delivery-metrics">
+  <div class="modal">
+    <h3>配送実績</h3>
+    <label>表示する日</label>
+    <select id="delivery-metrics-date"></select>
+    <div class="metrics-summary">
+      <div class="recovery-status-row"><span>計測</span><strong id="metrics-session-status">未開始</strong></div>
+      <div class="recovery-status-row"><span>完了</span><strong id="metrics-completed-count">0件</strong></div>
+      <div class="recovery-status-row"><span>予定順どおり</span><strong id="metrics-order-match">記録なし</strong></div>
+      <div class="recovery-status-row"><span>1件あたり</span><strong id="metrics-average-time">記録なし</strong></div>
+      <div class="recovery-status-row"><span>リルート</span><strong id="metrics-reroute-count">0回</strong></div>
+      <div class="recovery-status-row"><span>ピン修正</span><strong id="metrics-pin-count">0回</strong></div>
+      <div class="recovery-status-row"><span>通行規制登録</span><strong id="metrics-road-count">0回</strong></div>
+    </div>
+    <div class="metrics-status-note" id="metrics-status-note">
+      この端末で行った操作だけを記録し、サーバーやほかのスマホには送信しません。
+    </div>
+    <h4 class="metrics-section-title">完了した順番</h4>
+    <div class="metrics-list" id="delivery-metrics-list"></div>
+    <div class="modal-actions">
+      <button id="btn-metrics-copy-csv" type="button">CSVをコピー</button>
+      <button class="primary" id="btn-metrics-download-csv" type="button">CSVを保存</button>
+    </div>
+    <div class="modal-actions">
+      <button class="danger" id="btn-metrics-clear-day" type="button">この日の実績を削除</button>
+      <button class="danger" id="btn-metrics-clear-all" type="button">全実績を削除</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-delivery-metrics">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-course-choice">
   <div class="modal">
     <h3 id="course-choice-title">コースを選択</h3>
@@ -2668,6 +2850,16 @@
   </div>
 </div>
 
+<div class="app-lock-screen" id="app-lock-screen" hidden aria-modal="true" role="dialog" aria-labelledby="app-lock-title">
+  <div class="app-lock-panel">
+    <h2 id="app-lock-title">RYS配送マップ</h2>
+    <p>写真と配送先を表示するにはPINを入力してください。</p>
+    <input type="password" id="app-lock-pin" inputmode="numeric" autocomplete="current-password" maxlength="8" aria-label="アプリPIN">
+    <button id="btn-app-unlock" type="button">ロック解除</button>
+    <div class="app-lock-error" id="app-lock-error" aria-live="polite"></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-delivery-photo">
   <div class="delivery-photo-viewer">
     <img id="delivery-photo-viewer-img" alt="伝票写真の拡大表示">
@@ -2756,7 +2948,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.108';
+const APP_VERSION = 'v2026.06.24-test.109';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2782,6 +2974,11 @@ const DELIVERY_RECOVERY_STATUS_KEY = 'rys-mapbox-test-recovery-status-v1';
 const DELIVERY_RECOVERY_BACKUP_SUFFIX = ':recovery-backup-v1';
 const DELIVERY_PHOTO_JOB_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 const DELIVERY_PHOTO_RETRY_DELAY_MS = 8000;
+const DELIVERY_PHOTO_RETENTION_DAYS = 7;
+const DELIVERY_PHOTO_RETENTION_MS = DELIVERY_PHOTO_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const PHOTO_PRIVACY_STATE_KEY = 'rys-mapbox-test-photo-privacy-state-v1';
+const APP_LOCK_CONFIG_KEY = 'rys-mapbox-test-app-lock-v1';
+const APP_LOCK_IDLE_MS = 5 * 60 * 1000;
 const DELIVERY_PHOTO_MAX_SIZE = 1600;
 const DELIVERY_PHOTO_QUALITY = 0.82;
 const DELIVERY_PHOTO_MAX_ZOOM = 4;
@@ -2841,6 +3038,10 @@ const ROAD_MEMORY_TOMBSTONE_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 const ROAD_MEMORY_ROUTE_POINT_LIMIT = 50;
 const ROAD_MEMORY_ROUTE_RESTRICTION_LIMIT = 50;
 const ROAD_MEMORY_ROUTE_RADIUS_METERS = 15000;
+const DELIVERY_METRICS_KEY = 'rys-mapbox-test-delivery-metrics-v1';
+const DELIVERY_METRICS_RETENTION_DAYS = 90;
+const DELIVERY_METRICS_MAX_PLANS_PER_DAY = 30;
+const DELIVERY_METRICS_MAX_EVENTS_PER_DAY = 500;
 const GOOGLE_GUIDANCE_FEATURE_ENABLED = true;
 const FLOW_GUIDANCE_MAX_WALK_METERS = 60;
 const GEOCODE_CACHE_MAX_ITEMS = 500;
@@ -3056,6 +3257,11 @@ const reviewPhotoUrls = new Map(); // IndexedDB保存失敗時の要確認写真
 let deliveryPhotoDbPromise = null;
 let deliveryPhotoPersistenceRequested = false;
 let deliveryPhotoStorageWarningShown = false;
+let photoPrivacyRefreshToken = 0;
+let appLockActive = false;
+let appLockHiddenAt = 0;
+let appLockFailedAttempts = 0;
+const appUnlockWaiters = [];
 const recoveryPhotoJobs = new Map();
 const recoveryPhotoJobsInFlight = new Set();
 let recoveryRestoredPhotoJobCount = 0;
@@ -3125,6 +3331,8 @@ let googleGuidanceRouteMarkers = [];
 let googleGuidanceUserMarker = null;
 let recognition = null;
 let mapStyleLoaded = false;
+let deliveryMetricsState = null;
+let selectedDeliveryMetricsDateKey = '';
 
 let addrVisible = localStorage.getItem(ADDR_VISIBLE_KEY) !== '0'; // 既定ON
 // 保存キー名は旧仕様との互換用。現在は青いハイフン番地の表示状態を保存する。
@@ -3363,6 +3571,7 @@ function modalIsOpen(id) {
 }
 
 async function closeActiveSurfaceForBackButton() {
+  if (appLockActive) return true;
   if (nativeCameraOpen) {
     await closeNativeBatchCamera();
     return true;
@@ -4129,6 +4338,420 @@ async function deleteDeliveryPhotos(deliveryIds) {
   });
 }
 
+function formatStorageBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes < 1024) return `${Math.round(bytes)}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)}GB`;
+}
+
+function readPhotoPrivacyState() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PHOTO_PRIVACY_STATE_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function updatePhotoPrivacyState(patch) {
+  const next = { ...readPhotoPrivacyState(), ...patch };
+  try { localStorage.setItem(PHOTO_PRIVACY_STATE_KEY, JSON.stringify(next)); } catch (e) {}
+  return next;
+}
+
+function knownDeliveriesForPhotoPrivacy() {
+  const byId = new Map();
+  const storedItems = key => {
+    try { return parseStoredDeliveryArray(localStorage.getItem(key) || '') || []; }
+    catch (e) { return []; }
+  };
+  [
+    ...storedItems(STORAGE_KEY),
+    ...storedItems(PICKUP_STORAGE_KEY),
+    ...deliveries
+  ].forEach(item => {
+    if (item && item.id) byId.set(String(item.id), item);
+  });
+  return byId;
+}
+
+async function readDeliveryPhotoStorageSnapshot() {
+  const db = await openDeliveryPhotoDb();
+  const snapshot = { photos: [], pendingJobs: [], photoBytes: 0, pendingBytes: 0, siteUsage: null, siteQuota: null };
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction([DELIVERY_PHOTO_STORE, DELIVERY_PHOTO_JOB_STORE], 'readonly');
+    const photoRequest = transaction.objectStore(DELIVERY_PHOTO_STORE).openCursor();
+    const jobRequest = transaction.objectStore(DELIVERY_PHOTO_JOB_STORE).openCursor();
+    photoRequest.onsuccess = () => {
+      const cursor = photoRequest.result;
+      if (!cursor) return;
+      const value = cursor.value || {};
+      const size = Number(value.blob && value.blob.size) || 0;
+      snapshot.photoBytes += size;
+      snapshot.photos.push({
+        id: String(value.id || ''),
+        deliveryId: String(value.deliveryId || ''),
+        createdAt: Number(value.createdAt || 0),
+        size
+      });
+      cursor.continue();
+    };
+    jobRequest.onsuccess = () => {
+      const cursor = jobRequest.result;
+      if (!cursor) return;
+      const value = cursor.value || {};
+      const size = Number(value.blob && value.blob.size) || 0;
+      snapshot.pendingBytes += size;
+      snapshot.pendingJobs.push({ id: String(value.id || ''), state: String(value.state || ''), size });
+      cursor.continue();
+    };
+    photoRequest.onerror = () => reject(photoRequest.error || new Error('保存済み写真を確認できませんでした'));
+    jobRequest.onerror = () => reject(jobRequest.error || new Error('処理待ち写真を確認できませんでした'));
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('写真容量を確認できませんでした'));
+  });
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const estimate = await navigator.storage.estimate();
+      snapshot.siteUsage = Number.isFinite(Number(estimate.usage)) ? Number(estimate.usage) : null;
+      snapshot.siteQuota = Number.isFinite(Number(estimate.quota)) ? Number(estimate.quota) : null;
+    }
+  } catch (e) {}
+  const known = knownDeliveriesForPhotoPrivacy();
+  const now = Date.now();
+  snapshot.completedPhotos = snapshot.photos.filter(photo => {
+    const delivery = known.get(photo.deliveryId);
+    return !!(delivery && delivery.completed);
+  });
+  snapshot.expiredPhotos = snapshot.photos.filter(photo => {
+    const delivery = known.get(photo.deliveryId);
+    const completedAt = Number(delivery && delivery.completedAt);
+    const retentionStart = Math.max(completedAt || 0, Number(photo.createdAt || 0));
+    return !!(delivery && delivery.completed && completedAt && retentionStart && now - retentionStart >= DELIVERY_PHOTO_RETENTION_MS);
+  });
+  return snapshot;
+}
+
+async function deleteDeliveryPhotoRecordsMatching(predicate) {
+  const db = await openDeliveryPhotoDb();
+  const deletedDeliveryIds = new Set();
+  let deletedCount = 0;
+  let deletedBytes = 0;
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(DELIVERY_PHOTO_STORE, 'readwrite');
+    const request = transaction.objectStore(DELIVERY_PHOTO_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const value = cursor.value || {};
+      if (predicate(value)) {
+        deletedCount++;
+        deletedBytes += Number(value.blob && value.blob.size) || 0;
+        if (value.deliveryId) deletedDeliveryIds.add(String(value.deliveryId));
+        cursor.delete();
+      }
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error || new Error('伝票写真を削除できませんでした'));
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('伝票写真を削除できませんでした'));
+  });
+  deletedDeliveryIds.forEach(releaseReviewPhoto);
+  return { deletedCount, deletedBytes, deletedDeliveryIds: [...deletedDeliveryIds] };
+}
+
+async function cleanupExpiredDeliveryPhotos(options = {}) {
+  let snapshot;
+  try {
+    snapshot = await readDeliveryPhotoStorageSnapshot();
+  } catch (error) {
+    if (options.announce) showToast(error.message || '写真の自動整理を確認できませんでした', true);
+    throw error;
+  }
+  const expiredIds = new Set(snapshot.expiredPhotos.map(photo => photo.id));
+  let result = { deletedCount: 0, deletedBytes: 0, deletedDeliveryIds: [] };
+  if (expiredIds.size) {
+    result = await deleteDeliveryPhotoRecordsMatching(value => expiredIds.has(String(value.id || '')));
+  }
+  updatePhotoPrivacyState({
+    lastCleanupAt: Date.now(),
+    lastCleanupDeletedCount: result.deletedCount
+  });
+  if (options.announce) {
+    showToast(result.deletedCount
+      ? `完了から7日を過ぎた写真を${result.deletedCount}枚整理しました`
+      : '自動整理の対象写真はありません');
+  }
+  return result;
+}
+
+function cleanupExpiredDeliveryPhotosIfDue() {
+  const lastCleanupAt = Number(readPhotoPrivacyState().lastCleanupAt || 0);
+  if (Date.now() - lastCleanupAt < 60 * 60 * 1000) return Promise.resolve(null);
+  return cleanupExpiredDeliveryPhotos();
+}
+
+function formatPrivacyCleanupAt(value) {
+  const date = new Date(Number(value));
+  if (Number.isNaN(date.getTime())) return '未実行';
+  return date.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+async function refreshPhotoPrivacyUi() {
+  const token = ++photoPrivacyRefreshToken;
+  const note = $('privacy-status-note');
+  if (note) {
+    note.classList.remove('error');
+    note.textContent = '写真容量を確認しています...';
+  }
+  try {
+    const snapshot = await readDeliveryPhotoStorageSnapshot();
+    if (token !== photoPrivacyRefreshToken) return snapshot;
+    $('privacy-photo-usage').textContent = `${snapshot.photos.length}枚 / ${formatStorageBytes(snapshot.photoBytes)}`;
+    $('privacy-pending-usage').textContent = `${snapshot.pendingJobs.length}枚 / ${formatStorageBytes(snapshot.pendingBytes)}`;
+    $('privacy-site-usage').textContent = snapshot.siteUsage === null
+      ? '端末が容量情報に未対応'
+      : `${formatStorageBytes(snapshot.siteUsage)}${snapshot.siteQuota ? ` / 上限 ${formatStorageBytes(snapshot.siteQuota)}` : ''}`;
+    const privacyState = readPhotoPrivacyState();
+    $('privacy-cleanup-status').textContent = `完了7日後 / 最終 ${formatPrivacyCleanupAt(privacyState.lastCleanupAt)}`;
+    $('btn-privacy-delete-completed').disabled = snapshot.completedPhotos.length === 0;
+    $('btn-privacy-delete-all').disabled = snapshot.photos.length === 0;
+    if (note) {
+      note.textContent = `完了済み ${snapshot.completedPhotos.length}枚（7日経過 ${snapshot.expiredPhotos.length}枚）。未完了と処理待ち写真は自動整理しません。`;
+    }
+    updatePrivacyLockUi();
+    return snapshot;
+  } catch (error) {
+    if (token !== photoPrivacyRefreshToken) return null;
+    if (note) {
+      note.classList.add('error');
+      note.textContent = error.message || '写真容量を確認できませんでした';
+    }
+    throw error;
+  }
+}
+
+function openPhotoPrivacyModal() {
+  closeModal('modal-menu');
+  $('privacy-pin').value = '';
+  $('privacy-pin-confirm').value = '';
+  openModal('modal-photo-privacy');
+  updatePrivacyLockUi();
+  refreshPhotoPrivacyUi().catch(error => console.warn('photo privacy status failed', error));
+}
+
+async function requestCompletedPhotoDeletion() {
+  let snapshot;
+  try { snapshot = await readDeliveryPhotoStorageSnapshot(); }
+  catch (error) { showToast(error.message || '写真を確認できませんでした', true); return; }
+  if (!snapshot.completedPhotos.length) {
+    showToast('完了済みの保存写真はありません');
+    return;
+  }
+  const ids = new Set(snapshot.completedPhotos.map(photo => photo.id));
+  showConfirm(
+    '完了写真を一括削除',
+    `完了済みの伝票写真 ${ids.size}枚を削除しますか？配送先と配送実績は残ります。写真は元に戻せません。`,
+    async () => {
+      try {
+        const result = await deleteDeliveryPhotoRecordsMatching(value => ids.has(String(value.id || '')));
+        updatePhotoPrivacyState({ lastManualDeleteAt: Date.now(), lastManualDeletedCount: result.deletedCount });
+        await refreshPhotoPrivacyUi();
+        showToast(`完了写真を${result.deletedCount}枚削除しました`);
+      } catch (error) {
+        showToast(error.message || '完了写真を削除できませんでした', true);
+      }
+    }
+  );
+}
+
+async function requestAllSavedPhotoDeletion() {
+  let snapshot;
+  try { snapshot = await readDeliveryPhotoStorageSnapshot(); }
+  catch (error) { showToast(error.message || '写真を確認できませんでした', true); return; }
+  if (!snapshot.photos.length) {
+    showToast('保存済み写真はありません');
+    return;
+  }
+  showConfirm(
+    '保存済み写真を全削除',
+    `未完了分を含む保存済み伝票写真 ${snapshot.photos.length}枚をすべて削除しますか？処理待ち写真と配送先は残りますが、写真は元に戻せません。`,
+    async () => {
+      try {
+        const result = await deleteDeliveryPhotoRecordsMatching(() => true);
+        updatePhotoPrivacyState({ lastManualDeleteAt: Date.now(), lastManualDeletedCount: result.deletedCount });
+        await refreshPhotoPrivacyUi();
+        showToast(`保存済み写真を${result.deletedCount}枚削除しました`);
+      } catch (error) {
+        showToast(error.message || '保存済み写真を削除できませんでした', true);
+      }
+    }
+  );
+}
+
+function readAppLockConfig() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(APP_LOCK_CONFIG_KEY) || 'null');
+    if (!parsed || parsed.version !== 1 || !parsed.salt || !parsed.hash) return null;
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
+function appPinIsConfigured() {
+  return !!readAppLockConfig();
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes).map(value => value.toString(16).padStart(2, '0')).join('');
+}
+
+function createAppPinSalt() {
+  if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') {
+    throw new Error('この端末はPINロックに対応していません');
+  }
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return bytesToHex(bytes);
+}
+
+async function hashAppPin(pin, salt) {
+  if (!window.crypto || !window.crypto.subtle || typeof TextEncoder !== 'function') {
+    throw new Error('この端末はPINロックに対応していません');
+  }
+  const data = new TextEncoder().encode(`${salt}:${pin}`);
+  return bytesToHex(new Uint8Array(await window.crypto.subtle.digest('SHA-256', data)));
+}
+
+async function verifyAppPin(pin) {
+  const config = readAppLockConfig();
+  if (!config) return true;
+  const hash = await hashAppPin(pin, config.salt);
+  return hash === config.hash;
+}
+
+function updatePrivacyLockUi() {
+  const configured = appPinIsConfigured();
+  const status = $('privacy-lock-status');
+  if (status) status.textContent = configured
+    ? 'PIN設定済みです。起動時と5分以上離れた後にロックします。'
+    : 'PINは未設定です。';
+  const disable = $('btn-privacy-pin-disable');
+  const lockNow = $('btn-privacy-lock-now');
+  if (disable) disable.disabled = !configured;
+  if (lockNow) lockNow.disabled = !configured;
+}
+
+function setAppLocked(locked) {
+  const screen = $('app-lock-screen');
+  if (!screen) return;
+  appLockActive = !!locked;
+  screen.hidden = !appLockActive;
+  document.body.classList.toggle('app-locked', appLockActive);
+  const input = $('app-lock-pin');
+  const error = $('app-lock-error');
+  if (input) input.value = '';
+  if (error) error.textContent = '';
+  if (appLockActive) {
+    if (nativeCameraOpen) closeNativeBatchCamera();
+    setTimeout(() => input && input.focus(), 40);
+  }
+}
+
+function waitForConfiguredAppUnlock() {
+  if (!appPinIsConfigured()) return Promise.resolve();
+  setAppLocked(true);
+  return new Promise(resolve => appUnlockWaiters.push(resolve));
+}
+
+async function unlockAppWithEnteredPin() {
+  if (!appLockActive) return true;
+  const input = $('app-lock-pin');
+  const button = $('btn-app-unlock');
+  const error = $('app-lock-error');
+  const pin = String(input && input.value || '');
+  if (!/^\d{4,8}$/.test(pin)) {
+    if (error) error.textContent = '4〜8桁の数字を入力してください';
+    return false;
+  }
+  if (button) button.disabled = true;
+  try {
+    if (!await verifyAppPin(pin)) {
+      appLockFailedAttempts++;
+      if (error) error.textContent = 'PINが違います';
+      const delay = Math.min(4000, 500 * appLockFailedAttempts);
+      setTimeout(() => {
+        if (button) button.disabled = false;
+        if (input) {
+          input.value = '';
+          input.focus();
+        }
+      }, delay);
+      return false;
+    }
+    appLockFailedAttempts = 0;
+    setAppLocked(false);
+    while (appUnlockWaiters.length) appUnlockWaiters.shift()();
+    return true;
+  } catch (e) {
+    if (error) error.textContent = e.message || 'PINを確認できませんでした';
+    if (button) button.disabled = false;
+    return false;
+  } finally {
+    if (!appLockActive && button) button.disabled = false;
+  }
+}
+
+async function savePrivacyPin() {
+  const pin = String($('privacy-pin').value || '');
+  const confirmation = String($('privacy-pin-confirm').value || '');
+  if (!/^\d{4,8}$/.test(pin)) {
+    showToast('PINは4〜8桁の数字で入力してください', true);
+    return;
+  }
+  if (pin !== confirmation) {
+    showToast('2つのPINが一致しません', true);
+    return;
+  }
+  try {
+    const salt = createAppPinSalt();
+    const hash = await hashAppPin(pin, salt);
+    localStorage.setItem(APP_LOCK_CONFIG_KEY, JSON.stringify({ version: 1, salt, hash, updatedAt: Date.now() }));
+    $('privacy-pin').value = '';
+    $('privacy-pin-confirm').value = '';
+    updatePrivacyLockUi();
+    showToast('PINを設定しました');
+  } catch (error) {
+    showToast(error.message || 'PINを設定できませんでした', true);
+  }
+}
+
+function requestDisablePrivacyPin() {
+  if (!appPinIsConfigured()) return;
+  showConfirm(
+    'PINロックを解除',
+    'この端末の簡易PINロックを解除しますか？伝票写真と配送先は削除されません。',
+    () => {
+      localStorage.removeItem(APP_LOCK_CONFIG_KEY);
+      setAppLocked(false);
+      updatePrivacyLockUi();
+      showToast('PINロックを解除しました');
+    }
+  );
+}
+
+function lockAppNow() {
+  if (!appPinIsConfigured()) {
+    showToast('先にPINを設定してください', true);
+    return;
+  }
+  closeModal('modal-photo-privacy');
+  setAppLocked(true);
+}
+
 function clampDeliveryPhotoZoom() {
   const image = $('delivery-photo-viewer-img');
   const viewer = image && image.parentElement;
@@ -4782,6 +5405,382 @@ function localIsoString(value = Date.now()) {
   return date.toISOString();
 }
 
+function emptyDeliveryMetricsState() {
+  return { version: 1, days: {} };
+}
+
+function normalizeDeliveryMetricsDay(value, dateKey) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    dateKey,
+    startedAt: Math.max(0, Number(source.startedAt || 0)),
+    lastActivityAt: Math.max(0, Number(source.lastActivityAt || 0)),
+    plans: Array.isArray(source.plans) ? source.plans.slice(-DELIVERY_METRICS_MAX_PLANS_PER_DAY) : [],
+    activePlanId: String(source.activePlanId || ''),
+    completions: Array.isArray(source.completions) ? source.completions.slice(-DELIVERY_METRICS_MAX_EVENTS_PER_DAY) : [],
+    reroutes: Array.isArray(source.reroutes) ? source.reroutes.slice(-DELIVERY_METRICS_MAX_EVENTS_PER_DAY) : [],
+    pinCorrections: Array.isArray(source.pinCorrections) ? source.pinCorrections.slice(-DELIVERY_METRICS_MAX_EVENTS_PER_DAY) : [],
+    roadRestrictions: Array.isArray(source.roadRestrictions) ? source.roadRestrictions.slice(-DELIVERY_METRICS_MAX_EVENTS_PER_DAY) : []
+  };
+}
+
+function pruneDeliveryMetricsState(state) {
+  const result = state && typeof state === 'object' ? state : emptyDeliveryMetricsState();
+  if (!result.days || typeof result.days !== 'object') result.days = {};
+  const cutoff = Date.now() - DELIVERY_METRICS_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const nextDays = {};
+  Object.entries(result.days).forEach(([dateKey, value]) => {
+    const date = new Date(`${dateKey}T23:59:59`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || Number.isNaN(date.getTime()) || date.getTime() < cutoff) return;
+    nextDays[dateKey] = normalizeDeliveryMetricsDay(value, dateKey);
+  });
+  result.version = 1;
+  result.days = nextDays;
+  return result;
+}
+
+function loadDeliveryMetricsState() {
+  if (deliveryMetricsState) return deliveryMetricsState;
+  try {
+    deliveryMetricsState = pruneDeliveryMetricsState(JSON.parse(localStorage.getItem(DELIVERY_METRICS_KEY) || 'null'));
+  } catch (e) {
+    deliveryMetricsState = emptyDeliveryMetricsState();
+  }
+  return deliveryMetricsState;
+}
+
+function saveDeliveryMetricsState() {
+  const state = pruneDeliveryMetricsState(loadDeliveryMetricsState());
+  deliveryMetricsState = state;
+  try {
+    localStorage.setItem(DELIVERY_METRICS_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn('delivery metrics save failed', error);
+  }
+  if (modalIsOpen('modal-delivery-metrics')) renderDeliveryMetricsModal();
+}
+
+function ensureDeliveryMetricsDay(value = Date.now(), options = {}) {
+  const state = loadDeliveryMetricsState();
+  const dateKey = localDateKey(value) || localDateKey();
+  if (!state.days[dateKey]) state.days[dateKey] = normalizeDeliveryMetricsDay(null, dateKey);
+  const day = state.days[dateKey];
+  const at = Math.max(0, Number(value) || Date.now());
+  if (options.start && !day.startedAt) day.startedAt = at;
+  day.lastActivityAt = Math.max(day.lastActivityAt || 0, at);
+  return day;
+}
+
+function beginDeliveryMetricsSession(reason = 'delivery_mode') {
+  if (appMode !== 'delivery') return null;
+  const day = ensureDeliveryMetricsDay(Date.now(), { start: true });
+  if (!day.sessionReason) day.sessionReason = reason;
+  saveDeliveryMetricsState();
+  return day;
+}
+
+function deliveryMetricsStop(delivery, plannedPosition) {
+  return {
+    deliveryId: String(delivery.id || ''),
+    address: String(delivery.address || ''),
+    note: String(delivery.note || ''),
+    deliveryCourse: String(delivery.deliveryCourse || ''),
+    plannedPosition
+  };
+}
+
+function recordDeliveryMetricsPlan(source, routeItems) {
+  if (appMode !== 'delivery' || !Array.isArray(routeItems) || !routeItems.length) return;
+  const now = Date.now();
+  const day = ensureDeliveryMetricsDay(now, { start: true });
+  const stops = routeItems.map((delivery, index) => deliveryMetricsStop(delivery, index + 1));
+  const fingerprint = stops.map(stop => stop.deliveryId).join('|');
+  const latest = day.plans[day.plans.length - 1];
+  if (latest && latest.fingerprint === fingerprint && now - Number(latest.createdAt || 0) < 10000) {
+    day.activePlanId = latest.id;
+    day.lastActivityAt = now;
+    saveDeliveryMetricsState();
+    return;
+  }
+  const plan = {
+    id: uid(),
+    source: String(source || '配送順'),
+    createdAt: now,
+    fingerprint,
+    stops
+  };
+  day.plans.push(plan);
+  day.plans = day.plans.slice(-DELIVERY_METRICS_MAX_PLANS_PER_DAY);
+  day.activePlanId = plan.id;
+  day.lastActivityAt = now;
+  saveDeliveryMetricsState();
+}
+
+function activeDeliveryMetricsPlan(day, deliveryId = '') {
+  if (!day || !Array.isArray(day.plans)) return null;
+  const active = day.plans.find(plan => String(plan.id || '') === String(day.activePlanId || '')) || null;
+  if (!deliveryId || (active && Array.isArray(active.stops) && active.stops.some(stop => stop.deliveryId === deliveryId))) return active;
+  for (let index = day.plans.length - 1; index >= 0; index--) {
+    const plan = day.plans[index];
+    if (Array.isArray(plan.stops) && plan.stops.some(stop => stop.deliveryId === deliveryId)) return plan;
+  }
+  return active;
+}
+
+function recalculateDeliveryMetricCompletionTimes(day) {
+  if (!day) return;
+  day.completions.sort((a, b) => Number(a.completedAt || 0) - Number(b.completedAt || 0));
+  let previousAt = Number(day.startedAt || 0);
+  const planActualPositions = new Map();
+  day.completions.forEach((completion, index) => {
+    const completedAt = Number(completion.completedAt || 0);
+    if (!previousAt || previousAt > completedAt) previousAt = completedAt;
+    completion.actualPosition = index + 1;
+    completion.elapsedMs = Math.max(0, completedAt - previousAt);
+    const hasPlan = Number(completion.plannedPosition) > 0;
+    if (hasPlan) {
+      const planKey = String(completion.planId || '__plan__');
+      const position = (planActualPositions.get(planKey) || 0) + 1;
+      planActualPositions.set(planKey, position);
+      completion.plannedActualPosition = position;
+    } else {
+      completion.plannedActualPosition = null;
+    }
+    previousAt = completedAt;
+  });
+}
+
+function recordDeliveryMetricsCompletion(delivery, completed) {
+  if (appMode !== 'delivery' || !delivery || !delivery.id) return;
+  const deliveryId = String(delivery.id);
+  if (!completed) {
+    const state = loadDeliveryMetricsState();
+    Object.values(state.days).forEach(day => {
+      const beforeCount = day.completions.length;
+      day.completions = day.completions.filter(item => String(item.deliveryId || '') !== deliveryId);
+      if (day.completions.length !== beforeCount) recalculateDeliveryMetricCompletionTimes(day);
+    });
+    saveDeliveryMetricsState();
+    return;
+  }
+  const completedAt = Number(delivery.completedAt || Date.now());
+  const day = ensureDeliveryMetricsDay(completedAt, { start: true });
+  day.completions = day.completions.filter(item => String(item.deliveryId || '') !== deliveryId);
+  const plan = activeDeliveryMetricsPlan(day, deliveryId);
+  const plannedStop = plan && Array.isArray(plan.stops)
+    ? plan.stops.find(stop => String(stop.deliveryId || '') === deliveryId)
+    : null;
+  day.completions.push({
+    id: uid(),
+    deliveryId,
+    address: String(delivery.address || ''),
+    note: String(delivery.note || ''),
+    deliveryCourse: String(delivery.deliveryCourse || ''),
+    completedAt,
+    planId: plan ? String(plan.id || '') : '',
+    planSource: plan ? String(plan.source || '') : '',
+    plannedPosition: plannedStop ? Number(plannedStop.plannedPosition || 0) : null,
+    actualPosition: 0,
+    elapsedMs: 0
+  });
+  recalculateDeliveryMetricCompletionTimes(day);
+  day.lastActivityAt = Date.now();
+  saveDeliveryMetricsState();
+}
+
+function recordDeliveryMetricsReroute(target) {
+  if (appMode !== 'delivery' || !target) return;
+  const now = Date.now();
+  const day = ensureDeliveryMetricsDay(now, { start: true });
+  day.reroutes.push({
+    at: now,
+    deliveryId: String(target.id || ''),
+    address: String(target.address || '')
+  });
+  day.reroutes = day.reroutes.slice(-DELIVERY_METRICS_MAX_EVENTS_PER_DAY);
+  saveDeliveryMetricsState();
+}
+
+function recordDeliveryMetricsPinCorrection(delivery, options = {}) {
+  if (appMode !== 'delivery' || !delivery) return;
+  const from = options.from || null;
+  const to = options.to || delivery;
+  const movedMeters = from && to && Number.isFinite(Number(from.lat)) && Number.isFinite(Number(from.lng)) &&
+    Number.isFinite(Number(to.lat)) && Number.isFinite(Number(to.lng))
+    ? distanceMeters({ lat: Number(from.lat), lng: Number(from.lng) }, { lat: Number(to.lat), lng: Number(to.lng) })
+    : null;
+  if (Number.isFinite(movedMeters) && movedMeters < 2) return;
+  const now = Date.now();
+  const day = ensureDeliveryMetricsDay(now);
+  day.pinCorrections.push({
+    at: now,
+    deliveryId: String(delivery.id || ''),
+    address: String(delivery.address || ''),
+    source: String(options.source || 'manual'),
+    movedMeters: Number.isFinite(movedMeters) ? Math.round(movedMeters) : null
+  });
+  day.pinCorrections = day.pinCorrections.slice(-DELIVERY_METRICS_MAX_EVENTS_PER_DAY);
+  saveDeliveryMetricsState();
+}
+
+function recordDeliveryMetricsRoadRestriction(kind) {
+  if (appMode !== 'delivery') return;
+  const now = Date.now();
+  const day = ensureDeliveryMetricsDay(now);
+  day.roadRestrictions.push({ at: now, kind: String(kind || 'blocked') });
+  day.roadRestrictions = day.roadRestrictions.slice(-DELIVERY_METRICS_MAX_EVENTS_PER_DAY);
+  saveDeliveryMetricsState();
+}
+
+function formatDeliveryMetricElapsed(value) {
+  const milliseconds = Math.max(0, Number(value) || 0);
+  if (!milliseconds) return '0分';
+  const minutes = Math.max(1, Math.round(milliseconds / 60000));
+  if (minutes < 60) return `${minutes}分`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}時間${rest}分` : `${hours}時間`;
+}
+
+function deliveryMetricsDateKeys() {
+  const state = loadDeliveryMetricsState();
+  return [...new Set([localDateKey(), ...Object.keys(state.days)])].filter(Boolean).sort().reverse();
+}
+
+function selectedDeliveryMetricsDay() {
+  const state = loadDeliveryMetricsState();
+  const key = selectedDeliveryMetricsDateKey || localDateKey();
+  return { key, day: state.days[key] || normalizeDeliveryMetricsDay(null, key) };
+}
+
+function renderDeliveryMetricsModal() {
+  const select = $('delivery-metrics-date');
+  if (!select) return;
+  const keys = deliveryMetricsDateKeys();
+  if (!selectedDeliveryMetricsDateKey || !keys.includes(selectedDeliveryMetricsDateKey)) {
+    selectedDeliveryMetricsDateKey = keys[0] || localDateKey();
+  }
+  select.innerHTML = keys.map(key => `<option value="${escapeHtml(key)}">${escapeHtml(key)}${key === localDateKey() ? '（今日）' : ''}</option>`).join('');
+  select.value = selectedDeliveryMetricsDateKey;
+  const { day } = selectedDeliveryMetricsDay();
+  recalculateDeliveryMetricCompletionTimes(day);
+  const completions = day.completions || [];
+  const planned = completions.filter(item => Number.isFinite(Number(item.plannedPosition)) && Number(item.plannedPosition) > 0);
+  const matches = planned.filter(item => Number(item.plannedPosition) === Number(item.plannedActualPosition)).length;
+  const elapsedValues = completions.map(item => Number(item.elapsedMs)).filter(value => Number.isFinite(value) && value >= 0);
+  const average = elapsedValues.length ? elapsedValues.reduce((sum, value) => sum + value, 0) / elapsedValues.length : null;
+  $('metrics-session-status').textContent = day.startedAt
+    ? `${formatTime(day.startedAt)}開始 / 端末内のみ`
+    : (day.lastActivityAt ? '操作記録あり / 配送未開始' : '未開始');
+  $('metrics-completed-count').textContent = `${completions.length}件`;
+  $('metrics-order-match').textContent = planned.length ? `${matches}/${planned.length}件` : '配送順の記録なし';
+  $('metrics-average-time').textContent = average === null ? '記録なし' : formatDeliveryMetricElapsed(average);
+  $('metrics-reroute-count').textContent = `${day.reroutes.length}回`;
+  $('metrics-pin-count').textContent = `${day.pinCorrections.length}回`;
+  $('metrics-road-count').textContent = `${day.roadRestrictions.length}回`;
+  const list = $('delivery-metrics-list');
+  list.innerHTML = completions.length ? completions.map(item => {
+    const plannedLabel = Number(item.plannedPosition) > 0 ? `予定${item.plannedPosition}` : '予定なし';
+    const planSource = item.planSource ? ` / ${item.planSource}` : '';
+    return `<div class="metrics-row">
+      <strong>実績${item.actualPosition}</strong>
+      <span>${escapeHtml(item.address || '住所なし')}<br><small>${escapeHtml(plannedLabel + planSource)}</small></span>
+      <small>${escapeHtml(formatTime(item.completedAt))}<br>${escapeHtml(formatDeliveryMetricElapsed(item.elapsedMs))}</small>
+    </div>`;
+  }).join('') : '<div class="modal-help">この端末で完了にした配送先はまだありません。</div>';
+  $('btn-metrics-copy-csv').disabled = completions.length === 0 && !day.lastActivityAt;
+  $('btn-metrics-download-csv').disabled = completions.length === 0 && !day.lastActivityAt;
+  $('btn-metrics-clear-day').disabled = !loadDeliveryMetricsState().days[selectedDeliveryMetricsDateKey];
+  $('btn-metrics-clear-all').disabled = Object.keys(loadDeliveryMetricsState().days).length === 0;
+}
+
+function openDeliveryMetricsModal() {
+  closeModal('modal-menu');
+  selectedDeliveryMetricsDateKey = localDateKey();
+  renderDeliveryMetricsModal();
+  openModal('modal-delivery-metrics');
+}
+
+function csvCell(value) {
+  const text = String(value === null || value === undefined ? '' : value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function deliveryMetricsCsv(dateKey) {
+  const state = loadDeliveryMetricsState();
+  const day = state.days[dateKey] || normalizeDeliveryMetricsDay(null, dateKey);
+  recalculateDeliveryMetricCompletionTimes(day);
+  const headers = [
+    '日付', '実績順', '予定順', '配送先', '完了時刻', '1件所要分', '配送順方式',
+    '当日リルート回数', '当日ピン修正回数', '当日通行規制登録回数'
+  ];
+  const rows = day.completions.length ? day.completions.map(item => [
+    dateKey,
+    item.actualPosition,
+    Number(item.plannedPosition) > 0 ? item.plannedPosition : '',
+    item.address || '',
+    formatTime(item.completedAt),
+    Math.round((Number(item.elapsedMs) || 0) / 60000 * 10) / 10,
+    item.planSource || '',
+    day.reroutes.length,
+    day.pinCorrections.length,
+    day.roadRestrictions.length
+  ]) : [[dateKey, '', '', '', '', '', '', day.reroutes.length, day.pinCorrections.length, day.roadRestrictions.length]];
+  return '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n');
+}
+
+function copyDeliveryMetricsCsv() {
+  const csv = deliveryMetricsCsv(selectedDeliveryMetricsDateKey || localDateKey());
+  navigator.clipboard.writeText(csv).then(
+    () => showToast('配送実績CSVをコピーしました'),
+    () => showToast('CSVをコピーできませんでした', true)
+  );
+}
+
+function downloadDeliveryMetricsCsv() {
+  const dateKey = selectedDeliveryMetricsDateKey || localDateKey();
+  const blob = new Blob([deliveryMetricsCsv(dateKey)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `delivery-results-${dateKey}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('配送実績CSVを保存しました');
+}
+
+function requestClearDeliveryMetricsDay() {
+  const dateKey = selectedDeliveryMetricsDateKey || localDateKey();
+  if (!loadDeliveryMetricsState().days[dateKey]) return;
+  showConfirm(
+    'この日の配送実績を削除',
+    `${dateKey} の端末内配送実績を削除しますか？配送先と写真は削除されません。`,
+    () => {
+      delete loadDeliveryMetricsState().days[dateKey];
+      saveDeliveryMetricsState();
+      renderDeliveryMetricsModal();
+      showToast('この日の配送実績を削除しました');
+    }
+  );
+}
+
+function requestClearAllDeliveryMetrics() {
+  if (!Object.keys(loadDeliveryMetricsState().days).length) return;
+  showConfirm(
+    '全配送実績を削除',
+    'この端末に保存した90日以内の配送実績をすべて削除しますか？配送先と写真は削除されません。',
+    () => {
+      deliveryMetricsState = emptyDeliveryMetricsState();
+      localStorage.removeItem(DELIVERY_METRICS_KEY);
+      selectedDeliveryMetricsDateKey = localDateKey();
+      renderDeliveryMetricsModal();
+      showToast('端末内の配送実績をすべて削除しました');
+    }
+  );
+}
+
 function openOperatorModal(callback, cancelCallback) {
   closeModal('modal-menu');
   $('operator-name').value = getOperatorName();
@@ -4878,6 +5877,7 @@ function setWorkMode(mode, options = {}) {
   if (workMode === 'delivery' && guidanceHasRouteTarget()) {
     updateNextSegmentHighlight();
   }
+  if (workMode === 'delivery') beginDeliveryMetricsSession('delivery_mode');
   if (options.toast !== false) {
     showToast(workMode === 'delivery'
       ? '配送モード — 配送先の入力ボタンを隠しました'
@@ -5167,6 +6167,7 @@ async function switchAppMode(mode, showMessage = true, options = {}) {
   renderMarkers();
   renderList();
   updateModeUi();
+  if (!switchingToPickup && workMode === 'delivery') beginDeliveryMetricsSession('delivery_app_mode');
   restartPickupAutoSync();
   resetStalePickupCompletions({ silent: true }).catch(e => console.warn('pickup reset failed', e));
   if (showMessage) showToast(`${modeLabel()}モードに切り替えました`);
@@ -7870,10 +8871,15 @@ async function refreshCurrentGuidanceLine() {
   updateGuidanceBannerUi();
   try {
     if (temporaryGuidanceTargetId) {
-      return await refreshTemporaryGuidanceLine({ announce: true, refresh: true });
+      const refreshed = await refreshTemporaryGuidanceLine({ announce: true, refresh: true });
+      if (refreshed) recordDeliveryMetricsReroute(target);
+      return refreshed;
     }
     const refreshed = await updateNextSegmentHighlight();
-    if (refreshed) showToast('現在地から案内線を引き直しました');
+    if (refreshed) {
+      recordDeliveryMetricsReroute(target);
+      showToast('現在地から案内線を引き直しました');
+    }
     return refreshed;
   } catch (error) {
     console.warn('guidance refresh failed', error);
@@ -10118,6 +11124,7 @@ async function commitPlacement() {
   d.needsReview = false; // 位置を手で確定した
   d.reviewReasons = [];
   d.updatedAt = Date.now();
+  recordDeliveryMetricsPinCorrection(d, { source: 'manual_map', from: before, to: d });
   saveDeliveries();
   renderMarkers();
   renderList();
@@ -10485,6 +11492,7 @@ async function toggleEditedItemDone() {
   d.completedBy = d.completed ? operatorName : '';
   d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
   d.updatedAt = Date.now();
+  recordDeliveryMetricsCompletion(d, d.completed);
   if (d.completed && activeDeliveryId === editingItemId) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
@@ -10580,6 +11588,7 @@ async function reGeocodeEditedItem() {
     showToast('管理者確認に失敗したため、住所再検索を取り消しました', true);
     return;
   }
+  recordDeliveryMetricsPinCorrection(d, { source: 'address_search', from: before, to: d });
   map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
   closeModal('modal-edit');
   clearEditPhotoEntries();
@@ -14791,6 +15800,7 @@ function commitRoadMemoryPlacement() {
   pendingPlacementCoord = null;
   document.body.classList.remove('placing-mode', 'road-memory-placing');
   persistRoadMemoryState();
+  recordDeliveryMetricsRoadRestriction(mode);
   refreshGuidanceAfterRoadMemoryChange();
   showToast(`${roadMemoryKindLabel(mode, mode === 'turn' ? { points } : null)}を記憶しました`);
 }
@@ -15473,7 +16483,7 @@ function showInsufficientRouteCandidates(action, timeWindowItems) {
 }
 
 // 並べ替え確定処理（おすすめ順・車用・Google車用で共通）
-function confirmAndApplyRouteOrder({ title, summary, suggested, timeWindowItems = [], noLocationItems = [], completedItems = [], geometry = null, clearGeometry = false, successMessage }) {
+function confirmAndApplyRouteOrder({ title, summary, suggested, timeWindowItems = [], noLocationItems = [], completedItems = [], geometry = null, clearGeometry = false, successMessage, metricSource = '' }) {
   const tailNote = buildRouteTailNote(timeWindowItems, noLocationItems, completedItems);
   showConfirm(
     title,
@@ -15497,6 +16507,7 @@ function confirmAndApplyRouteOrder({ title, summary, suggested, timeWindowItems 
       } catch (e) {
         optimizedRouteOrderedIds = orderedIds;
       }
+      recordDeliveryMetricsPlan(metricSource || title, suggested);
       updateNextSegmentHighlight();
       saveDeliveries();
       renderMarkers();
@@ -16495,6 +17506,8 @@ $('btn-route-area-build').addEventListener('click', confirmRouteAreaPlanner);
 $('menu-operator').addEventListener('click', () => openOperatorModal());
 $('menu-delivery-sync').addEventListener('click', openDeliverySyncModal);
 $('menu-recovery-status').addEventListener('click', openRecoveryStatusModal);
+$('menu-photo-privacy').addEventListener('click', openPhotoPrivacyModal);
+$('menu-delivery-metrics').addEventListener('click', openDeliveryMetricsModal);
 $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);
 $('menu-clear-done').addEventListener('click', clearCompleted);
@@ -16526,6 +17539,28 @@ $('menu-manual').addEventListener('click', () => {
 
 $('btn-delivery-sync-connect').addEventListener('click', connectDeliverySync);
 $('btn-delivery-sync-disconnect').addEventListener('click', disconnectDeliverySync);
+$('btn-privacy-refresh').addEventListener('click', () => {
+  cleanupExpiredDeliveryPhotos({ announce: true })
+    .then(() => refreshPhotoPrivacyUi())
+    .catch(error => console.warn('manual photo cleanup failed', error));
+});
+$('btn-privacy-delete-completed').addEventListener('click', requestCompletedPhotoDeletion);
+$('btn-privacy-delete-all').addEventListener('click', requestAllSavedPhotoDeletion);
+$('btn-privacy-pin-save').addEventListener('click', savePrivacyPin);
+$('btn-privacy-pin-disable').addEventListener('click', requestDisablePrivacyPin);
+$('btn-privacy-lock-now').addEventListener('click', lockAppNow);
+$('btn-app-unlock').addEventListener('click', unlockAppWithEnteredPin);
+$('app-lock-pin').addEventListener('keydown', event => {
+  if (event.key === 'Enter') unlockAppWithEnteredPin();
+});
+$('delivery-metrics-date').addEventListener('change', event => {
+  selectedDeliveryMetricsDateKey = event.target.value;
+  renderDeliveryMetricsModal();
+});
+$('btn-metrics-copy-csv').addEventListener('click', copyDeliveryMetricsCsv);
+$('btn-metrics-download-csv').addEventListener('click', downloadDeliveryMetricsCsv);
+$('btn-metrics-clear-day').addEventListener('click', requestClearDeliveryMetricsDay);
+$('btn-metrics-clear-all').addEventListener('click', requestClearAllDeliveryMetrics);
 $('btn-recovery-retry').addEventListener('click', () => {
   closeModal('modal-recovery-status');
   retryRecoveryPhotoJobs({ includeFailed: true, announce: true })
@@ -16636,7 +17671,19 @@ document.addEventListener('visibilitychange', () => {
     if (!gpsActive) scheduleGpsRestart(250);
     checkAppVersionUpdate();
     updateRecoveryStatusUi();
+    cleanupExpiredDeliveryPhotosIfDue().catch(error => console.warn('resume photo cleanup failed', error));
   }
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    appLockHiddenAt = Date.now();
+    return;
+  }
+  if (appPinIsConfigured() && appLockHiddenAt && Date.now() - appLockHiddenAt >= APP_LOCK_IDLE_MS) {
+    setAppLocked(true);
+  }
+  appLockHiddenAt = 0;
 });
 
 registerNativeBackButtonHandler();
@@ -16645,6 +17692,7 @@ registerNativeBackButtonHandler();
   try {
     updateAppVersionLabels();
     applyTextSize(currentTextSize(), false);
+    await waitForConfiguredAppUnlock();
     updateWorkModeUi();
     updateGuidanceProviderUi();
     loadRoadMemoryState();
@@ -16662,6 +17710,9 @@ registerNativeBackButtonHandler();
     mapboxConfig = await loadMapboxConfig();
     const mapReady = initMap();
     loadDeliveries();
+    loadDeliveryMetricsState();
+    if (workMode === 'delivery' && appMode === 'delivery') beginDeliveryMetricsSession('startup_delivery_mode');
+    cleanupExpiredDeliveryPhotosIfDue().catch(error => console.warn('startup photo cleanup failed', error));
     const restoredGuidanceState = restoreGuidanceRouteState();
     loadPackageTypeCatalog();
     updateBatchPhotoUi();
