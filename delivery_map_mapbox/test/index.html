@@ -762,6 +762,9 @@
     font-weight: 800;
     line-height: 24px;
     cursor: pointer;
+    max-width: calc(100vw - 20px);
+    text-align: center;
+    line-height: 1.35;
   }
   .work-mode-switch button.selected {
     background: var(--accent);
@@ -1877,6 +1880,35 @@
     font-weight: 700;
     line-height: 1.5;
   }
+  .road-memory-actions {
+    display: grid;
+    gap: 8px;
+    margin: 10px 0;
+  }
+  .road-memory-actions button {
+    width: 100%;
+    min-height: 46px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    font-size: calc(13px * var(--text-scale));
+    font-weight: 800;
+  }
+  .road-memory-actions button:first-child {
+    background: #dc2626;
+    border-color: #991b1b;
+    color: #fff;
+  }
+  .road-memory-sync-status {
+    margin: 8px 0 2px;
+    color: #475569;
+    font-size: calc(11px * var(--text-scale));
+    font-weight: 700;
+    line-height: 1.45;
+  }
+  .road-memory-sync-status.connected { color: #166534; }
+  .road-memory-sync-status.error { color: #b91c1c; }
   .road-memory-list {
     max-height: 42dvh;
     overflow-y: auto;
@@ -2116,7 +2148,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.105</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.106</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2189,7 +2221,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.105</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.106</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2203,7 +2235,7 @@
       <button id="menu-optimize-recommended" type="button">📐 エリア相談 → 直線距離で比較（道路未考慮）</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
-      <button id="menu-road-memory" type="button">🚧 Mapbox案内線: 通れない道路・進入方向</button>
+      <button id="menu-road-memory" type="button">🚧 Mapbox案内線: 通行規制・進入方向</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
       <button id="menu-delivery-sync" type="button">🔗 デバイス間データ共有</button>
       <button id="menu-export-json" type="button">📤 JSONでバックアップ (コピー)</button>
@@ -2232,11 +2264,16 @@
 
 <div class="modal-bg" id="modal-road-memory">
   <div class="modal">
-    <h3>通れない道路・進入方向</h3>
+    <h3>通行規制・進入方向</h3>
     <div class="modal-help">
-      地図上で通れない道路を指定すると、次回からMapboxのオレンジ・青の案内線がその道路を避けます。進入方向は各配送先の編集画面で記憶します。Google案内は変更しません。
+      現地標識どおりの順に地図をタップして登録します。次回からMapboxのオレンジ・青線で安全な候補だけを選びます。Google案内は変更しません。
     </div>
-    <button class="inline-action" id="btn-road-memory-add" type="button">🚧 地図で通れない道路を指定</button>
+    <div class="road-memory-actions">
+      <button id="btn-road-memory-add" type="button">道路全体を避ける（1点）</button>
+      <button id="btn-road-memory-direction" type="button">一方通行・進入禁止（2点）</button>
+      <button id="btn-road-memory-turn" type="button">右左折禁止（3点）</button>
+    </div>
+    <div class="road-memory-sync-status" id="road-memory-sync-status"></div>
     <div class="road-memory-summary" id="road-memory-summary"></div>
     <div class="road-memory-list" id="road-memory-list"></div>
     <div class="modal-actions">
@@ -2400,7 +2437,7 @@
            placeholder="共有コード（例: myteam-2024）"
            autocomplete="off" autocapitalize="none">
     <div class="modal-help">
-      同じコードを入力した端末同士でリストをリアルタイム共有します（10秒ごとに同期）。推測されにくいコードを使ってください。
+      同じコードを入力した端末同士で配送リストとMapboxの手動通行規制・進入方向を共有します（10秒ごとに同期）。推測されにくいコードを使ってください。
     </div>
     <div class="modal-actions">
       <button class="danger" id="btn-delivery-sync-disconnect" type="button">共有を解除</button>
@@ -2657,7 +2694,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.105';
+const APP_VERSION = 'v2026.06.24-test.106';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -2728,8 +2765,14 @@ const GUIDANCE_ROUTE_CACHE_KEY = 'rys-mapbox-test-guidance-route-cache-v1';
 const GUIDANCE_ROUTE_CACHE_VERSION = 1;
 const GUIDANCE_ROUTE_CACHE_MAX_AGE_MS = 18 * 60 * 60 * 1000;
 const ROAD_MEMORY_KEY = 'rys-mapbox-test-road-memory-v1';
+const ROAD_MEMORY_SYNC_DIRTY_KEY = 'rys-mapbox-test-road-memory-sync-dirty-v1';
+const ROAD_MEMORY_SYNC_ROOM_SUFFIX = ':road-memory-v2';
 const ROAD_MEMORY_MAX_BLOCKED_ITEMS = 200;
+const ROAD_MEMORY_MAX_RESTRICTION_ITEMS = 200;
+const ROAD_MEMORY_MAX_TOMBSTONES = 1200;
+const ROAD_MEMORY_TOMBSTONE_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 const ROAD_MEMORY_ROUTE_POINT_LIMIT = 50;
+const ROAD_MEMORY_ROUTE_RESTRICTION_LIMIT = 50;
 const ROAD_MEMORY_ROUTE_RADIUS_METERS = 15000;
 const GOOGLE_GUIDANCE_FEATURE_ENABLED = true;
 const FLOW_GUIDANCE_MAX_WALK_METERS = 60;
@@ -2902,9 +2945,11 @@ let userMarker = null;
 let userMarkerEl = null;
 let placingItemId = null;
 let pendingPlacementCoord = null;
-let roadMemoryPlacementMode = false;
+let roadMemoryPlacementMode = '';
+let roadMemoryPlacementPoints = [];
 let editingItemId = null;
 let confirmCallback = null;
+let confirmCancelCallback = null;
 let routeAreaPlannerState = null;
 let operatorSaveCallback = null;
 let operatorCancelCallback = null;
@@ -2922,6 +2967,13 @@ let deliverySyncLocalDirty = false;
 let deliverySyncLastServerAt = '';
 let deliverySyncLastError = '';
 let deliverySyncLastPushedAt = '';
+let roadMemorySyncPushTimer = null;
+let roadMemorySyncInFlight = false;
+let roadMemorySyncPushPending = false;
+let roadMemorySyncApplyingRemote = false;
+let roadMemorySyncLocalDirty = false;
+let roadMemorySyncLastServerAt = '';
+let roadMemorySyncLastError = '';
 let pickupPendingRetryInFlight = false;
 let pickupLastSyncedAt = null;
 let pickupLastSpotTouchAt = 0;
@@ -2986,6 +3038,7 @@ let guidanceProvider = GOOGLE_GUIDANCE_FEATURE_ENABLED &&
   localStorage.getItem(GUIDANCE_PROVIDER_KEY) !== 'mapbox' ? 'google' : 'mapbox';
 let roadMemoryState = null;
 let roadMemoryWarningAt = 0;
+let roadMemorySafetyBlocked = false;
 let googleGuidanceConfigPromise = null;
 let googleGuidanceScriptPromise = null;
 let googleGuidanceMap = null;
@@ -3090,6 +3143,9 @@ async function closeActiveSurfaceForBackButton() {
     closeModal('modal-confirm');
     pendingPlacementCoord = null;
     confirmCallback = null;
+    const cancel = confirmCancelCallback;
+    confirmCancelCallback = null;
+    if (cancel) cancel();
     return true;
   }
   if (modalIsOpen('modal-delivery-photo')) {
@@ -3151,10 +3207,11 @@ async function registerNativeBackButtonHandler() {
   }
 }
 
-function showConfirm(title, msg, callback) {
+function showConfirm(title, msg, callback, cancelCallback = null) {
   $('confirm-title').textContent = title;
   $('confirm-msg').textContent = msg;
   confirmCallback = callback;
+  confirmCancelCallback = cancelCallback;
   openModal('modal-confirm');
 }
 
@@ -5083,15 +5140,11 @@ function initMap() {
     $('btn-north').style.display = (Math.abs(bearing) >= 1 || pitch > 1) ? 'block' : 'none';
   });
   map.on('click', (e) => {
-    pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
     if (roadMemoryPlacementMode) {
-      showConfirm(
-        '通れない道路を記憶',
-        'この場所の道路を、今後の案内線から避けますか？',
-        () => commitRoadBlockPlacement()
-      );
+      handleRoadMemoryMapTap({ lng: e.lngLat.lng, lat: e.lngLat.lat });
       return;
     }
+    pendingPlacementCoord = { lng: e.lngLat.lng, lat: e.lngLat.lat };
     if (!placingItemId) {
       pendingPlacementCoord = null;
       return;
@@ -5209,6 +5262,12 @@ const FLOW_STOP_LAYER_ID = 'flow-stop-circle';
 const ROAD_MEMORY_SOURCE_ID = 'road-memory-blocks';
 const ROAD_MEMORY_CIRCLE_LAYER_ID = 'road-memory-block-circles';
 const ROAD_MEMORY_LABEL_LAYER_ID = 'road-memory-block-labels';
+const ROAD_MEMORY_LINE_LAYER_ID = 'road-memory-restriction-lines';
+const ROAD_MEMORY_ARROW_LAYER_ID = 'road-memory-restriction-arrows';
+const ROAD_MEMORY_RESTRICTION_LABEL_LAYER_ID = 'road-memory-restriction-labels';
+const ROAD_MEMORY_DRAFT_LINE_LAYER_ID = 'road-memory-draft-line';
+const ROAD_MEMORY_DRAFT_POINT_LAYER_ID = 'road-memory-draft-points';
+const ROAD_MEMORY_DRAFT_LABEL_LAYER_ID = 'road-memory-draft-labels';
 
 function addNeighborhoodLayer(layer) {
   if (map.getLayer(layer.id)) return;
@@ -7229,8 +7288,10 @@ async function fetchDrivingSegmentGeometry(start, destination) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    const data = res.ok ? await res.json() : null;
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
     announceRoadMemoryRouteResult(data, body);
+    if (!res.ok || !data || !data.ok) return null;
     const geometry = data && data.ok ? data.geometry : null;
     if (!validRouteLineGeometry(geometry)) return null;
     return geometry;
@@ -7240,6 +7301,7 @@ async function fetchDrivingSegmentGeometry(start, destination) {
 }
 
 async function fetchFlowAwareSegments(start, destination, following) {
+  let includesTurnRestriction = false;
   try {
     const body = {
       start: { lat: start.lat, lng: start.lng },
@@ -7251,6 +7313,7 @@ async function fetchFlowAwareSegments(start, destination, following) {
     if (Number.isFinite(start.speed)) body.speed = start.speed;
     if (Number.isFinite(start.accuracy)) body.accuracy = start.accuracy;
     appendRoadMemoryRouteOptions(body, start, destination, following);
+    includesTurnRestriction = (body.manual_restrictions || []).some(item => item.kind === 'turn');
     const res = await fetch(ROAD_FLOW_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -7258,12 +7321,16 @@ async function fetchFlowAwareSegments(start, destination, following) {
     });
     let data = null;
     try { data = await res.json(); } catch (e) {}
+    announceRoadMemoryRouteResult(data, body);
     if (!res.ok || !data || !data.ok ||
         !validRouteLineGeometry(data.orangeGeometry) ||
-        !validRouteLineGeometry(data.blueGeometry)) return null;
-    announceRoadMemoryRouteResult(data, body);
+        !validRouteLineGeometry(data.blueGeometry)) {
+      if (includesTurnRestriction) roadMemorySafetyBlocked = true;
+      return null;
+    }
     return data;
   } catch (e) {
+    if (includesTurnRestriction) roadMemorySafetyBlocked = true;
     return null;
   }
 }
@@ -7446,14 +7513,21 @@ async function refreshTemporaryGuidanceLine(options = {}) {
   }
 
   showMapboxGuidanceSurface();
+  roadMemorySafetyBlocked = false;
   const geometry = await fetchDrivingSegmentGeometry(start, target);
   if (updateId !== nextSegmentUpdateId || temporaryGuidanceTargetId !== targetId) return false;
 
   temporaryGuidanceBusy = false;
   updateGuidanceBannerUi();
   if (!geometry) {
-    await renderCachedGuidanceRoute();
-    showToast('一時案内の道路線を取得できません。↻で再取得するかナビを使ってください', true);
+    if (roadMemorySafetyBlocked) {
+      saveGuidanceRouteCache({ route: null });
+      removeNextSegmentLayer();
+      removeFollowingSegmentLayer();
+    } else {
+      await renderCachedGuidanceRoute();
+      showToast('一時案内の道路線を取得できません。↻で再取得するかナビを使ってください', true);
+    }
     return false;
   }
 
@@ -7596,6 +7670,7 @@ async function updateNextSegmentHighlight() {
   }
 
   showMapboxGuidanceSurface();
+  roadMemorySafetyBlocked = false;
   let nextGeometry = null;
   let followingGeometry = null;
   let flow = null;
@@ -7606,7 +7681,7 @@ async function updateNextSegmentHighlight() {
     if (flow) {
       nextGeometry = flow.orangeGeometry;
       followingGeometry = flow.blueGeometry;
-    } else {
+    } else if (!roadMemorySafetyBlocked) {
       // テスト専用APIが一時的に使えない場合も、従来の2本表示は維持する。
       [nextGeometry, followingGeometry] = await Promise.all([
         fetchDrivingSegmentGeometry(start, nextDelivery),
@@ -7630,8 +7705,15 @@ async function updateNextSegmentHighlight() {
     }
     return true;
   } else {
-    await renderCachedGuidanceRoute();
-    if (Date.now() - nextSegmentFailureToastAt > 60000) {
+    if (roadMemorySafetyBlocked) {
+      saveGuidanceRouteCache({ route: null });
+      removeNextSegmentLayer();
+      removeFollowingSegmentLayer();
+      removeFlowGuidanceLayers();
+    } else {
+      await renderCachedGuidanceRoute();
+    }
+    if (!roadMemorySafetyBlocked && Date.now() - nextSegmentFailureToastAt > 60000) {
       nextSegmentFailureToastAt = Date.now();
       showToast('道路に沿った案内線を取得できません。次の場所はナビで確認してください', true);
     }
@@ -9545,7 +9627,8 @@ async function startPlacement(id) {
   if (!d) return;
   if (isRegularPickupBackedDelivery(d) && !requestPickupLocationAdminPin()) return;
   showMapboxGuidanceSurface();
-  roadMemoryPlacementMode = false;
+  roadMemoryPlacementMode = '';
+  roadMemoryPlacementPoints = [];
   placingItemId = id;
   const banner = $('placement-banner');
   if (banner) banner.textContent = '📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)';
@@ -9622,11 +9705,13 @@ async function commitPlacement() {
 }
 
 function cancelPlacement() {
-  const wasRoadMemory = roadMemoryPlacementMode;
+  const wasRoadMemory = !!roadMemoryPlacementMode;
   placingItemId = null;
   pendingPlacementCoord = null;
-  roadMemoryPlacementMode = false;
+  roadMemoryPlacementMode = '';
+  roadMemoryPlacementPoints = [];
   document.body.classList.remove('placing-mode', 'road-memory-placing');
+  renderRoadMemoryMapLayers();
   if (guidanceProvider === 'google' && guidanceHasRouteTarget()) updateNextSegmentHighlight();
   showToast(wasRoadMemory ? '通れない道路の登録をキャンセル' : '位置修正をキャンセル');
 }
@@ -12560,6 +12645,7 @@ function initDeliverySync() {
     localStorage.setItem(DELIVERY_SYNC_DEVICE_ID_KEY, deliverySyncDeviceId);
   }
   deliverySyncLocalDirty = localStorage.getItem(DELIVERY_SYNC_DIRTY_KEY) === '1';
+  roadMemorySyncLocalDirty = localStorage.getItem(ROAD_MEMORY_SYNC_DIRTY_KEY) === '1';
   const savedCode = localStorage.getItem(DELIVERY_SYNC_CODE_KEY) || '';
   if (savedCode) {
     deliverySyncCode = savedCode;
@@ -12646,6 +12732,217 @@ function markDeliverySyncDirty() {
 function clearDeliverySyncDirty() {
   deliverySyncLocalDirty = false;
   localStorage.removeItem(DELIVERY_SYNC_DIRTY_KEY);
+}
+
+function roadMemorySyncRoomCode() {
+  return deliverySyncCode ? `${deliverySyncCode}${ROAD_MEMORY_SYNC_ROOM_SUFFIX}` : '';
+}
+
+function roadMemoryStateSignature(value) {
+  const state = normalizeRoadMemoryState(value);
+  const approaches = {};
+  Object.keys(state.approaches).sort().forEach(key => { approaches[key] = state.approaches[key]; });
+  const deleted = {};
+  Object.keys(state.deleted).sort().forEach(key => { deleted[key] = state.deleted[key]; });
+  return JSON.stringify({
+    version: 2,
+    blocked: state.blocked,
+    directions: state.directions,
+    turns: state.turns,
+    approaches,
+    deleted,
+    updatedAt: state.updatedAt
+  });
+}
+
+function mergeRoadMemoryItemLists(localItems, remoteItems, kind, deleted) {
+  const byId = new Map();
+  [...localItems, ...remoteItems].forEach(item => {
+    if (!item || !item.id) return;
+    const existing = byId.get(item.id);
+    if (!existing || Number(item.updatedAt || 0) >= Number(existing.updatedAt || 0)) {
+      byId.set(item.id, item);
+    }
+  });
+  return Array.from(byId.values()).filter(item =>
+    Number(deleted[`${kind}:${item.id}`] || 0) < Number(item.updatedAt || 0));
+}
+
+function mergeRoadMemoryStates(localValue, remoteValue) {
+  const local = normalizeRoadMemoryState(localValue);
+  const remote = normalizeRoadMemoryState(remoteValue);
+  const deleted = { ...local.deleted };
+  Object.entries(remote.deleted).forEach(([key, timestamp]) => {
+    deleted[key] = Math.max(Number(deleted[key] || 0), Number(timestamp || 0));
+  });
+
+  const approaches = {};
+  const approachKeys = new Set([...Object.keys(local.approaches), ...Object.keys(remote.approaches)]);
+  approachKeys.forEach(key => {
+    const localItem = local.approaches[key];
+    const remoteItem = remote.approaches[key];
+    const item = !localItem ? remoteItem : !remoteItem ? localItem
+      : Number(remoteItem.updatedAt || 0) >= Number(localItem.updatedAt || 0) ? remoteItem : localItem;
+    if (item && Number(deleted[`approach:${key}`] || 0) < Number(item.updatedAt || 0)) {
+      approaches[key] = item;
+    }
+  });
+
+  return normalizeRoadMemoryState({
+    version: 2,
+    blocked: mergeRoadMemoryItemLists(local.blocked, remote.blocked, 'blocked', deleted),
+    directions: mergeRoadMemoryItemLists(local.directions, remote.directions, 'direction', deleted),
+    turns: mergeRoadMemoryItemLists(local.turns, remote.turns, 'turn', deleted),
+    approaches,
+    deleted,
+    updatedAt: Math.max(Number(local.updatedAt || 0), Number(remote.updatedAt || 0))
+  });
+}
+
+function buildRoadMemorySyncSnapshot() {
+  return {
+    schema: 'rys-road-memory-sync-v2',
+    deviceId: deliverySyncDeviceId,
+    clientUpdatedAt: Date.now(),
+    state: normalizeRoadMemoryState(loadRoadMemoryState())
+  };
+}
+
+function parseRoadMemorySyncPayload(payload) {
+  let parsed = null;
+  try { parsed = JSON.parse(payload || '{}'); } catch (e) { return null; }
+  if (!parsed || parsed.schema !== 'rys-road-memory-sync-v2' || !parsed.state) return null;
+  return normalizeRoadMemoryState(parsed.state);
+}
+
+function markRoadMemorySyncDirty() {
+  if (roadMemorySyncApplyingRemote || !deliverySyncEnabled) return;
+  roadMemorySyncLocalDirty = true;
+  localStorage.setItem(ROAD_MEMORY_SYNC_DIRTY_KEY, '1');
+  scheduleRoadMemorySyncPush();
+}
+
+function clearRoadMemorySyncDirty() {
+  roadMemorySyncLocalDirty = false;
+  localStorage.removeItem(ROAD_MEMORY_SYNC_DIRTY_KEY);
+}
+
+function scheduleRoadMemorySyncPush(delay = DELIVERY_SYNC_PUSH_DEBOUNCE_MS) {
+  if (!deliverySyncEnabled) return;
+  clearTimeout(roadMemorySyncPushTimer);
+  roadMemorySyncPushTimer = setTimeout(pushRoadMemorySync, delay);
+}
+
+async function pushRoadMemorySync() {
+  const roomCode = roadMemorySyncRoomCode();
+  if (!deliverySyncEnabled || !roomCode) return;
+  if (roadMemorySyncInFlight) {
+    roadMemorySyncPushPending = true;
+    return;
+  }
+  roadMemorySyncInFlight = true;
+  const snapshot = buildRoadMemorySyncSnapshot();
+  const pushedStateAt = Number(snapshot.state.updatedAt || 0);
+  try {
+    roadMemorySyncPushPending = false;
+    const resp = await fetch(DELIVERY_SYNC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'push',
+        code: roomCode,
+        device_id: deliverySyncDeviceId,
+        payload: JSON.stringify(snapshot)
+      })
+    });
+    let data = null;
+    try { data = await resp.json(); } catch (e) {}
+    if (!resp.ok || !data || !data.ok) {
+      roadMemorySyncLastError = (data && (data.detail || data.error)) || `HTTP ${resp.status}`;
+      renderRoadMemoryModal();
+      return;
+    }
+    roadMemorySyncLastError = '';
+    roadMemorySyncLastServerAt = data.updated_at || roadMemorySyncLastServerAt;
+    if (Number(loadRoadMemoryState().updatedAt || 0) <= pushedStateAt) clearRoadMemorySyncDirty();
+    renderRoadMemoryModal();
+  } catch (e) {
+    console.warn('road memory sync push failed', e);
+    roadMemorySyncLastError = '通信エラー';
+    renderRoadMemoryModal();
+  } finally {
+    roadMemorySyncInFlight = false;
+    if (roadMemorySyncPushPending || roadMemorySyncLocalDirty) scheduleRoadMemorySyncPush(0);
+  }
+}
+
+async function pullRoadMemorySync() {
+  const roomCode = roadMemorySyncRoomCode();
+  if (!deliverySyncEnabled || !roomCode || roadMemorySyncInFlight) return;
+  roadMemorySyncInFlight = true;
+  try {
+    const resp = await fetch(DELIVERY_SYNC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'pull', code: roomCode, device_id: deliverySyncDeviceId })
+    });
+    let data = null;
+    try { data = await resp.json(); } catch (e) {}
+    if (!resp.ok || !data || !data.ok) {
+      roadMemorySyncLastError = (data && (data.detail || data.error)) || `HTTP ${resp.status}`;
+      renderRoadMemoryModal();
+      return;
+    }
+    roadMemorySyncLastError = '';
+    if (!data.found) {
+      roadMemorySyncLastServerAt = '';
+      roadMemorySyncLocalDirty = true;
+      localStorage.setItem(ROAD_MEMORY_SYNC_DIRTY_KEY, '1');
+      scheduleRoadMemorySyncPush(0);
+      return;
+    }
+
+    const serverAt = data.updated_at || '';
+    if (serverAt === roadMemorySyncLastServerAt && !roadMemorySyncLocalDirty) return;
+    const remoteState = parseRoadMemorySyncPayload(data.payload || '');
+    if (!remoteState) {
+      roadMemorySyncLastError = '共有データ形式が不正です';
+      renderRoadMemoryModal();
+      return;
+    }
+
+    const localState = normalizeRoadMemoryState(loadRoadMemoryState());
+    const mergedState = mergeRoadMemoryStates(localState, remoteState);
+    const localSignature = roadMemoryStateSignature(localState);
+    const remoteSignature = roadMemoryStateSignature(remoteState);
+    const mergedSignature = roadMemoryStateSignature(mergedState);
+    const localChanged = mergedSignature !== localSignature;
+    if (localChanged) {
+      roadMemorySyncApplyingRemote = true;
+      roadMemoryState = mergedState;
+      try { persistRoadMemoryState({ touch: false, sync: false }); }
+      finally { roadMemorySyncApplyingRemote = false; }
+      refreshGuidanceAfterRoadMemoryChange();
+      showToast('他の端末から通行規制・進入方向を同期しました');
+    }
+
+    roadMemorySyncLastServerAt = serverAt;
+    if (roadMemorySyncLocalDirty || mergedSignature !== remoteSignature) {
+      roadMemorySyncLocalDirty = true;
+      localStorage.setItem(ROAD_MEMORY_SYNC_DIRTY_KEY, '1');
+      scheduleRoadMemorySyncPush(0);
+    } else {
+      clearRoadMemorySyncDirty();
+    }
+    renderRoadMemoryModal();
+  } catch (e) {
+    console.warn('road memory sync pull failed', e);
+    roadMemorySyncLastError = '通信エラー';
+    renderRoadMemoryModal();
+  } finally {
+    roadMemorySyncInFlight = false;
+    if (roadMemorySyncPushPending || roadMemorySyncLocalDirty) scheduleRoadMemorySyncPush(0);
+  }
 }
 
 function mergeDeliveryLists(local, remote, options = {}) {
@@ -12832,7 +13129,11 @@ function restartDeliverySyncTimer() {
   deliverySyncTimer = null;
   if (!deliverySyncEnabled) return;
   pullDeliverySync();
-  deliverySyncTimer = setInterval(pullDeliverySync, DELIVERY_SYNC_INTERVAL_MS);
+  pullRoadMemorySync();
+  deliverySyncTimer = setInterval(() => {
+    pullDeliverySync();
+    pullRoadMemorySync();
+  }, DELIVERY_SYNC_INTERVAL_MS);
 }
 
 function openDeliverySyncModal() {
@@ -12852,9 +13153,14 @@ function connectDeliverySync() {
   deliverySyncLastError = '';
   deliverySyncPushPending = false;
   deliverySyncApplyingRemote = false;
+  roadMemorySyncLastServerAt = '';
+  roadMemorySyncLastError = '';
+  roadMemorySyncPushPending = false;
+  roadMemorySyncApplyingRemote = false;
   clearDeliverySyncDirty();
   localStorage.setItem(DELIVERY_SYNC_CODE_KEY, code);
   updateDeliverySyncStatusUI();
+  renderRoadMemoryModal();
   restartDeliverySyncTimer();
   scheduleSyncPush();
   showToast('共有を開始しました');
@@ -12865,6 +13171,8 @@ function disconnectDeliverySync() {
   deliverySyncTimer = null;
   clearTimeout(deliverySyncPushTimer);
   deliverySyncPushTimer = null;
+  clearTimeout(roadMemorySyncPushTimer);
+  roadMemorySyncPushTimer = null;
   deliverySyncEnabled = false;
   deliverySyncCode = '';
   deliverySyncLastServerAt = '';
@@ -12872,10 +13180,16 @@ function disconnectDeliverySync() {
   deliverySyncLastError = '';
   deliverySyncPushPending = false;
   deliverySyncApplyingRemote = false;
+  roadMemorySyncLastServerAt = '';
+  roadMemorySyncLastError = '';
+  roadMemorySyncPushPending = false;
+  roadMemorySyncApplyingRemote = false;
   clearDeliverySyncDirty();
+  clearRoadMemorySyncDirty();
   localStorage.removeItem(DELIVERY_SYNC_CODE_KEY);
   $('delivery-sync-code-input').value = '';
   updateDeliverySyncStatusUI();
+  renderRoadMemoryModal();
   showToast('共有を解除しました');
 }
 
@@ -13149,7 +13463,63 @@ function distanceMeters(a, b) {
 }
 
 function emptyRoadMemoryState() {
-  return { version: 1, blocked: [], approaches: {}, updatedAt: 0 };
+  return {
+    version: 2,
+    blocked: [],
+    directions: [],
+    turns: [],
+    approaches: {},
+    deleted: {},
+    updatedAt: 0
+  };
+}
+
+function roadMemoryHashText(value) {
+  let hash = 2166136261;
+  const text = String(value || '');
+  for (let index = 0; index < text.length; index++) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function normalizeRoadMemoryPoint(value) {
+  if (!value || !Number.isFinite(Number(value.lat)) || !Number.isFinite(Number(value.lng))) return null;
+  const lat = Number(value.lat);
+  const lng = Number(value.lng);
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+function roadMemoryItemId(kind, item, points) {
+  if (item && item.id) return String(item.id).slice(0, 120);
+  const fingerprint = points
+    .map(point => `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`)
+    .join(';');
+  return `${kind}-${roadMemoryHashText(fingerprint)}`;
+}
+
+function normalizeRoadMemoryItems(value, kind, pointCount, limit) {
+  const result = [];
+  const usedIds = new Set();
+  (Array.isArray(value) ? value : []).forEach(item => {
+    if (!item || !Array.isArray(item.points) || item.points.length < pointCount) return;
+    const points = item.points.slice(0, pointCount).map(normalizeRoadMemoryPoint);
+    if (points.some(point => !point)) return;
+    const id = roadMemoryItemId(kind, item, points);
+    if (!id || usedIds.has(id)) return;
+    usedIds.add(id);
+    const createdAt = Number(item.createdAt || item.updatedAt || Date.now());
+    result.push({
+      id,
+      points,
+      createdAt,
+      updatedAt: Number(item.updatedAt || createdAt)
+    });
+  });
+  result.sort((a, b) => b.updatedAt - a.updatedAt);
+  return result.slice(0, limit);
 }
 
 function normalizeRoadMemoryState(value) {
@@ -13163,7 +13533,7 @@ function normalizeRoadMemoryState(value) {
     const lat = Number(item.lat);
     const lng = Number(item.lng);
     if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
-    const id = String(item.id || uid());
+    const id = roadMemoryItemId('blocked', item, [{ lat, lng }]);
     if (usedIds.has(id)) return;
     usedIds.add(id);
     normalized.blocked.push({
@@ -13176,6 +13546,18 @@ function normalizeRoadMemoryState(value) {
   });
   normalized.blocked.sort((a, b) => b.updatedAt - a.updatedAt);
   normalized.blocked = normalized.blocked.slice(0, ROAD_MEMORY_MAX_BLOCKED_ITEMS);
+  normalized.directions = normalizeRoadMemoryItems(
+    value.directions,
+    'direction',
+    2,
+    ROAD_MEMORY_MAX_RESTRICTION_ITEMS
+  );
+  normalized.turns = normalizeRoadMemoryItems(
+    value.turns,
+    'turn',
+    3,
+    ROAD_MEMORY_MAX_RESTRICTION_ITEMS
+  );
 
   const approaches = value.approaches && typeof value.approaches === 'object' && !Array.isArray(value.approaches)
     ? value.approaches
@@ -13190,6 +13572,30 @@ function normalizeRoadMemoryState(value) {
       updatedAt: Number(item.updatedAt || item.createdAt || Date.now())
     };
   });
+
+  const deleted = value.deleted && typeof value.deleted === 'object' && !Array.isArray(value.deleted)
+    ? value.deleted
+    : {};
+  const tombstoneCutoff = Date.now() - ROAD_MEMORY_TOMBSTONE_MAX_AGE_MS;
+  Object.entries(deleted)
+    .map(([key, timestamp]) => [String(key).slice(0, 500), Number(timestamp || 0)])
+    .filter(([key, timestamp]) => key && Number.isFinite(timestamp) && timestamp >= tombstoneCutoff)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, ROAD_MEMORY_MAX_TOMBSTONES)
+    .forEach(([key, timestamp]) => { normalized.deleted[key] = timestamp; });
+
+  normalized.blocked = normalized.blocked.filter(item =>
+    Number(normalized.deleted[`blocked:${item.id}`] || 0) < item.updatedAt);
+  normalized.directions = normalized.directions.filter(item =>
+    Number(normalized.deleted[`direction:${item.id}`] || 0) < item.updatedAt);
+  normalized.turns = normalized.turns.filter(item =>
+    Number(normalized.deleted[`turn:${item.id}`] || 0) < item.updatedAt);
+  Object.keys(normalized.approaches).forEach(key => {
+    if (Number(normalized.deleted[`approach:${key}`] || 0) >= normalized.approaches[key].updatedAt) {
+      delete normalized.approaches[key];
+    }
+  });
+  normalized.version = 2;
   normalized.updatedAt = Number(value.updatedAt || 0);
   return normalized;
 }
@@ -13204,12 +13610,19 @@ function loadRoadMemoryState() {
   return roadMemoryState;
 }
 
-function persistRoadMemoryState() {
-  const state = loadRoadMemoryState();
-  state.updatedAt = Date.now();
+function persistRoadMemoryState(options = {}) {
+  const state = normalizeRoadMemoryState(loadRoadMemoryState());
+  if (options.touch !== false) state.updatedAt = Date.now();
+  roadMemoryState = state;
   localStorage.setItem(ROAD_MEMORY_KEY, JSON.stringify(state));
   renderRoadMemoryMapLayers();
   renderRoadMemoryModal();
+  if (options.sync !== false) markRoadMemorySyncDirty();
+}
+
+function recordRoadMemoryDeletion(kind, id, timestamp = Date.now()) {
+  if (!kind || !id) return;
+  loadRoadMemoryState().deleted[`${kind}:${id}`] = timestamp;
 }
 
 function roadMemoryApproachKey(delivery) {
@@ -13251,9 +13664,38 @@ function roadMemoryRoutePoints(start, destination, following = null) {
     .map(({ lat, lng }) => ({ lat, lng }));
 }
 
+function roadMemoryRouteRestrictions(start, destination, following = null) {
+  const referencePoints = [start, destination, following]
+    .map(normalizeRoadMemoryPoint)
+    .filter(Boolean);
+  if (!referencePoints.length) return [];
+  const state = loadRoadMemoryState();
+  return [
+    ...state.directions.map(item => ({ ...item, kind: 'direction' })),
+    ...state.turns.map(item => ({ ...item, kind: 'turn' }))
+  ]
+    .map(item => ({
+      id: item.id,
+      kind: item.kind,
+      points: item.points,
+      distance: Math.min(...item.points.flatMap(point =>
+        referencePoints.map(reference => distanceMeters(point, reference))))
+    }))
+    .filter(item => Number.isFinite(item.distance) && item.distance <= ROAD_MEMORY_ROUTE_RADIUS_METERS)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, ROAD_MEMORY_ROUTE_RESTRICTION_LIMIT)
+    .map(item => ({
+      id: item.id,
+      kind: item.kind,
+      points: item.points.map(point => ({ lat: Number(point.lat), lng: Number(point.lng) }))
+    }));
+}
+
 function appendRoadMemoryRouteOptions(body, start, destination, following = null) {
   const blockedPoints = roadMemoryRoutePoints(start, destination, following);
   if (blockedPoints.length) body.blocked_points = blockedPoints;
+  const manualRestrictions = roadMemoryRouteRestrictions(start, destination, following);
+  if (manualRestrictions.length) body.manual_restrictions = manualRestrictions;
   const destinationHeading = roadMemoryHeadingForDelivery(destination);
   if (destinationHeading !== null) body.destination_heading = destinationHeading;
   const followingHeading = roadMemoryHeadingForDelivery(following);
@@ -13263,9 +13705,15 @@ function appendRoadMemoryRouteOptions(body, start, destination, following = null
 
 function announceRoadMemoryRouteResult(result, requestBody) {
   if (!result || Date.now() - roadMemoryWarningAt < 60000) return;
-  if (result.roadMemoryUnavoidable) {
+  if (result.manualRestrictionUnavoidable || result.roadMemoryUnavoidable) {
+    roadMemorySafetyBlocked = true;
     roadMemoryWarningAt = Date.now();
-    showToast('Mapboxでは登録した通れない道路を避け切れませんでした。現地標識を優先してください', true);
+    showToast('登録した通行規制を避けられないため、安全のため案内線を表示しません', true);
+    return;
+  }
+  if (result.manualRestrictionFallbackApplied) {
+    roadMemoryWarningAt = Date.now();
+    showToast('安全な方向の経路がないため、登録した道路全体を避けて案内します');
     return;
   }
   const destinationRequested = requestBody
@@ -13281,14 +13729,71 @@ function announceRoadMemoryRouteResult(result, requestBody) {
 }
 
 function roadMemoryFeatureCollection() {
-  return {
-    type: 'FeatureCollection',
-    features: loadRoadMemoryState().blocked.map(item => ({
+  const state = loadRoadMemoryState();
+  const features = state.blocked.map(item => ({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [Number(item.lng), Number(item.lat)] },
+    properties: { id: item.id, kind: 'blocked', label: '×' }
+  }));
+
+  state.directions.forEach(item => {
+    const coordinates = item.points.map(point => [Number(point.lng), Number(point.lat)]);
+    features.push({
       type: 'Feature',
-      geometry: { type: 'Point', coordinates: [Number(item.lng), Number(item.lat)] },
-      properties: { id: item.id }
-    }))
-  };
+      geometry: { type: 'LineString', coordinates },
+      properties: { id: item.id, kind: 'direction' }
+    });
+    const midpoint = {
+      lng: (item.points[0].lng + item.points[1].lng) / 2,
+      lat: (item.points[0].lat + item.points[1].lat) / 2
+    };
+    features.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [midpoint.lng, midpoint.lat] },
+      properties: { id: item.id, kind: 'direction-label', label: '進入禁止' }
+    });
+  });
+
+  state.turns.forEach(item => {
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: item.points.map(point => [Number(point.lng), Number(point.lat)])
+      },
+      properties: { id: item.id, kind: 'turn' }
+    });
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [Number(item.points[1].lng), Number(item.points[1].lat)]
+      },
+      properties: { id: item.id, kind: 'turn-label', label: roadMemoryTurnLabel(item.points) }
+    });
+  });
+
+  if (roadMemoryPlacementMode && roadMemoryPlacementPoints.length) {
+    if (roadMemoryPlacementPoints.length >= 2) {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: roadMemoryPlacementPoints.map(point => [point.lng, point.lat])
+        },
+        properties: { kind: 'draft-line' }
+      });
+    }
+    roadMemoryPlacementPoints.forEach((point, index) => {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [point.lng, point.lat] },
+        properties: { kind: 'draft-point', label: String(index + 1) }
+      });
+    });
+  }
+
+  return { type: 'FeatureCollection', features };
 }
 
 function addRoadMemoryLayer(layer) {
@@ -13318,6 +13823,7 @@ function renderRoadMemoryMapLayers() {
     source: ROAD_MEMORY_SOURCE_ID,
     minzoom: 13,
     slot: 'top',
+    filter: ['==', ['get', 'kind'], 'blocked'],
     paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 6, 17, 10],
       'circle-color': '#dc2626',
@@ -13332,6 +13838,7 @@ function renderRoadMemoryMapLayers() {
     source: ROAD_MEMORY_SOURCE_ID,
     minzoom: 13,
     slot: 'top',
+    filter: ['==', ['get', 'kind'], 'blocked'],
     layout: {
       'text-field': '×',
       'text-size': ['interpolate', ['linear'], ['zoom'], 13, 12, 17, 18],
@@ -13344,26 +13851,165 @@ function renderRoadMemoryMapLayers() {
       'text-halo-width': 1
     }
   });
+  addRoadMemoryLayer({
+    id: ROAD_MEMORY_LINE_LAYER_ID,
+    type: 'line',
+    source: ROAD_MEMORY_SOURCE_ID,
+    minzoom: 12,
+    slot: 'top',
+    filter: ['in', ['get', 'kind'], ['literal', ['direction', 'turn']]],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': '#dc2626',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 18, 8],
+      'line-opacity': 0.92,
+      'line-dasharray': [2, 1]
+    }
+  });
+  addRoadMemoryLayer({
+    id: ROAD_MEMORY_ARROW_LAYER_ID,
+    type: 'symbol',
+    source: ROAD_MEMORY_SOURCE_ID,
+    minzoom: 13,
+    slot: 'top',
+    filter: ['in', ['get', 'kind'], ['literal', ['direction', 'turn']]],
+    layout: {
+      'symbol-placement': 'line',
+      'symbol-spacing': 55,
+      'text-field': '▶',
+      'text-size': ['interpolate', ['linear'], ['zoom'], 13, 12, 18, 18],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+      'text-rotation-alignment': 'map',
+      'text-keep-upright': false
+    },
+    paint: {
+      'text-color': '#ffffff',
+      'text-halo-color': '#991b1b',
+      'text-halo-width': 2
+    }
+  });
+  addRoadMemoryLayer({
+    id: ROAD_MEMORY_RESTRICTION_LABEL_LAYER_ID,
+    type: 'symbol',
+    source: ROAD_MEMORY_SOURCE_ID,
+    minzoom: 14,
+    slot: 'top',
+    filter: ['in', ['get', 'kind'], ['literal', ['direction-label', 'turn-label']]],
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-size': 12,
+      'text-offset': [0, -1.4],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true
+    },
+    paint: {
+      'text-color': '#7f1d1d',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 2
+    }
+  });
+  addRoadMemoryLayer({
+    id: ROAD_MEMORY_DRAFT_LINE_LAYER_ID,
+    type: 'line',
+    source: ROAD_MEMORY_SOURCE_ID,
+    slot: 'top',
+    filter: ['==', ['get', 'kind'], 'draft-line'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': '#facc15',
+      'line-width': 7,
+      'line-opacity': 0.95,
+      'line-dasharray': [1, 1]
+    }
+  });
+  addRoadMemoryLayer({
+    id: ROAD_MEMORY_DRAFT_POINT_LAYER_ID,
+    type: 'circle',
+    source: ROAD_MEMORY_SOURCE_ID,
+    slot: 'top',
+    filter: ['==', ['get', 'kind'], 'draft-point'],
+    paint: {
+      'circle-radius': 12,
+      'circle-color': '#facc15',
+      'circle-stroke-color': '#111827',
+      'circle-stroke-width': 3
+    }
+  });
+  addRoadMemoryLayer({
+    id: ROAD_MEMORY_DRAFT_LABEL_LAYER_ID,
+    type: 'symbol',
+    source: ROAD_MEMORY_SOURCE_ID,
+    slot: 'top',
+    filter: ['==', ['get', 'kind'], 'draft-point'],
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-size': 13,
+      'text-allow-overlap': true,
+      'text-ignore-placement': true
+    },
+    paint: { 'text-color': '#111827' }
+  });
+}
+
+function roadMemoryTurnLabel(points) {
+  if (!Array.isArray(points) || points.length < 3) return '右左折禁止';
+  const incoming = routeBearingDegrees(points[0], points[1]);
+  const outgoing = routeBearingDegrees(points[1], points[2]);
+  if (!Number.isFinite(incoming) || !Number.isFinite(outgoing)) return '右左折禁止';
+  const delta = ((outgoing - incoming + 540) % 360) - 180;
+  if (Math.abs(delta) < 30) return '直進禁止';
+  if (Math.abs(delta) > 150) return '転回禁止';
+  return delta > 0 ? '右折禁止' : '左折禁止';
+}
+
+function roadMemoryKindLabel(kind, item = null) {
+  if (kind === 'blocked') return '道路全体を避ける';
+  if (kind === 'direction') return '一方通行・進入禁止';
+  if (kind === 'turn') return roadMemoryTurnLabel(item && item.points);
+  return '通行規制';
 }
 
 function renderRoadMemoryModal() {
   const summary = $('road-memory-summary');
   const list = $('road-memory-list');
+  const syncStatus = $('road-memory-sync-status');
   if (!summary || !list) return;
   const state = loadRoadMemoryState();
   const approachCount = Object.keys(state.approaches).length;
-  summary.textContent = `通れない道路 ${state.blocked.length}件 / 進入方向 ${approachCount}件を記憶中`;
-  if (!state.blocked.length) {
-    list.innerHTML = '<div class="modal-help">通れない道路はまだ登録されていません。</div>';
+  summary.textContent = `道路全体 ${state.blocked.length}件 / 一方通行 ${state.directions.length}件 / 右左折禁止 ${state.turns.length}件 / 到着方向 ${approachCount}件`;
+  if (syncStatus) {
+    if (deliverySyncEnabled && roadMemorySyncLastError) {
+      syncStatus.textContent = `通行規制の共有エラー: ${roadMemorySyncLastError}`;
+      syncStatus.className = 'road-memory-sync-status error';
+    } else if (deliverySyncEnabled) {
+      syncStatus.textContent = '同じ共有コードの端末と通行規制を共有中';
+      syncStatus.className = 'road-memory-sync-status connected';
+    } else {
+      syncStatus.textContent = 'デバイス間共有が未接続のため、この端末だけに保存中';
+      syncStatus.className = 'road-memory-sync-status';
+    }
+  }
+  const entries = [
+    ...state.blocked.map(item => ({ kind: 'blocked', item })),
+    ...state.directions.map(item => ({ kind: 'direction', item })),
+    ...state.turns.map(item => ({ kind: 'turn', item }))
+  ].sort((a, b) => b.item.updatedAt - a.item.updatedAt);
+  if (!entries.length) {
+    list.innerHTML = '<div class="modal-help">手動の通行規制はまだ登録されていません。</div>';
     return;
   }
-  list.innerHTML = state.blocked.map((item, index) => {
+  list.innerHTML = entries.map(({ kind, item }, index) => {
     const date = new Date(item.updatedAt || item.createdAt || Date.now());
     const dateText = Number.isNaN(date.getTime()) ? '' : date.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const points = kind === 'blocked' ? [{ lat: item.lat, lng: item.lng }] : item.points;
+    const coordinateText = points
+      .map(point => `${Number(point.lat).toFixed(5)}, ${Number(point.lng).toFixed(5)}`)
+      .join(' → ');
     return `
-      <div class="road-memory-row" data-road-memory-id="${escapeHtml(item.id)}">
-        <strong>通れない道路 ${index + 1}</strong>
-        <small>${escapeHtml(dateText)} / ${Number(item.lat).toFixed(6)}, ${Number(item.lng).toFixed(6)}</small>
+      <div class="road-memory-row" data-road-memory-kind="${escapeHtml(kind)}" data-road-memory-id="${escapeHtml(item.id)}">
+        <strong>${escapeHtml(roadMemoryKindLabel(kind, item))} ${index + 1}</strong>
+        <small>${escapeHtml(dateText)} / ${escapeHtml(coordinateText)}</small>
         <div class="road-memory-row-actions">
           <button type="button" data-road-memory-action="focus">地図で見る</button>
           <button class="danger" type="button" data-road-memory-action="delete">解除</button>
@@ -13378,55 +14024,166 @@ function openRoadMemoryModal() {
   openModal('modal-road-memory');
 }
 
-function startRoadBlockPlacement() {
+function roadMemoryPlacementDefinition(mode) {
+  if (mode === 'blocked') return {
+    points: 1,
+    title: '道路全体を避ける',
+    banner: '道路の中央を1点タップ',
+    confirm: 'この場所の道路を、両方向とも今後の案内線から避けますか？'
+  };
+  if (mode === 'direction') return {
+    points: 2,
+    title: '一方通行・進入禁止',
+    banner: '禁止方向の入口→奥の順に2点タップ',
+    confirm: '1番から2番へ進む向きを「通行不可」として記憶しますか？'
+  };
+  return {
+    points: 3,
+    title: '右左折禁止',
+    banner: '進入側→交差点→禁止方向の順に3点タップ',
+    confirm: '1番→2番→3番の曲がり方を「通行不可」として記憶しますか？'
+  };
+}
+
+function updateRoadMemoryPlacementBanner() {
+  const definition = roadMemoryPlacementDefinition(roadMemoryPlacementMode);
+  const banner = $('placement-banner');
+  if (banner) {
+    banner.textContent = `${definition.banner}（${roadMemoryPlacementPoints.length}/${definition.points}、帯を押すと取消）`;
+  }
+}
+
+function startRoadMemoryPlacement(mode) {
   closeModal('modal-road-memory');
   closeModal('modal-menu');
   showMapboxGuidanceSurface();
   placingItemId = null;
   pendingPlacementCoord = null;
-  roadMemoryPlacementMode = true;
-  const banner = $('placement-banner');
-  if (banner) banner.textContent = '🚧 通れない道路を地図でタップ (この帯を押すとキャンセル)';
+  roadMemoryPlacementMode = mode;
+  roadMemoryPlacementPoints = [];
+  updateRoadMemoryPlacementBanner();
   document.body.classList.add('placing-mode', 'road-memory-placing');
-  showToast('通れない道路の中央付近を地図でタップしてください');
+  renderRoadMemoryMapLayers();
+  showToast(roadMemoryPlacementDefinition(mode).banner);
 }
 
-function commitRoadBlockPlacement() {
-  if (!roadMemoryPlacementMode || !pendingPlacementCoord) return;
+function startRoadBlockPlacement() { startRoadMemoryPlacement('blocked'); }
+function startRoadDirectionPlacement() { startRoadMemoryPlacement('direction'); }
+function startRoadTurnPlacement() { startRoadMemoryPlacement('turn'); }
+
+function validateRoadMemoryPlacement(mode, points) {
+  if (mode === 'direction') {
+    const span = distanceMeters(points[0], points[1]);
+    if (span < 8 || span > 500) return '2点は同じ道路上で、8m〜500m程度離して指定してください';
+  }
+  if (mode === 'turn') {
+    const incoming = distanceMeters(points[0], points[1]);
+    const outgoing = distanceMeters(points[1], points[2]);
+    if (incoming < 5 || incoming > 250 || outgoing < 5 || outgoing > 250) {
+      return '交差点の前後は、それぞれ5m〜250m程度で指定してください';
+    }
+  }
+  return '';
+}
+
+function handleRoadMemoryMapTap(value) {
+  const point = normalizeRoadMemoryPoint(value);
+  if (!roadMemoryPlacementMode || !point) return;
+  const definition = roadMemoryPlacementDefinition(roadMemoryPlacementMode);
+  roadMemoryPlacementPoints.push(point);
+  renderRoadMemoryMapLayers();
+  updateRoadMemoryPlacementBanner();
+  if (roadMemoryPlacementPoints.length < definition.points) {
+    showToast(`次の点をタップしてください（${roadMemoryPlacementPoints.length}/${definition.points}）`);
+    return;
+  }
+
+  const validationError = validateRoadMemoryPlacement(roadMemoryPlacementMode, roadMemoryPlacementPoints);
+  if (validationError) {
+    roadMemoryPlacementPoints.pop();
+    renderRoadMemoryMapLayers();
+    updateRoadMemoryPlacementBanner();
+    showToast(validationError, true);
+    return;
+  }
+
+  showConfirm(
+    `${definition.title}を記憶`,
+    definition.confirm,
+    commitRoadMemoryPlacement,
+    () => {
+      roadMemoryPlacementPoints.pop();
+      renderRoadMemoryMapLayers();
+      updateRoadMemoryPlacementBanner();
+    }
+  );
+}
+
+function commitRoadMemoryPlacement() {
+  if (!roadMemoryPlacementMode || !roadMemoryPlacementPoints.length) return;
+  const mode = roadMemoryPlacementMode;
+  const points = roadMemoryPlacementPoints.map(point => ({ ...point }));
   const state = loadRoadMemoryState();
-  state.blocked.unshift({
-    id: uid(),
-    lat: Number(pendingPlacementCoord.lat),
-    lng: Number(pendingPlacementCoord.lng),
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  });
-  state.blocked = state.blocked.slice(0, ROAD_MEMORY_MAX_BLOCKED_ITEMS);
-  roadMemoryPlacementMode = false;
+  const now = Date.now();
+  if (mode === 'blocked') {
+    state.blocked.unshift({ id: uid(), lat: points[0].lat, lng: points[0].lng, createdAt: now, updatedAt: now });
+    state.blocked = state.blocked.slice(0, ROAD_MEMORY_MAX_BLOCKED_ITEMS);
+  } else if (mode === 'direction') {
+    state.directions.unshift({ id: uid(), points, createdAt: now, updatedAt: now });
+    state.directions = state.directions.slice(0, ROAD_MEMORY_MAX_RESTRICTION_ITEMS);
+  } else {
+    state.turns.unshift({ id: uid(), points, createdAt: now, updatedAt: now });
+    state.turns = state.turns.slice(0, ROAD_MEMORY_MAX_RESTRICTION_ITEMS);
+  }
+  roadMemoryPlacementMode = '';
+  roadMemoryPlacementPoints = [];
   pendingPlacementCoord = null;
   document.body.classList.remove('placing-mode', 'road-memory-placing');
   persistRoadMemoryState();
   refreshGuidanceAfterRoadMemoryChange();
-  showToast('この道路を通れない道路として記憶しました');
+  showToast(`${roadMemoryKindLabel(mode)}を記憶しました`);
 }
 
-function focusRoadMemoryItem(id) {
-  const item = loadRoadMemoryState().blocked.find(row => row.id === id);
+function findRoadMemoryItem(kind, id) {
+  const state = loadRoadMemoryState();
+  if (kind === 'blocked') return state.blocked.find(row => row.id === id) || null;
+  if (kind === 'direction') return state.directions.find(row => row.id === id) || null;
+  if (kind === 'turn') return state.turns.find(row => row.id === id) || null;
+  return null;
+}
+
+function roadMemoryItemPoints(kind, item) {
+  return kind === 'blocked' ? [{ lat: item.lat, lng: item.lng }] : item.points;
+}
+
+function focusRoadMemoryItem(kind, id) {
+  const item = findRoadMemoryItem(kind, id);
   if (!item || !map) return;
   closeModal('modal-road-memory');
   showMapboxGuidanceSurface();
-  map.flyTo({ center: [item.lng, item.lat], zoom: Math.max(map.getZoom(), 18), speed: 1.2 });
+  const points = roadMemoryItemPoints(kind, item);
+  if (points.length === 1) {
+    map.flyTo({ center: [points[0].lng, points[0].lat], zoom: Math.max(map.getZoom(), 18), speed: 1.2 });
+    return;
+  }
+  const bounds = new mapboxgl.LngLatBounds();
+  points.forEach(point => bounds.extend([point.lng, point.lat]));
+  map.fitBounds(bounds, { padding: 80, maxZoom: 19, duration: 700 });
 }
 
-function deleteRoadMemoryItem(id) {
-  const item = loadRoadMemoryState().blocked.find(row => row.id === id);
+function deleteRoadMemoryItem(kind, id) {
+  const item = findRoadMemoryItem(kind, id);
   if (!item) return;
-  showConfirm('通れない道路を解除', 'この道路を、避ける対象から外しますか？', () => {
+  const label = roadMemoryKindLabel(kind, item);
+  showConfirm(`${label}を解除`, 'この登録を、Mapbox案内線の規制対象から外しますか？', () => {
     const state = loadRoadMemoryState();
-    state.blocked = state.blocked.filter(row => row.id !== id);
+    if (kind === 'blocked') state.blocked = state.blocked.filter(row => row.id !== id);
+    if (kind === 'direction') state.directions = state.directions.filter(row => row.id !== id);
+    if (kind === 'turn') state.turns = state.turns.filter(row => row.id !== id);
+    recordRoadMemoryDeletion(kind, id);
     persistRoadMemoryState();
     refreshGuidanceAfterRoadMemoryChange();
-    showToast('通れない道路の記憶を解除しました');
+    showToast(`${label}の記憶を解除しました`);
   });
 }
 
@@ -13489,6 +14246,7 @@ function rememberEditedApproach() {
   const now = Date.now();
   const state = loadRoadMemoryState();
   const existing = state.approaches[key];
+  delete state.deleted[`approach:${key}`];
   state.approaches[key] = {
     heading: ((Math.round(Number(heading)) % 360) + 360) % 360,
     address: delivery.address || '',
@@ -13507,6 +14265,7 @@ function clearEditedApproach() {
   if (!delivery || !key || !loadRoadMemoryState().approaches[key]) return;
   showConfirm('進入方向を解除', 'この住所に記憶した進入方向を解除しますか？', () => {
     delete loadRoadMemoryState().approaches[key];
+    recordRoadMemoryDeletion('approach', key);
     persistRoadMemoryState();
     updateEditRoadMemoryUi(delivery);
     refreshGuidanceAfterRoadMemoryChange();
@@ -15005,12 +15764,15 @@ $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
 $('menu-optimize-google').addEventListener('click', optimizeGoogleCarRouteOrder);
 $('menu-road-memory').addEventListener('click', openRoadMemoryModal);
 $('btn-road-memory-add').addEventListener('click', startRoadBlockPlacement);
+$('btn-road-memory-direction').addEventListener('click', startRoadDirectionPlacement);
+$('btn-road-memory-turn').addEventListener('click', startRoadTurnPlacement);
 $('road-memory-list').addEventListener('click', event => {
   const button = event.target.closest('[data-road-memory-action]');
   const row = button && button.closest('[data-road-memory-id]');
   if (!button || !row) return;
-  if (button.dataset.roadMemoryAction === 'focus') focusRoadMemoryItem(row.dataset.roadMemoryId);
-  if (button.dataset.roadMemoryAction === 'delete') deleteRoadMemoryItem(row.dataset.roadMemoryId);
+  const kind = row.dataset.roadMemoryKind;
+  if (button.dataset.roadMemoryAction === 'focus') focusRoadMemoryItem(kind, row.dataset.roadMemoryId);
+  if (button.dataset.roadMemoryAction === 'delete') deleteRoadMemoryItem(kind, row.dataset.roadMemoryId);
 });
 $('route-area-first').addEventListener('change', event => {
   if (!routeAreaPlannerState) return;
@@ -15103,6 +15865,7 @@ document.querySelectorAll('[data-text-size]').forEach(button => {
 
 $('confirm-ok').addEventListener('click', () => {
   closeModal('modal-confirm');
+  confirmCancelCallback = null;
   if (confirmCallback) {
     const cb = confirmCallback;
     confirmCallback = null;
@@ -15113,6 +15876,9 @@ $('confirm-cancel').addEventListener('click', () => {
   closeModal('modal-confirm');
   pendingPlacementCoord = null;
   confirmCallback = null;
+  const cancel = confirmCancelCallback;
+  confirmCancelCallback = null;
+  if (cancel) cancel();
 });
 
 document.querySelectorAll('[data-close]').forEach(btn => {

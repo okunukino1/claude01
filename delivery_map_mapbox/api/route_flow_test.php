@@ -16,6 +16,7 @@ if (!file_exists($configFile)) {
 }
 require_once $configFile;
 require_once __DIR__ . '/request_guard.php';
+require_once __DIR__ . '/route_restrictions_test_lib.php';
 delivery_app_require_same_origin_request();
 
 $token = '';
@@ -103,6 +104,7 @@ $heading = flow_normalize_heading($input['heading'] ?? null);
 $destinationHeading = flow_normalize_heading($input['destination_heading'] ?? null);
 $followingHeading = flow_normalize_heading($input['following_heading'] ?? null);
 $blockedPoints = flow_normalize_blocked_points($input['blocked_points'] ?? null);
+$manualRestrictions = rm_normalize_restrictions($input['manual_restrictions'] ?? null);
 
 $speed = isset($input['speed']) && is_numeric($input['speed'])
   ? max(0.0, min(60.0, (float)$input['speed']))
@@ -137,7 +139,7 @@ function flow_request_origin() {
   return ($https ? 'https://' : 'http://') . $host . '/';
 }
 
-function flow_call_directions($profile, $points, $token, $pointHeadings = [], $useSafetySnap = false, $avoidManeuverRadius = null, $originSnapRadius = null, $blockedPoints = []) {
+function flow_call_directions($profile, $points, $token, $pointHeadings = [], $useSafetySnap = false, $avoidManeuverRadius = null, $originSnapRadius = null, $blockedPoints = [], $alternatives = false) {
   $coordText = implode(';', array_map(function($point) {
     return rawurlencode((string)$point['lng']) . ',' . rawurlencode((string)$point['lat']);
   }, $points));
@@ -150,6 +152,7 @@ function flow_call_directions($profile, $points, $token, $pointHeadings = [], $u
     'continue_straight' => 'true',
     'notifications' => 'all'
   ];
+  if ($alternatives) $params['alternatives'] = 'true';
   if ($profile === 'mapbox/driving-traffic') $params['depart_at'] = 'now';
   if ($profile !== 'mapbox/walking' && is_array($pointHeadings) && count($pointHeadings)) {
     $bearings = array_fill(0, count($points), '');
@@ -199,27 +202,26 @@ function flow_call_directions($profile, $points, $token, $pointHeadings = [], $u
   curl_close($ch);
 
   $data = is_string($body) ? json_decode($body, true) : null;
-  $route = is_array($data) ? ($data['routes'][0] ?? null) : null;
-  $geometry = is_array($route) ? ($route['geometry'] ?? null) : null;
+  $routes = is_array($data) && is_array($data['routes'] ?? null) ? $data['routes'] : [];
+  $route = $routes[0] ?? null;
   $ok = $body !== false
     && $httpCode >= 200 && $httpCode < 300
     && is_array($data) && (($data['code'] ?? '') === 'Ok')
-    && is_array($geometry) && (($geometry['type'] ?? '') === 'LineString')
-    && isset($geometry['coordinates']) && is_array($geometry['coordinates'])
-    && count($geometry['coordinates']) >= 2;
+    && count(array_filter($routes, 'rm_valid_route')) > 0;
 
   return [
     'ok' => $ok,
     'profile' => $profile,
     'data' => $data,
     'route' => $route,
+    'routes' => $routes,
     'body' => $body,
     'curlError' => $curlError,
     'httpCode' => $httpCode,
   ];
 }
 
-function flow_vehicle_route($points, $token, $pointHeadings, $avoidManeuverRadius, $originSnapRadius, $blockedPoints) {
+function flow_vehicle_route($points, $token, $pointHeadings, $avoidManeuverRadius, $originSnapRadius, $blockedPoints, $manualRestrictions) {
   $startOnlyHeadings = [];
   if (isset($pointHeadings[0]) && $pointHeadings[0] !== null) $startOnlyHeadings[0] = $pointHeadings[0];
   $attempts = [
@@ -246,11 +248,68 @@ function flow_vehicle_route($points, $token, $pointHeadings, $avoidManeuverRadiu
       $settings['safety'],
       $avoidManeuverRadius,
       $originSnapRadius,
-      $blockedPoints
+      $blockedPoints,
+      count($manualRestrictions) > 0
     );
     $attempt['headingsApplied'] = $settings['headings'];
     $last = $attempt;
-    if ($attempt['ok']) return $attempt;
+    if (!$attempt['ok']) continue;
+
+    $selection = rm_select_safe_route($attempt['routes'], $manualRestrictions);
+    if ($selection['route'] !== null) {
+      $attempt['route'] = $selection['route'];
+      $attempt['manualRestrictionCandidatesChecked'] = (int)($selection['checked'] ?? 0);
+      $attempt['manualRestrictionFallbackApplied'] = false;
+      $attempt['manualRestrictionUnavoidable'] = false;
+      $attempt['roadMemoryApplied'] = count($blockedPoints);
+      $attempt['roadMemoryUnavoidable'] = false;
+      return $attempt;
+    }
+
+    if (count($manualRestrictions) > 0) {
+      $fallbackPoints = rm_merge_blocked_points(
+        $blockedPoints,
+        rm_fallback_blocked_points($manualRestrictions),
+        50
+      );
+      $fallback = flow_call_directions(
+        $settings['profile'],
+        $points,
+        $token,
+        $settings['headings'],
+        $settings['safety'],
+        $avoidManeuverRadius,
+        $originSnapRadius,
+        $fallbackPoints,
+        true
+      );
+      $fallback['headingsApplied'] = $settings['headings'];
+      $fallbackSelection = $fallback['ok']
+        ? rm_select_safe_route($fallback['routes'], $manualRestrictions)
+        : ['route' => null, 'checked' => 0];
+      if ($fallbackSelection['route'] !== null) {
+        $fallback['route'] = $fallbackSelection['route'];
+        $fallback['manualRestrictionCandidatesChecked'] = (int)($fallbackSelection['checked'] ?? 0);
+        $fallback['manualRestrictionFallbackApplied'] = true;
+        $fallback['manualRestrictionUnavoidable'] = false;
+        $fallback['roadMemoryApplied'] = count($fallbackPoints);
+        $fallback['roadMemoryUnavoidable'] = false;
+        return $fallback;
+      }
+      $fallback['ok'] = false;
+      $fallback['manualRestrictionFallbackApplied'] = true;
+      $fallback['manualRestrictionUnavoidable'] = true;
+      $fallback['roadMemoryApplied'] = count($fallbackPoints);
+      $fallback['roadMemoryUnavoidable'] = true;
+      return $fallback;
+    }
+
+    $attempt['ok'] = false;
+    $attempt['manualRestrictionFallbackApplied'] = false;
+    $attempt['manualRestrictionUnavoidable'] = false;
+    $attempt['roadMemoryApplied'] = count($blockedPoints);
+    $attempt['roadMemoryUnavoidable'] = count($blockedPoints) > 0;
+    return $attempt;
   }
   return $last;
 }
@@ -413,7 +472,8 @@ $directAttempt = flow_vehicle_route(
   [0 => $heading, 1 => $followingHeading],
   $avoidManeuverRadius,
   $originSnapRadius,
-  $blockedPoints
+  $blockedPoints,
+  $manualRestrictions
 );
 if ($directAttempt && $directAttempt['ok']) {
   $directGeometry = $directAttempt['route']['geometry'];
@@ -453,8 +513,12 @@ if ($directAttempt && $directAttempt['ok']) {
         'destinationHeadingApplied' => $destinationHeading !== null,
         'followingHeadingApplied' => $followingHeading !== null
           && isset($directAttempt['headingsApplied'][1]),
-        'roadMemoryApplied' => count($blockedPoints),
-        'roadMemoryUnavoidable' => count($blockedPoints) > 0 && flow_has_point_exclusion_violation($directAttempt['route']),
+        'roadMemoryApplied' => (int)($directAttempt['roadMemoryApplied'] ?? count($blockedPoints)),
+        'roadMemoryUnavoidable' => false,
+        'manualRestrictionsApplied' => count($manualRestrictions),
+        'manualRestrictionCandidatesChecked' => (int)($directAttempt['manualRestrictionCandidatesChecked'] ?? 0),
+        'manualRestrictionFallbackApplied' => (bool)($directAttempt['manualRestrictionFallbackApplied'] ?? false),
+        'manualRestrictionUnavoidable' => false,
       ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
       exit;
     }
@@ -469,7 +533,8 @@ $throughAttempt = flow_vehicle_route(
   [0 => $heading, 1 => $destinationHeading, 2 => $followingHeading],
   $avoidManeuverRadius,
   $originSnapRadius,
-  $blockedPoints
+  $blockedPoints,
+  $manualRestrictions
 );
 if ($throughAttempt && $throughAttempt['ok']) {
   $route = $throughAttempt['route'];
@@ -521,14 +586,34 @@ if ($throughAttempt && $throughAttempt['ok']) {
         && isset($throughAttempt['headingsApplied'][1]),
       'followingHeadingApplied' => $followingHeading !== null
         && isset($throughAttempt['headingsApplied'][2]),
-      'roadMemoryApplied' => count($blockedPoints),
-      'roadMemoryUnavoidable' => count($blockedPoints) > 0 && flow_has_point_exclusion_violation($throughAttempt['route']),
+      'roadMemoryApplied' => (int)($throughAttempt['roadMemoryApplied'] ?? count($blockedPoints)),
+      'roadMemoryUnavoidable' => false,
+      'manualRestrictionsApplied' => count($manualRestrictions),
+      'manualRestrictionCandidatesChecked' => (int)($throughAttempt['manualRestrictionCandidatesChecked'] ?? 0),
+      'manualRestrictionFallbackApplied' => (bool)($throughAttempt['manualRestrictionFallbackApplied'] ?? false),
+      'manualRestrictionUnavoidable' => false,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
   }
 }
 
 $lastAttempt = $throughAttempt ?: $directAttempt;
+$restrictionUnavoidable = (bool)(($throughAttempt['manualRestrictionUnavoidable'] ?? false)
+  || ($directAttempt['manualRestrictionUnavoidable'] ?? false));
+$roadMemoryUnavoidable = (bool)(($throughAttempt['roadMemoryUnavoidable'] ?? false)
+  || ($directAttempt['roadMemoryUnavoidable'] ?? false));
+if ($restrictionUnavoidable || $roadMemoryUnavoidable) {
+  http_response_code(409);
+  echo json_encode([
+    'error' => '登録した通行規制を避けられる安全な経路がありません',
+    'roadMemoryApplied' => count($blockedPoints),
+    'roadMemoryUnavoidable' => $roadMemoryUnavoidable,
+    'manualRestrictionsApplied' => count($manualRestrictions),
+    'manualRestrictionFallbackApplied' => $restrictionUnavoidable,
+    'manualRestrictionUnavoidable' => $restrictionUnavoidable,
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
 $detail = '';
 if (is_array($lastAttempt)) {
   if (($lastAttempt['body'] ?? null) === false) $detail = (string)($lastAttempt['curlError'] ?? '');

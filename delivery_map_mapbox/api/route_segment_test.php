@@ -17,6 +17,7 @@ if (!file_exists($configFile)) {
 }
 require_once $configFile;
 require_once __DIR__ . '/request_guard.php';
+require_once __DIR__ . '/route_restrictions_test_lib.php';
 delivery_app_require_same_origin_request();
 
 $token = '';
@@ -102,6 +103,7 @@ if (!$start || !$destination) {
 $heading = normalize_segment_heading($input['heading'] ?? null);
 $destinationHeading = normalize_segment_heading($input['destination_heading'] ?? null);
 $blockedPoints = normalize_segment_blocked_points($input['blocked_points'] ?? null);
+$manualRestrictions = rm_normalize_restrictions($input['manual_restrictions'] ?? null);
 
 $speed = isset($input['speed']) && is_numeric($input['speed'])
   ? max(0.0, min(60.0, (float)$input['speed']))
@@ -130,7 +132,7 @@ function segment_request_origin() {
   return ($https ? 'https://' : 'http://') . $host . '/';
 }
 
-function call_segment_directions($profile, $start, $destination, $token, $heading, $destinationHeading, $blockedPoints, $useCurb, $useSafetySnap, $avoidManeuverRadius, $originSnapRadius) {
+function call_segment_directions($profile, $start, $destination, $token, $heading, $destinationHeading, $blockedPoints, $useCurb, $useSafetySnap, $avoidManeuverRadius, $originSnapRadius, $alternatives) {
   $coords = rawurlencode((string)$start['lng']) . ',' . rawurlencode((string)$start['lat']) . ';'
     . rawurlencode((string)$destination['lng']) . ',' . rawurlencode((string)$destination['lat']);
   $params = [
@@ -142,6 +144,7 @@ function call_segment_directions($profile, $start, $destination, $token, $headin
     'continue_straight' => 'true',
     'notifications' => 'all'
   ];
+  if ($alternatives) $params['alternatives'] = 'true';
   if ($profile === 'mapbox/driving-traffic') $params['depart_at'] = 'now';
   if ($useCurb) $params['approaches'] = 'unrestricted;curb';
   if ($heading !== null || $destinationHeading !== null) {
@@ -181,14 +184,12 @@ function call_segment_directions($profile, $start, $destination, $token, $headin
   curl_close($ch);
 
   $data = is_string($body) ? json_decode($body, true) : null;
-  $route = is_array($data) ? ($data['routes'][0] ?? null) : null;
-  $geometry = is_array($route) ? ($route['geometry'] ?? null) : null;
+  $routes = is_array($data) && is_array($data['routes'] ?? null) ? $data['routes'] : [];
+  $route = $routes[0] ?? null;
   $valid = $body !== false
     && $httpCode >= 200 && $httpCode < 300
     && is_array($data) && (($data['code'] ?? '') === 'Ok')
-    && is_array($geometry) && (($geometry['type'] ?? '') === 'LineString')
-    && isset($geometry['coordinates']) && is_array($geometry['coordinates'])
-    && count($geometry['coordinates']) >= 2;
+    && count(array_filter($routes, 'rm_valid_route')) > 0;
 
   return [
     'ok' => $valid,
@@ -197,7 +198,32 @@ function call_segment_directions($profile, $start, $destination, $token, $headin
     'httpCode' => $httpCode,
     'data' => $data,
     'route' => $route,
+    'routes' => $routes,
   ];
+}
+
+function output_segment_route($attempt, $settings, $selection, $blockedPoints, $manualRestrictions, $avoidManeuverRadius, $originSnapRadius, $fallbackApplied) {
+  $route = $selection['route'];
+  echo json_encode([
+    'ok' => true,
+    'profile' => $settings['profile'],
+    'headingApplied' => $settings['heading'] !== null,
+    'destinationHeadingApplied' => $settings['destinationHeading'] !== null,
+    'curbApproachApplied' => $settings['curb'],
+    'departureTimeApplied' => $settings['profile'] === 'mapbox/driving-traffic',
+    'avoidManeuverRadius' => $settings['safety'] ? $avoidManeuverRadius : null,
+    'originSnapRadius' => $settings['safety'] ? $originSnapRadius : null,
+    'roadMemoryApplied' => count($blockedPoints),
+    'roadMemoryUnavoidable' => false,
+    'manualRestrictionsApplied' => count($manualRestrictions),
+    'manualRestrictionCandidatesChecked' => (int)($selection['checked'] ?? 0),
+    'manualRestrictionFallbackApplied' => (bool)$fallbackApplied,
+    'manualRestrictionUnavoidable' => false,
+    'distance' => isset($route['distance']) ? (float)$route['distance'] : null,
+    'duration' => isset($route['duration']) ? (float)$route['duration'] : null,
+    'geometry' => $route['geometry'],
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
 }
 
 $attempts = [
@@ -213,6 +239,8 @@ $attempts = [
 
 $lastAttempt = null;
 $attemptedSettings = [];
+$restrictedAttempt = null;
+$restrictedSettings = null;
 foreach ($attempts as $settings) {
   if ($settings['safety'] && $avoidManeuverRadius === null && $originSnapRadius === null) continue;
   $settingsKey = $settings['profile'] . '|' . ($settings['heading'] === null ? '' : (string)$settings['heading']) . '|'
@@ -231,26 +259,78 @@ foreach ($attempts as $settings) {
     $settings['curb'],
     $settings['safety'],
     $avoidManeuverRadius,
-    $originSnapRadius
+    $originSnapRadius,
+    count($manualRestrictions) > 0
   );
   $lastAttempt = $attempt;
   if (!$attempt['ok']) continue;
 
-  $route = $attempt['route'];
+  $selection = rm_select_safe_route($attempt['routes'], $manualRestrictions);
+  if ($selection['route'] !== null) {
+    output_segment_route(
+      $attempt,
+      $settings,
+      $selection,
+      $blockedPoints,
+      $manualRestrictions,
+      $avoidManeuverRadius,
+      $originSnapRadius,
+      false
+    );
+  }
+
+  $restrictedAttempt = $attempt;
+  $restrictedSettings = $settings;
+  break;
+}
+
+if ($restrictedAttempt && count($manualRestrictions) > 0) {
+  $fallbackPoints = rm_merge_blocked_points(
+    $blockedPoints,
+    rm_fallback_blocked_points($manualRestrictions),
+    50
+  );
+  $fallbackAttempt = call_segment_directions(
+    $restrictedSettings['profile'],
+    $start,
+    $destination,
+    $token,
+    $restrictedSettings['heading'],
+    $restrictedSettings['destinationHeading'],
+    $fallbackPoints,
+    $restrictedSettings['curb'],
+    $restrictedSettings['safety'],
+    $avoidManeuverRadius,
+    $originSnapRadius,
+    true
+  );
+  $lastAttempt = $fallbackAttempt;
+  if ($fallbackAttempt['ok']) {
+    $fallbackSelection = rm_select_safe_route($fallbackAttempt['routes'], $manualRestrictions);
+    if ($fallbackSelection['route'] !== null) {
+      output_segment_route(
+        $fallbackAttempt,
+        $restrictedSettings,
+        $fallbackSelection,
+        $fallbackPoints,
+        $manualRestrictions,
+        $avoidManeuverRadius,
+        $originSnapRadius,
+        true
+      );
+    }
+  }
+}
+
+if ($restrictedAttempt) {
+  http_response_code(409);
   echo json_encode([
-    'ok' => true,
-    'profile' => $settings['profile'],
-    'headingApplied' => $settings['heading'] !== null,
-    'destinationHeadingApplied' => $settings['destinationHeading'] !== null,
-    'curbApproachApplied' => $settings['curb'],
-    'departureTimeApplied' => $settings['profile'] === 'mapbox/driving-traffic',
-    'avoidManeuverRadius' => $settings['safety'] ? $avoidManeuverRadius : null,
-    'originSnapRadius' => $settings['safety'] ? $originSnapRadius : null,
+    'error' => '登録した通行規制を避けられる安全な経路がありません',
     'roadMemoryApplied' => count($blockedPoints),
-    'roadMemoryUnavoidable' => count($blockedPoints) > 0 && segment_has_point_exclusion_violation($route),
-    'distance' => isset($route['distance']) ? (float)$route['distance'] : null,
-    'duration' => isset($route['duration']) ? (float)$route['duration'] : null,
-    'geometry' => $route['geometry'],
+    'roadMemoryUnavoidable' => count($blockedPoints) > 0,
+    'manualRestrictionsApplied' => count($manualRestrictions),
+    'manualRestrictionFallbackApplied' => count($manualRestrictions) > 0,
+    'manualRestrictionUnavoidable' => count($manualRestrictions) > 0,
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
 }
