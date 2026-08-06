@@ -2148,7 +2148,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.106</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.107</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2221,7 +2221,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.106</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.107</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2271,7 +2271,7 @@
     <div class="road-memory-actions">
       <button id="btn-road-memory-add" type="button">道路全体を避ける（1点）</button>
       <button id="btn-road-memory-direction" type="button">一方通行・進入禁止（2点）</button>
-      <button id="btn-road-memory-turn" type="button">右左折禁止（3点）</button>
+      <button id="btn-road-memory-turn" type="button">右左折・Uターン禁止（3点）</button>
     </div>
     <div class="road-memory-sync-status" id="road-memory-sync-status"></div>
     <div class="road-memory-summary" id="road-memory-summary"></div>
@@ -2694,7 +2694,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.106';
+const APP_VERSION = 'v2026.06.24-test.107';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -13953,13 +13953,13 @@ function renderRoadMemoryMapLayers() {
 }
 
 function roadMemoryTurnLabel(points) {
-  if (!Array.isArray(points) || points.length < 3) return '右左折禁止';
+  if (!Array.isArray(points) || points.length < 3) return '右左折・Uターン禁止';
   const incoming = routeBearingDegrees(points[0], points[1]);
   const outgoing = routeBearingDegrees(points[1], points[2]);
-  if (!Number.isFinite(incoming) || !Number.isFinite(outgoing)) return '右左折禁止';
+  if (!Number.isFinite(incoming) || !Number.isFinite(outgoing)) return '右左折・Uターン禁止';
   const delta = ((outgoing - incoming + 540) % 360) - 180;
   if (Math.abs(delta) < 30) return '直進禁止';
-  if (Math.abs(delta) > 150) return '転回禁止';
+  if (Math.abs(delta) > 150) return 'Uターン禁止';
   return delta > 0 ? '右折禁止' : '左折禁止';
 }
 
@@ -13977,7 +13977,7 @@ function renderRoadMemoryModal() {
   if (!summary || !list) return;
   const state = loadRoadMemoryState();
   const approachCount = Object.keys(state.approaches).length;
-  summary.textContent = `道路全体 ${state.blocked.length}件 / 一方通行 ${state.directions.length}件 / 右左折禁止 ${state.turns.length}件 / 到着方向 ${approachCount}件`;
+  summary.textContent = `道路全体 ${state.blocked.length}件 / 一方通行 ${state.directions.length}件 / 右左折・Uターン禁止 ${state.turns.length}件 / 到着方向 ${approachCount}件`;
   if (syncStatus) {
     if (deliverySyncEnabled && roadMemorySyncLastError) {
       syncStatus.textContent = `通行規制の共有エラー: ${roadMemorySyncLastError}`;
@@ -14039,9 +14039,9 @@ function roadMemoryPlacementDefinition(mode) {
   };
   return {
     points: 3,
-    title: '右左折禁止',
-    banner: '進入側→交差点→禁止方向の順に3点タップ',
-    confirm: '1番→2番→3番の曲がり方を「通行不可」として記憶しますか？'
+    title: '右左折・Uターン禁止',
+    banner: '進入側→交差点/Uターン地点→禁止方向の順に3点タップ',
+    confirm: '1番→2番→3番の進み方を「通行不可」として記憶しますか？'
   };
 }
 
@@ -14107,9 +14107,12 @@ function handleRoadMemoryMapTap(value) {
     return;
   }
 
+  const confirmationText = roadMemoryPlacementMode === 'turn'
+    ? `3点の向きを「${roadMemoryTurnLabel(roadMemoryPlacementPoints)}」として記憶しますか？`
+    : definition.confirm;
   showConfirm(
     `${definition.title}を記憶`,
-    definition.confirm,
+    confirmationText,
     commitRoadMemoryPlacement,
     () => {
       roadMemoryPlacementPoints.pop();
@@ -14141,7 +14144,7 @@ function commitRoadMemoryPlacement() {
   document.body.classList.remove('placing-mode', 'road-memory-placing');
   persistRoadMemoryState();
   refreshGuidanceAfterRoadMemoryChange();
-  showToast(`${roadMemoryKindLabel(mode)}を記憶しました`);
+  showToast(`${roadMemoryKindLabel(mode, mode === 'turn' ? { points } : null)}を記憶しました`);
 }
 
 function findRoadMemoryItem(kind, id) {
