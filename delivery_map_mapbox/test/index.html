@@ -1100,6 +1100,62 @@
   grid-template-columns: 1fr 72px;
   gap: 8px;
 }
+.time-window-route-rule {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e1d5;
+}
+.time-window-route-time-grid,
+.time-route-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.time-window-row[data-route-mode="deadline"] [data-route-start-wrap],
+.time-window-row[data-route-mode="none"] .time-window-route-time-grid {
+  display: none;
+}
+.time-window-route-hint,
+.time-route-adaptive-note {
+  margin: 2px 0 8px;
+  color: var(--muted);
+  font-size: calc(11px * var(--text-scale));
+  line-height: 1.45;
+}
+.time-route-constraint-list {
+  max-height: 28dvh;
+  margin: 10px 0;
+  overflow-y: auto;
+  border-top: 1px solid #e5e1d5;
+}
+.time-route-constraint-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e5e1d5;
+  font-size: calc(12px * var(--text-scale));
+  line-height: 1.4;
+}
+.time-route-constraint-row strong,
+.time-route-constraint-row span {
+  overflow-wrap: anywhere;
+}
+.time-route-constraint-row small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+.time-route-exact-settings {
+  margin: 12px 0;
+  padding: 10px;
+  border: 1.5px solid #d5cfbb;
+  border-radius: 8px;
+  background: #fffdf6;
+}
+.time-route-exact-settings h4 {
+  margin: 0 0 8px;
+  font-size: calc(13px * var(--text-scale));
+}
 .time-window-row input[type=color] {
   width: 100%;
   min-height: 42px;
@@ -2291,7 +2347,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.109</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.110</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2364,7 +2420,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.109</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.110</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2375,6 +2431,7 @@
       <button id="menu-reset-pickup" type="button">🔄 集荷完了をリセット</button>
       <button id="menu-optimize-walk" type="button">🧭 徒歩・自転車向け 近い順</button>
       <button id="menu-optimize-road-blocks" type="button">🗺 エリア相談 → 道路優先配送順（おすすめ・試験）</button>
+      <button id="menu-optimize-time-windows" type="button">⏱ 時間指定込み・安全優先（試験）</button>
       <button id="menu-optimize-recommended" type="button">📐 エリア相談 → 直線距離で比較（道路未考慮）</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
@@ -2544,10 +2601,22 @@
   <div class="modal">
     <h3>時間指定設定</h3>
     <div class="modal-help">
-      時間帯の表示名とピン色を設定します。各配送先では、詳細(編集)画面の「時間指定」から時間帯または任意時刻を選びます。
+      表示名・ピン色と、時間指定込みルートでの意味を設定します。各配送先では、詳細(編集)画面の「時間指定」から時間帯または任意時刻を選びます。
     </div>
     <div id="time-window-settings-list" class="time-window-settings-list"></div>
     <button class="inline-action" id="btn-time-window-add" type="button">+ 時間帯を追加</button>
+    <div class="time-route-exact-settings">
+      <h4>任意時刻のルート上の意味</h4>
+      <label for="time-route-exact-mode">任意時刻をどう扱うか</label>
+      <select id="time-route-exact-mode">
+        <option value="window">指定時刻の前後に配達</option>
+        <option value="deadline">指定時刻までに配達</option>
+      </select>
+      <div id="time-route-exact-tolerance-wrap">
+        <label for="time-route-exact-tolerance">前後の許容時間（分）</label>
+        <input type="number" id="time-route-exact-tolerance" min="5" max="60" step="5" value="15">
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="cancel" id="btn-time-window-reset" type="button">初期設定に戻す</button>
       <button class="primary" id="btn-time-window-save" type="button">保存</button>
@@ -2894,6 +2963,42 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-time-route-plan">
+  <div class="modal">
+    <h3>時間指定込み・安全優先</h3>
+    <div class="modal-help" id="time-route-plan-summary"></div>
+    <div class="time-route-settings-grid">
+      <div>
+        <label for="time-route-start">計算開始時刻</label>
+        <input type="time" id="time-route-start">
+      </div>
+      <div>
+        <label for="time-route-buffer">締切の安全余裕（分）</label>
+        <input type="number" id="time-route-buffer" min="0" max="60" step="5" value="20">
+      </div>
+    </div>
+    <label class="checkbox-line">
+      <input type="checkbox" id="time-route-auto-service" checked>
+      今日の実績から1件の作業時間を自動調整
+    </label>
+    <label for="time-route-service">1件あたりの作業時間</label>
+    <select id="time-route-service">
+      <option value="3">3分</option>
+      <option value="5">5分</option>
+      <option value="7">7分</option>
+    </select>
+    <div class="time-route-adaptive-note" id="time-route-adaptive-note"></div>
+    <div class="time-route-constraint-list" id="time-route-constraint-list"></div>
+    <div class="modal-help">
+      エリア順を基本にしつつ、時間に間に合わない時だけ時間指定を優先します。自動調整で順番が変わる場合も、確認後に適用します。
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" id="btn-time-route-cancel" type="button">キャンセル</button>
+      <button class="primary" id="btn-time-route-build" type="button">道路時間で計算</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-confirm">
   <div class="modal">
     <h3 id="confirm-title">確認</h3>
@@ -2948,7 +3053,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.109';
+const APP_VERSION = 'v2026.06.24-test.110';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -3064,17 +3169,27 @@ const MARKER_TAP_SELECT_DELAY_MS = 420;
 const MARKER_LONG_PRESS_DELAY_MS = 650;
 const MARKER_LONG_PRESS_MOVE_TOLERANCE_PX = 12;
 const TIME_WINDOW_SETTINGS_KEY = 'rys-mapbox-test-time-window-settings-v1';
+const TIME_ROUTE_PREFS_KEY = 'rys-mapbox-test-time-route-prefs-v1';
+const TIME_ROUTE_ACTIVE_KEY = 'rys-mapbox-test-time-route-active-v1';
 const LIST_TIME_WINDOW_FILTER_TIMED = '__timed__';
 const LIST_TIME_WINDOW_FILTER_NONE = '__none__';
 const EXACT_TIME_SELECT_VALUE = '__exact_time__';
 const EXACT_TIME_DEFAULT_COLOR = '#c026d3';
 const TIME_WINDOW_DEFAULTS = [
-  { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316' },
-  { id: '14-16', label: '14時〜16時', keywords: '14時〜16時,14時～16時,14:00-16:00,14-16,14時から16時', color: '#a855f7' },
-  { id: '16-18', label: '16時〜18時', keywords: '16時〜18時,16時～18時,16:00-18:00,16-18,16時から18時', color: '#2563eb' },
-  { id: '18-20', label: '18時〜20時', keywords: '18時〜20時,18時～20時,18:00-20:00,18-20,18時から20時', color: '#16a34a' },
-  { id: '19-21', label: '19時〜21時', keywords: '19時〜21時,19時～21時,19:00-21:00,19-21,19時から21時', color: '#dc2626' }
+  { id: 'morning', label: '午前指定', keywords: '午前指定,午前中,午前,AM', color: '#f97316', routeMode: 'window', routeStart: '08:00', routeEnd: '12:00' },
+  { id: '14-16', label: '14時〜16時', keywords: '14時〜16時,14時～16時,14:00-16:00,14-16,14時から16時', color: '#a855f7', routeMode: 'window', routeStart: '14:00', routeEnd: '16:00' },
+  { id: '16-18', label: '16時〜18時', keywords: '16時〜18時,16時～18時,16:00-18:00,16-18,16時から18時', color: '#2563eb', routeMode: 'window', routeStart: '16:00', routeEnd: '18:00' },
+  { id: '18-20', label: '18時〜20時', keywords: '18時〜20時,18時～20時,18:00-20:00,18-20,18時から20時', color: '#16a34a', routeMode: 'window', routeStart: '18:00', routeEnd: '20:00' },
+  { id: '19-21', label: '19時〜21時', keywords: '19時〜21時,19時～21時,19:00-21:00,19-21,19時から21時', color: '#dc2626', routeMode: 'window', routeStart: '19:00', routeEnd: '21:00' }
 ];
+const TIME_ROUTE_DEFAULT_PREFS = {
+  autoService: true,
+  baseServiceMinutes: 3,
+  safetyBufferMinutes: 20,
+  exactMode: 'window',
+  exactToleranceMinutes: 15
+};
+const TIME_ROUTE_MAX_ITEMS = 480;
 const TEXT_SIZE_OPTIONS = {
   small: 0.9,
   normal: 1,
@@ -3219,6 +3334,7 @@ let editingItemId = null;
 let confirmCallback = null;
 let confirmCancelCallback = null;
 let routeAreaPlannerState = null;
+let timeRoutePlannerState = null;
 let operatorSaveCallback = null;
 let operatorCancelCallback = null;
 let pickupSyncTimer = null;
@@ -3603,6 +3719,10 @@ async function closeActiveSurfaceForBackButton() {
   }
   if (modalIsOpen('modal-route-areas')) {
     cancelRouteAreaPlanner();
+    return true;
+  }
+  if (modalIsOpen('modal-time-route-plan')) {
+    cancelTimeRoutePlanner();
     return true;
   }
   const visibleModals = Array.from(document.querySelectorAll('.modal-bg.show'));
@@ -5576,6 +5696,8 @@ function recordDeliveryMetricsCompletion(delivery, completed) {
     address: String(delivery.address || ''),
     note: String(delivery.note || ''),
     deliveryCourse: String(delivery.deliveryCourse || ''),
+    lat: Number.isFinite(Number(delivery.lat)) ? Number(delivery.lat) : null,
+    lng: Number.isFinite(Number(delivery.lng)) ? Number(delivery.lng) : null,
     completedAt,
     planId: plan ? String(plan.id || '') : '',
     planSource: plan ? String(plan.source || '') : '',
@@ -6125,7 +6247,7 @@ function updateModeUi() {
     resetPickupBtn.style.display = appMode === 'pickup' ? 'block' : 'none';
   }
   const pickupOnlyIds = ['menu-operator'];
-  const deliveryOnlyIds = ['menu-optimize-walk', 'menu-optimize-recommended', 'menu-optimize-road-blocks', 'menu-optimize-car', 'menu-optimize-google', 'menu-clear-done', 'menu-usage'];
+  const deliveryOnlyIds = ['menu-optimize-walk', 'menu-optimize-recommended', 'menu-optimize-road-blocks', 'menu-optimize-time-windows', 'menu-optimize-car', 'menu-optimize-google', 'menu-clear-done', 'menu-usage'];
   const hiddenDailyIds = ['menu-export-json', 'menu-copy', 'menu-clear-all'];
   pickupOnlyIds.forEach(id => {
     const el = $(id);
@@ -6190,6 +6312,70 @@ function defaultTimeWindowSettings() {
   return TIME_WINDOW_DEFAULTS.map(item => ({ ...item }));
 }
 
+function normalizeTimeWindowRouteMode(value) {
+  const mode = String(value || '').trim();
+  return mode === 'window' || mode === 'deadline' || mode === 'none' ? mode : 'none';
+}
+
+function normalizeTimeWindowSetting(item, idx = 0) {
+  const source = item && typeof item === 'object' ? item : {};
+  const id = String(source.id || `custom-${idx}`).trim();
+  const fallback = TIME_WINDOW_DEFAULTS.find(row => row.id === id) || null;
+  const routeMode = normalizeTimeWindowRouteMode(
+    source.routeMode === undefined ? (fallback && fallback.routeMode) : source.routeMode
+  );
+  const routeStart = normalizeExactDeliveryTime(
+    source.routeStart === undefined ? (fallback && fallback.routeStart) : source.routeStart
+  );
+  const routeEnd = normalizeExactDeliveryTime(
+    source.routeEnd === undefined ? (fallback && fallback.routeEnd) : source.routeEnd
+  );
+  return {
+    id,
+    label: String(source.label || '').trim(),
+    keywords: String(source.keywords || source.label || '').trim(),
+    color: sanitizeTimeWindowColor(source.color),
+    routeMode,
+    routeStart: routeMode === 'window' ? routeStart : '',
+    routeEnd: routeMode === 'none' ? '' : routeEnd
+  };
+}
+
+function clampTimeRouteNumber(value, fallback, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(number)));
+}
+
+function loadTimeRoutePreferences() {
+  let source = {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(TIME_ROUTE_PREFS_KEY) || '{}');
+    if (parsed && typeof parsed === 'object') source = parsed;
+  } catch (e) {}
+  return {
+    autoService: source.autoService !== false,
+    baseServiceMinutes: clampTimeRouteNumber(source.baseServiceMinutes, TIME_ROUTE_DEFAULT_PREFS.baseServiceMinutes, 1, 15),
+    safetyBufferMinutes: clampTimeRouteNumber(source.safetyBufferMinutes, TIME_ROUTE_DEFAULT_PREFS.safetyBufferMinutes, 0, 60),
+    exactMode: source.exactMode === 'deadline' ? 'deadline' : 'window',
+    exactToleranceMinutes: clampTimeRouteNumber(source.exactToleranceMinutes, TIME_ROUTE_DEFAULT_PREFS.exactToleranceMinutes, 5, 60)
+  };
+}
+
+function saveTimeRoutePreferences(patch) {
+  const current = loadTimeRoutePreferences();
+  const nextSource = { ...current, ...(patch || {}) };
+  const next = {
+    autoService: nextSource.autoService !== false,
+    baseServiceMinutes: clampTimeRouteNumber(nextSource.baseServiceMinutes, current.baseServiceMinutes, 1, 15),
+    safetyBufferMinutes: clampTimeRouteNumber(nextSource.safetyBufferMinutes, current.safetyBufferMinutes, 0, 60),
+    exactMode: nextSource.exactMode === 'deadline' ? 'deadline' : 'window',
+    exactToleranceMinutes: clampTimeRouteNumber(nextSource.exactToleranceMinutes, current.exactToleranceMinutes, 5, 60)
+  };
+  localStorage.setItem(TIME_ROUTE_PREFS_KEY, JSON.stringify(next));
+  return next;
+}
+
 function sanitizeTimeWindowColor(color) {
   const value = String(color || '').trim();
   return /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#a855f7';
@@ -6202,12 +6388,7 @@ function loadTimeWindowSettings() {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         const cleaned = parsed
-          .map((item, idx) => ({
-            id: String(item.id || `custom-${idx}`).trim(),
-            label: String(item.label || '').trim(),
-            keywords: String(item.keywords || '').trim(),
-            color: sanitizeTimeWindowColor(item.color)
-          }))
+          .map(normalizeTimeWindowSetting)
           .filter(item => item.id && item.label);
         if (cleaned.length > 0) return cleaned;
       }
@@ -6219,7 +6400,10 @@ function loadTimeWindowSettings() {
 }
 
 function saveTimeWindowSettings(settings) {
-  localStorage.setItem(TIME_WINDOW_SETTINGS_KEY, JSON.stringify(settings));
+  const normalized = (Array.isArray(settings) ? settings : [])
+    .map(normalizeTimeWindowSetting)
+    .filter(item => item.id && item.label);
+  localStorage.setItem(TIME_WINDOW_SETTINGS_KEY, JSON.stringify(normalized));
   populateListTimeWindowFilter();
 }
 
@@ -6406,7 +6590,7 @@ function renderTimeWindowSettings() {
   if (!list) return;
   const settings = loadTimeWindowSettings();
   list.innerHTML = settings.map((item, idx) => `
-    <div class="time-window-row" data-id="${escapeHtml(item.id)}">
+    <div class="time-window-row" data-id="${escapeHtml(item.id)}" data-route-mode="${escapeHtml(item.routeMode)}">
       <div class="time-window-row-head">
         <div class="time-window-row-title">時間帯 ${idx + 1}</div>
         <button class="time-window-row-delete" type="button" data-action="delete-time-window">削除</button>
@@ -6421,8 +6605,44 @@ function renderTimeWindowSettings() {
           <input type="color" data-field="color" value="${escapeHtml(sanitizeTimeWindowColor(item.color))}">
         </div>
       </div>
+      <div class="time-window-route-rule">
+        <label>時間指定込みルートでの意味</label>
+        <select data-field="route-mode">
+          <option value="window" ${item.routeMode === 'window' ? 'selected' : ''}>開始〜終了の時間内に配達</option>
+          <option value="deadline" ${item.routeMode === 'deadline' ? 'selected' : ''}>終了時刻までに配達</option>
+          <option value="none" ${item.routeMode === 'none' ? 'selected' : ''}>ルート計算には使わない</option>
+        </select>
+        <div class="time-window-route-time-grid">
+          <div data-route-start-wrap>
+            <label>開始時刻</label>
+            <input type="time" data-field="route-start" value="${escapeHtml(item.routeStart)}">
+          </div>
+          <div>
+            <label data-route-end-label>${item.routeMode === 'deadline' ? '締切時刻' : '終了時刻'}</label>
+            <input type="time" data-field="route-end" value="${escapeHtml(item.routeEnd)}">
+          </div>
+        </div>
+        <div class="time-window-route-hint" data-route-hint></div>
+      </div>
     </div>
   `).join('');
+  list.querySelectorAll('.time-window-row').forEach(updateTimeWindowRouteSettingRow);
+}
+
+function updateTimeWindowRouteSettingRow(row) {
+  if (!row) return;
+  const mode = normalizeTimeWindowRouteMode(row.querySelector('[data-field="route-mode"]')?.value);
+  row.dataset.routeMode = mode;
+  const endLabel = row.querySelector('[data-route-end-label]');
+  if (endLabel) endLabel.textContent = mode === 'deadline' ? '締切時刻' : '終了時刻';
+  const hint = row.querySelector('[data-route-hint]');
+  if (hint) {
+    hint.textContent = mode === 'window'
+      ? '開始前には配らず、終了時刻より安全余裕分早く終える順番を作ります。'
+      : (mode === 'deadline'
+        ? '開始時刻の制限はなく、締切より安全余裕分早く終える順番を作ります。'
+        : 'ピン表示と検索には残しますが、時間制約としては使いません。');
+  }
 }
 
 function collectTimeWindowSettingsFromForm() {
@@ -6432,19 +6652,53 @@ function collectTimeWindowSettingsFromForm() {
     const keywords = row.querySelector('[data-field="keywords"]')?.value.trim() || label;
     const color = sanitizeTimeWindowColor(row.querySelector('[data-field="color"]')?.value);
     const id = row.dataset.id || `custom-${Date.now().toString(36)}-${idx}`;
-    return { id, label, keywords, color };
+    const routeMode = normalizeTimeWindowRouteMode(row.querySelector('[data-field="route-mode"]')?.value);
+    const routeStart = normalizeExactDeliveryTime(row.querySelector('[data-field="route-start"]')?.value);
+    const routeEnd = normalizeExactDeliveryTime(row.querySelector('[data-field="route-end"]')?.value);
+    return { id, label, keywords, color, routeMode, routeStart, routeEnd };
   }).filter(item => item.label);
+}
+
+function validateTimeWindowRouteSettings(settings) {
+  for (const item of settings) {
+    if (item.routeMode === 'window') {
+      if (!item.routeStart || !item.routeEnd) return `${item.label}の開始時刻と終了時刻を入力してください`;
+      if (timeTextToMinutes(item.routeStart) >= timeTextToMinutes(item.routeEnd)) {
+        return `${item.label}は終了時刻を開始時刻より後にしてください`;
+      }
+    }
+    if (item.routeMode === 'deadline' && !item.routeEnd) return `${item.label}の締切時刻を入力してください`;
+  }
+  return '';
+}
+
+function updateExactTimeRouteSettingsUi() {
+  const deadline = $('time-route-exact-mode')?.value === 'deadline';
+  const wrap = $('time-route-exact-tolerance-wrap');
+  if (wrap) wrap.hidden = deadline;
 }
 
 function openTimeWindowSettings() {
   closeModal('modal-menu');
   renderTimeWindowSettings();
+  const prefs = loadTimeRoutePreferences();
+  $('time-route-exact-mode').value = prefs.exactMode;
+  $('time-route-exact-tolerance').value = String(prefs.exactToleranceMinutes);
+  updateExactTimeRouteSettingsUi();
   openModal('modal-time-windows');
 }
 
 function addTimeWindowSettingRow() {
   const settings = collectTimeWindowSettingsFromForm();
-  settings.push({ id: `custom-${Date.now().toString(36)}`, label: '新しい時間指定', keywords: '', color: '#a855f7' });
+  settings.push({
+    id: `custom-${Date.now().toString(36)}`,
+    label: '新しい時間指定',
+    keywords: '',
+    color: '#a855f7',
+    routeMode: 'none',
+    routeStart: '',
+    routeEnd: ''
+  });
   saveTimeWindowSettings(settings);
   renderTimeWindowSettings();
 }
@@ -6455,7 +6709,16 @@ function saveTimeWindowSettingsFromModal() {
     showToast('時間指定を1つ以上設定してください', true);
     return;
   }
+  const validationError = validateTimeWindowRouteSettings(settings);
+  if (validationError) {
+    showToast(validationError, true);
+    return;
+  }
   saveTimeWindowSettings(settings);
+  saveTimeRoutePreferences({
+    exactMode: $('time-route-exact-mode').value,
+    exactToleranceMinutes: $('time-route-exact-tolerance').value
+  });
   renderMarkers();
   renderList();
   closeModal('modal-time-windows');
@@ -6465,7 +6728,12 @@ function saveTimeWindowSettingsFromModal() {
 function resetTimeWindowSettings() {
   showConfirm('時間指定設定を初期化', '時間指定の設定を初期状態に戻しますか？', () => {
     saveTimeWindowSettings(defaultTimeWindowSettings());
+    saveTimeRoutePreferences(TIME_ROUTE_DEFAULT_PREFS);
     renderTimeWindowSettings();
+    const prefs = loadTimeRoutePreferences();
+    $('time-route-exact-mode').value = prefs.exactMode;
+    $('time-route-exact-tolerance').value = String(prefs.exactToleranceMinutes);
+    updateExactTimeRouteSettingsUi();
     renderMarkers();
     renderList();
     showToast('時間指定設定を初期化しました');
@@ -11010,6 +11278,8 @@ async function toggleDone(id) {
   d.completedBy = d.completed ? operatorName : '';
   d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
   d.updatedAt = Date.now();
+  recordDeliveryMetricsCompletion(d, d.completed);
+  updateTimeRouteAdaptivePaceAfterCompletion(d, d.completed);
   if (d.completed && activeDeliveryId === id) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
@@ -11493,6 +11763,7 @@ async function toggleEditedItemDone() {
   d.completedAtLabel = d.completed ? formatTime(d.completedAt) : '';
   d.updatedAt = Date.now();
   recordDeliveryMetricsCompletion(d, d.completed);
+  updateTimeRouteAdaptivePaceAfterCompletion(d, d.completed);
   if (d.completed && activeDeliveryId === editingItemId) activeDeliveryId = null;
   saveDeliveries();
   renderMarkers();
@@ -16464,6 +16735,634 @@ function collectRouteCandidates() {
   };
 }
 
+function timeTextToMinutes(value) {
+  const normalized = normalizeExactDeliveryTime(value);
+  if (!normalized) return NaN;
+  const [hour, minute] = normalized.split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function timeRouteTimestampForText(baseValue, timeText) {
+  const minutes = timeTextToMinutes(timeText);
+  const base = baseValue instanceof Date ? new Date(baseValue.getTime()) : new Date(baseValue);
+  if (!Number.isFinite(minutes) || Number.isNaN(base.getTime())) return null;
+  base.setHours(0, 0, 0, 0);
+  return base.getTime() + minutes * 60 * 1000;
+}
+
+function timeRouteInputText(value = Date.now()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatTimeRouteClock(value) {
+  const date = new Date(Number(value));
+  if (Number.isNaN(date.getTime())) return '--:--';
+  return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatTimeRouteMinutes(value) {
+  const minutes = Math.max(0, Math.round(Number(value || 0) / 60000));
+  if (minutes < 60) return `${minutes}分`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}時間${rest}分` : `${hours}時間`;
+}
+
+function timeRouteServiceLevel(value) {
+  const minutes = clampTimeRouteNumber(value, 3, 1, 15);
+  if (minutes <= 4) return 3;
+  if (minutes <= 6) return 5;
+  return 7;
+}
+
+function timeRouteConstraintForDelivery(delivery, baseValue, prefs = loadTimeRoutePreferences(), safetyBufferMinutes = 0) {
+  const info = deliveryTimeInfo(delivery);
+  const rules = [];
+  let earliestAt = null;
+  let latestAt = null;
+  let invalid = false;
+
+  const addRule = (ruleEarliest, ruleLatest, label) => {
+    if (ruleEarliest !== null && !Number.isFinite(ruleEarliest)) invalid = true;
+    if (ruleLatest !== null && !Number.isFinite(ruleLatest)) invalid = true;
+    if (ruleEarliest !== null && Number.isFinite(ruleEarliest)) {
+      earliestAt = earliestAt === null ? ruleEarliest : Math.max(earliestAt, ruleEarliest);
+    }
+    if (ruleLatest !== null && Number.isFinite(ruleLatest)) {
+      latestAt = latestAt === null ? ruleLatest : Math.min(latestAt, ruleLatest);
+    }
+    if (label) rules.push(label);
+  };
+
+  const setting = info.timeWindow;
+  if (setting && setting.routeMode === 'window') {
+    const windowStartAt = timeRouteTimestampForText(baseValue, setting.routeStart);
+    const windowEndAt = timeRouteTimestampForText(baseValue, setting.routeEnd);
+    if (windowStartAt === null || windowEndAt === null) invalid = true;
+    addRule(
+      windowStartAt,
+      windowEndAt,
+      `${setting.label} ${setting.routeStart}〜${setting.routeEnd}`
+    );
+  } else if (setting && setting.routeMode === 'deadline') {
+    addRule(
+      null,
+      timeRouteTimestampForText(baseValue, setting.routeEnd),
+      `${setting.label} ${setting.routeEnd}まで`
+    );
+  }
+
+  if (info.exactTime) {
+    const exactAt = timeRouteTimestampForText(baseValue, info.exactTime);
+    if (prefs.exactMode === 'deadline') {
+      addRule(null, exactAt, `${info.exactTime}まで`);
+    } else {
+      const toleranceMs = clampTimeRouteNumber(
+        prefs.exactToleranceMinutes,
+        TIME_ROUTE_DEFAULT_PREFS.exactToleranceMinutes,
+        5,
+        60
+      ) * 60 * 1000;
+      addRule(exactAt - toleranceMs, exactAt + toleranceMs, `${info.exactTime}の前後${toleranceMs / 60000}分`);
+    }
+  }
+
+  const constrained = rules.length > 0;
+  if (constrained && latestAt === null) invalid = true;
+  if (earliestAt !== null && latestAt !== null && earliestAt > latestAt) invalid = true;
+  const bufferMs = clampTimeRouteNumber(safetyBufferMinutes, 0, 0, 60) * 60 * 1000;
+  let safeLatestAt = latestAt;
+  if (safeLatestAt !== null) {
+    safeLatestAt -= bufferMs;
+    if (earliestAt !== null) safeLatestAt = Math.max(earliestAt, safeLatestAt);
+  }
+
+  return {
+    deliveryId: String(delivery && delivery.id || ''),
+    hasDisplayTime: info.hasTime,
+    constrained,
+    earliestAt,
+    latestAt,
+    safeLatestAt,
+    invalid,
+    label: info.label || '',
+    ruleLabel: rules.join(' / ') || 'ルート計算には使用しない'
+  };
+}
+
+function medianNumber(values) {
+  const sorted = values.filter(Number.isFinite).slice().sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function todayTimeRouteServiceSamples(value = Date.now()) {
+  const day = loadDeliveryMetricsState().days[localDateKey(value)];
+  const completions = day && Array.isArray(day.completions)
+    ? day.completions.slice().sort((a, b) => Number(a.completedAt || 0) - Number(b.completedAt || 0))
+    : [];
+  const samples = [];
+  for (let index = 1; index < completions.length; index++) {
+    const previous = completions[index - 1];
+    const current = completions[index];
+    const elapsedMinutes = (Number(current.completedAt || 0) - Number(previous.completedAt || 0)) / 60000;
+    if (!Number.isFinite(elapsedMinutes) || elapsedMinutes < 2 || elapsedMinutes > 25) continue;
+    if (![previous.lat, previous.lng, current.lat, current.lng]
+      .every(value => value !== null && value !== '' && Number.isFinite(Number(value)))) continue;
+    const distance = distanceMeters(routePoint(previous), routePoint(current));
+    if (!Number.isFinite(distance) || distance > 5000) continue;
+    const estimatedTravelMinutes = distance < 30 ? 0 : Math.max(0.5, distance * 0.32 / 60);
+    const handlingMinutes = elapsedMinutes - estimatedTravelMinutes;
+    if (handlingMinutes >= 1 && handlingMinutes <= 12) samples.push(handlingMinutes);
+  }
+  return samples.slice(-12);
+}
+
+function adaptiveTimeRouteServiceEstimate(baseMinutes = 3, value = Date.now()) {
+  const baseLevel = timeRouteServiceLevel(baseMinutes);
+  const samples = todayTimeRouteServiceSamples(value);
+  const median = medianNumber(samples);
+  if (samples.length < 3 || median === null) {
+    return {
+      minutes: baseLevel,
+      level: baseLevel,
+      sampleCount: samples.length,
+      medianMinutes: median,
+      sufficient: false
+    };
+  }
+  const observedLevel = median < 4 ? 3 : (median < 6 ? 5 : 7);
+  return {
+    minutes: Math.max(baseLevel, observedLevel),
+    level: observedLevel,
+    sampleCount: samples.length,
+    medianMinutes: median,
+    sufficient: true
+  };
+}
+
+function readActiveTimeRouteState() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(TIME_ROUTE_ACTIVE_KEY) || 'null');
+    if (!parsed || typeof parsed !== 'object' || parsed.dateKey !== localDateKey()) return null;
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveActiveTimeRouteState(state) {
+  if (!state) {
+    localStorage.removeItem(TIME_ROUTE_ACTIVE_KEY);
+  } else {
+    localStorage.setItem(TIME_ROUTE_ACTIVE_KEY, JSON.stringify(state));
+  }
+  updateTimeRouteMenuUi();
+}
+
+function updateTimeRouteMenuUi() {
+  const button = $('menu-optimize-time-windows');
+  if (!button) return;
+  const active = readActiveTimeRouteState();
+  if (active && active.needsRecalculation) {
+    button.textContent = `⏱ 時間指定込み・安全優先（再計算: ${active.recommendedServiceMinutes || active.serviceMinutes}分/件）`;
+  } else if (active) {
+    button.textContent = `⏱ 時間指定込み・安全優先（使用中: ${active.serviceMinutes}分/件）`;
+  } else {
+    button.textContent = '⏱ 時間指定込み・安全優先（試験）';
+  }
+}
+
+function updateTimeRouteAdaptivePaceAfterCompletion(delivery, completed) {
+  const active = readActiveTimeRouteState();
+  if (!active) {
+    updateTimeRouteMenuUi();
+    return;
+  }
+  const remainingIds = (Array.isArray(active.orderedIds) ? active.orderedIds : [])
+    .filter(id => deliveries.some(item => String(item.id) === String(id) && !item.completed));
+  if (remainingIds.length < 2) {
+    saveActiveTimeRouteState(null);
+    return;
+  }
+  if (!completed || !active.autoService) {
+    saveActiveTimeRouteState(active);
+    return;
+  }
+  const estimate = adaptiveTimeRouteServiceEstimate(active.baseServiceMinutes || 3);
+  const currentRecommendation = Number(active.recommendedServiceMinutes || active.serviceMinutes || 3);
+  if (estimate.sufficient && estimate.minutes > currentRecommendation) {
+    active.recommendedServiceMinutes = estimate.minutes;
+    active.adaptiveSampleCount = estimate.sampleCount;
+    active.needsRecalculation = true;
+    saveActiveTimeRouteState(active);
+    showToast(`本日の実績では1件${estimate.minutes}分が安全です。時間指定込みルートを再計算してください`, true);
+    return;
+  }
+  saveActiveTimeRouteState(active);
+}
+
+function collectTimeAwareRouteCandidates() {
+  const pendingItems = deliveries.filter(item => item && !item.completed);
+  return {
+    routeItems: pendingItems.filter(isRoutableDelivery),
+    noLocationItems: pendingItems.filter(item => !isRoutableDelivery(item)),
+    completedItems: deliveries.filter(item => item && item.completed)
+  };
+}
+
+function renderTimeRouteConstraintList() {
+  const state = timeRoutePlannerState;
+  const list = $('time-route-constraint-list');
+  if (!state || !list) return;
+  const startAt = timeRouteTimestampForText(Date.now(), $('time-route-start').value) || Date.now();
+  const buffer = clampTimeRouteNumber($('time-route-buffer').value, state.safetyBufferMinutes, 0, 60);
+  const constraints = state.routeItems
+    .map(item => ({ item, constraint: timeRouteConstraintForDelivery(item, startAt, state.prefs, buffer) }))
+    .filter(entry => entry.constraint.hasDisplayTime);
+  const active = constraints.filter(entry => entry.constraint.constrained);
+  const ignoredCount = constraints.length - active.length;
+  const rows = active.slice(0, 12).map(({ item, constraint }) => `
+    <div class="time-route-constraint-row">
+      <strong>${escapeHtml(roadBlockStopLabel(item))}</strong>
+      <span>${escapeHtml(constraint.ruleLabel)}</span>
+      ${constraint.invalid ? '<small>時間設定が矛盾しています</small>' : ''}
+    </div>
+  `);
+  if (active.length > rows.length) rows.push(`<div class="modal-help">ほか ${active.length - rows.length}件</div>`);
+  if (ignoredCount) rows.push(`<div class="modal-help">表示・検索のみ（ルート制約なし） ${ignoredCount}件</div>`);
+  list.innerHTML = rows.length ? rows.join('') : '<div class="modal-help">ルート計算に使う時間指定がありません。</div>';
+  $('btn-time-route-build').disabled = active.length === 0 || active.some(entry => entry.constraint.invalid);
+}
+
+function updateTimeRouteServiceUi() {
+  const state = timeRoutePlannerState;
+  if (!state) return;
+  const auto = $('time-route-auto-service').checked;
+  const input = $('time-route-service');
+  input.disabled = auto;
+  if (auto) input.value = String(state.adaptive.minutes);
+  const estimate = state.adaptive;
+  const note = $('time-route-adaptive-note');
+  if (auto && estimate.sufficient) {
+    note.textContent = `本日の有効な完了間隔は${estimate.sampleCount}区間、推定中央値 ${estimate.medianMinutes.toFixed(1)}分。今回は1件${estimate.minutes}分で計算します。`;
+  } else if (auto) {
+    note.textContent = `本日の有効な完了間隔は${estimate.sampleCount}区間です。3区間たまるまでは1件${estimate.minutes}分で計算します。`;
+  } else {
+    note.textContent = '選択した作業時間を固定して計算します。';
+  }
+}
+
+function openTimeRouteOptions({ start, routeItems, areaGroups, noLocationItems, completedItems }) {
+  const prefs = loadTimeRoutePreferences();
+  const baseServiceMinutes = timeRouteServiceLevel(prefs.baseServiceMinutes);
+  const adaptive = adaptiveTimeRouteServiceEstimate(baseServiceMinutes);
+  timeRoutePlannerState = {
+    start,
+    routeItems,
+    areaGroups,
+    noLocationItems,
+    completedItems,
+    prefs,
+    baseServiceMinutes,
+    safetyBufferMinutes: prefs.safetyBufferMinutes,
+    adaptive
+  };
+  $('time-route-plan-summary').textContent =
+    `${routeItems.length}件を対象に、確認したエリア順とMapboxの道路順を土台にします。時間指定に間に合わない時だけ順番を前へ動かします。`;
+  $('time-route-start').value = timeRouteInputText();
+  $('time-route-buffer').value = String(prefs.safetyBufferMinutes);
+  $('time-route-auto-service').checked = prefs.autoService;
+  $('time-route-service').value = String(prefs.autoService ? adaptive.minutes : baseServiceMinutes);
+  updateTimeRouteServiceUi();
+  renderTimeRouteConstraintList();
+  openModal('modal-time-route-plan');
+}
+
+function cancelTimeRoutePlanner() {
+  closeModal('modal-time-route-plan');
+  timeRoutePlannerState = null;
+}
+
+function buildTimeAwareSchedule({
+  start,
+  baseRoute,
+  areaGroups,
+  startAt,
+  serviceMinutes,
+  safetyBufferMinutes,
+  roadDurationSeconds,
+  prefs
+}) {
+  if (!Array.isArray(baseRoute) || !baseRoute.length) throw new Error('時間指定ルートの対象がありません');
+  const ids = new Set(baseRoute.map(item => String(item.id)));
+  if (ids.size !== baseRoute.length) throw new Error('時間指定ルートに重複した配送先があります');
+  const startValue = Number(startAt);
+  if (!Number.isFinite(startValue)) throw new Error('計算開始時刻が正しくありません');
+  const serviceMs = clampTimeRouteNumber(serviceMinutes, 3, 1, 15) * 60 * 1000;
+  const baseRank = new Map(baseRoute.map((item, index) => [String(item.id), index]));
+  const areaRank = new Map();
+  (Array.isArray(areaGroups) ? areaGroups : []).forEach((group, index) => {
+    (group.items || []).forEach(item => areaRank.set(String(item.id), index));
+  });
+  const constraints = new Map(baseRoute.map(item => [
+    String(item.id),
+    timeRouteConstraintForDelivery(item, startValue, prefs, safetyBufferMinutes)
+  ]));
+  const invalid = baseRoute.filter(item => constraints.get(String(item.id)).invalid);
+  if (invalid.length) throw new Error(`${roadBlockStopLabel(invalid[0])}の時間設定が矛盾しています`);
+
+  const baseDistance = routeDistanceMeters(start, baseRoute);
+  const rawSecondsPerMeter = Number(roadDurationSeconds) > 0 && baseDistance > 0
+    ? Number(roadDurationSeconds) / baseDistance
+    : 0.32;
+  const secondsPerMeter = Math.max(0.18, Math.min(0.9, rawSecondsPerMeter));
+  const travelMs = (from, to) => {
+    const distance = distanceMeters(from, to);
+    if (!Number.isFinite(distance) || distance < 10) return 0;
+    return Math.max(20000, distance * secondsPerMeter * 1000);
+  };
+  const project = (item, from, at) => {
+    const constraint = constraints.get(String(item.id));
+    const legTravelMs = travelMs(from, routePoint(item));
+    const arrivalAt = at + legTravelMs;
+    const serviceStartAt = constraint.earliestAt === null
+      ? arrivalAt
+      : Math.max(arrivalAt, constraint.earliestAt);
+    const waitMs = Math.max(0, serviceStartAt - arrivalAt);
+    return {
+      item,
+      constraint,
+      travelMs: legTravelMs,
+      arrivalAt,
+      serviceStartAt,
+      finishAt: serviceStartAt + serviceMs,
+      waitMs
+    };
+  };
+
+  const remaining = baseRoute.slice();
+  const stops = [];
+  let currentPoint = start;
+  let currentAt = startValue;
+  while (remaining.length) {
+    const constrained = remaining
+      .filter(item => constraints.get(String(item.id)).constrained)
+      .sort((a, b) => {
+        const aConstraint = constraints.get(String(a.id));
+        const bConstraint = constraints.get(String(b.id));
+        return (aConstraint.safeLatestAt - bConstraint.safeLatestAt) ||
+          (baseRank.get(String(a.id)) - baseRank.get(String(b.id)));
+      });
+    const anchor = constrained[0] || null;
+    let selected = null;
+
+    if (anchor) {
+      const anchorConstraint = constraints.get(String(anchor.id));
+      const directAnchor = project(anchor, currentPoint, currentAt);
+      if (directAnchor.finishAt <= anchorConstraint.safeLatestAt) {
+        const minimumAreaRank = Math.min(...remaining.map(item => areaRank.get(String(item.id)) ?? 9999));
+        const minimumBaseRank = Math.min(...remaining.map(item => baseRank.get(String(item.id))));
+        const fillers = remaining.filter(item => item !== anchor).map(item => {
+          const first = project(item, currentPoint, currentAt);
+          const ownConstraint = constraints.get(String(item.id));
+          if (ownConstraint.constrained && first.finishAt > ownConstraint.safeLatestAt) return null;
+          const after = project(anchor, routePoint(item), first.finishAt);
+          if (after.finishAt > anchorConstraint.safeLatestAt) return null;
+          const itemAreaRank = areaRank.get(String(item.id)) ?? 9999;
+          const itemBaseRank = baseRank.get(String(item.id));
+          const score = (first.finishAt - currentAt) +
+            Math.max(0, itemAreaRank - minimumAreaRank) * 20 * 60 * 1000 +
+            Math.max(0, itemBaseRank - minimumBaseRank) * 1000;
+          return { item, score };
+        }).filter(Boolean).sort((a, b) => a.score - b.score);
+        if (fillers.length) selected = fillers[0].item;
+      }
+      if (!selected) selected = anchor;
+    } else {
+      selected = remaining.reduce((best, item) =>
+        baseRank.get(String(item.id)) < baseRank.get(String(best.id)) ? item : best,
+      remaining[0]);
+    }
+
+    const projected = project(selected, currentPoint, currentAt);
+    const constraint = projected.constraint;
+    let status = 'ordinary';
+    if (constraint.constrained) {
+      status = projected.finishAt > constraint.latestAt
+        ? 'late'
+        : (projected.finishAt > constraint.safeLatestAt ? 'tight' : 'ok');
+    }
+    stops.push({
+      ...projected,
+      status,
+      slackMs: constraint.latestAt === null ? null : constraint.latestAt - projected.finishAt
+    });
+    remaining.splice(remaining.indexOf(selected), 1);
+    currentPoint = routePoint(selected);
+    currentAt = projected.finishAt;
+  }
+
+  const suggested = stops.map(stop => stop.item);
+  const uniqueIds = new Set(suggested.map(item => String(item.id)));
+  if (suggested.length !== baseRoute.length || uniqueIds.size !== baseRoute.length) {
+    throw new Error('時間指定ルート計算後の配送先件数が一致しませんでした');
+  }
+  const timedStops = stops.filter(stop => stop.constraint.constrained);
+  return {
+    suggested,
+    stops,
+    timedStops,
+    riskCount: timedStops.filter(stop => stop.status === 'late').length,
+    tightCount: timedStops.filter(stop => stop.status === 'tight').length,
+    waitMs: stops.reduce((sum, stop) => sum + stop.waitMs, 0),
+    totalTravelMs: stops.reduce((sum, stop) => sum + stop.travelMs, 0),
+    totalDurationMs: currentAt - startValue,
+    finishAt: currentAt,
+    secondsPerMeter
+  };
+}
+
+function timeRoutePreviewLine(stop, index) {
+  const status = stop.status === 'late'
+    ? '遅れる見込み'
+    : (stop.status === 'tight' ? '安全余裕内に入れず' : '余裕あり');
+  const wait = stop.waitMs ? ` / 待機${formatTimeRouteMinutes(stop.waitMs)}` : '';
+  return `${index + 1}. ${formatTimeRouteClock(stop.serviceStartAt)} ${roadBlockStopLabel(stop.item)} / ${stop.constraint.ruleLabel} / ${status}${wait}`;
+}
+
+async function runTimeAwareRoadRoute({
+  start,
+  routeItems,
+  areaGroups,
+  noLocationItems,
+  completedItems,
+  startAt,
+  serviceMinutes,
+  baseServiceMinutes,
+  safetyBufferMinutes,
+  autoService,
+  adaptive
+}) {
+  const provider = CAR_ROUTE_PROVIDERS.mapbox;
+  showLoading('時間指定込みの道路順を計算中...');
+  try {
+    const roadResult = await buildAreaPriorityRoadBlockRoute(start, areaGroups, provider, {
+      onProgress: progress => showLoading(`時間指定込みの道路順を計算中 (${progress.current}/${progress.total})\n${progress.label}`)
+    });
+    const prefs = loadTimeRoutePreferences();
+    const schedule = buildTimeAwareSchedule({
+      start,
+      baseRoute: roadResult.suggested,
+      areaGroups,
+      startAt,
+      serviceMinutes,
+      safetyBufferMinutes,
+      roadDurationSeconds: roadResult.totalDuration,
+      prefs
+    });
+    hideLoading();
+
+    const timedLines = schedule.timedStops.slice(0, 12).map(timeRoutePreviewLine).join('\n');
+    const omittedTimed = Math.max(0, schedule.timedStops.length - 12);
+    const ignoredTimedCount = routeItems.filter(item => {
+      const constraint = timeRouteConstraintForDelivery(item, startAt, prefs, safetyBufferMinutes);
+      return constraint.hasDisplayTime && !constraint.constrained;
+    }).length;
+    const riskText = schedule.riskCount
+      ? `\n遅れる見込み ${schedule.riskCount}件があります。開始時刻・作業時間・時間設定を見直してください。`
+      : (schedule.tightCount ? `\n安全余裕を使う見込み ${schedule.tightCount}件があります。` : '\n全時間指定が安全余裕内の見込みです。');
+    const waitText = schedule.waitMs ? ` / 時間帯開始までの待機 ${formatTimeRouteMinutes(schedule.waitMs)}` : '';
+
+    confirmAndApplyRouteOrder({
+      title: '時間指定込み・安全優先（試験）',
+      summary:
+        `開始 ${formatTimeRouteClock(startAt)} / 1件${serviceMinutes}分 / 締切の安全余裕${safetyBufferMinutes}分\n` +
+        `終了見込み ${formatTimeRouteClock(schedule.finishAt)} / 道路計算 ${roadResult.apiCalls}段階${waitText}\n` +
+        '確認したエリア順とMapbox道路順を優先し、時間指定に間に合うため必要な配送先だけ前へ動かしました。' +
+        riskText +
+        (ignoredTimedCount ? `\n表示・検索のみの時間指定 ${ignoredTimedCount}件は時刻制約に使っていません。` : '') +
+        (timedLines ? `\n\n時間指定の到着見込み\n${timedLines}` : '') +
+        (omittedTimed ? `\n...ほか ${omittedTimed}件` : '') +
+        '\n\n交通状況や道路規制を完全には保証できません。実走行では案内線と標識も確認してください。',
+      suggested: schedule.suggested,
+      noLocationItems,
+      completedItems,
+      clearGeometry: true,
+      metricSource: '時間指定込み・安全優先',
+      successMessage: `${routeItems.length}件を時間指定込みの道路順に並べ替えました`,
+      onApplied: () => saveActiveTimeRouteState({
+        version: 1,
+        dateKey: localDateKey(),
+        createdAt: Date.now(),
+        startAt,
+        autoService,
+        baseServiceMinutes,
+        serviceMinutes,
+        recommendedServiceMinutes: serviceMinutes,
+        adaptiveSampleCount: adaptive.sampleCount,
+        safetyBufferMinutes,
+        needsRecalculation: false,
+        orderedIds: schedule.suggested.map(item => String(item.id))
+      })
+    });
+  } catch (error) {
+    hideLoading();
+    showToast(error.message || '時間指定込みルートを計算できませんでした', true);
+  }
+}
+
+async function buildTimeAwareRouteFromModal() {
+  const state = timeRoutePlannerState;
+  if (!state) return;
+  const startText = normalizeExactDeliveryTime($('time-route-start').value);
+  if (!startText) {
+    showToast('計算開始時刻を入力してください', true);
+    return;
+  }
+  const startAt = timeRouteTimestampForText(Date.now(), startText);
+  const safetyBufferMinutes = clampTimeRouteNumber($('time-route-buffer').value, state.safetyBufferMinutes, 0, 60);
+  const autoService = $('time-route-auto-service').checked;
+  const baseServiceMinutes = autoService
+    ? state.baseServiceMinutes
+    : timeRouteServiceLevel($('time-route-service').value);
+  const adaptive = adaptiveTimeRouteServiceEstimate(baseServiceMinutes, startAt);
+  const serviceMinutes = autoService ? adaptive.minutes : baseServiceMinutes;
+  const constraints = state.routeItems.map(item =>
+    timeRouteConstraintForDelivery(item, startAt, state.prefs, safetyBufferMinutes));
+  if (!constraints.some(item => item.constrained)) {
+    showToast('時間指定設定で、ルート計算に使う意味を1件以上設定してください', true);
+    return;
+  }
+  if (constraints.some(item => item.invalid)) {
+    showToast('矛盾している時間指定を設定画面で直してください', true);
+    return;
+  }
+  saveTimeRoutePreferences({
+    autoService,
+    baseServiceMinutes,
+    safetyBufferMinutes
+  });
+  const args = {
+    ...state,
+    startAt,
+    serviceMinutes,
+    baseServiceMinutes,
+    safetyBufferMinutes,
+    autoService,
+    adaptive
+  };
+  closeModal('modal-time-route-plan');
+  timeRoutePlannerState = null;
+  await runTimeAwareRoadRoute(args);
+}
+
+function optimizeTimeAwareRouteOrder() {
+  closeModal('modal-menu');
+  const { routeItems, noLocationItems, completedItems } = collectTimeAwareRouteCandidates();
+  if (routeItems.length < 2) {
+    showToast('位置設定済みの未完了配送先が2件以上ある時に計算できます', true);
+    return;
+  }
+  if (!userMarker) {
+    ensureGpsWatching();
+    showToast('現在地を取得中です。GPSの青い丸が表示されたら、もう一度ルート計算を押してください', true);
+    return;
+  }
+  if (routeItems.length > TIME_ROUTE_MAX_ITEMS) {
+    showToast(`時間指定込みルートは最大${TIME_ROUTE_MAX_ITEMS}件まで対応しています`, true);
+    return;
+  }
+  const prefs = loadTimeRoutePreferences();
+  const constraintCount = routeItems.filter(item =>
+    timeRouteConstraintForDelivery(item, Date.now(), prefs, prefs.safetyBufferMinutes).constrained).length;
+  if (!constraintCount) {
+    showToast('時間指定設定で「時間内」または「締切まで」を設定してください', true);
+    return;
+  }
+  const start = getRouteStartPoint();
+  const initialGroups = buildDeliveryAreaGroups(routeItems);
+  const apiCalls = areaRouteApiCallCount(initialGroups);
+  openRouteAreaPlanner({
+    title: '時間指定込みルート・エリア相談',
+    start,
+    routeItems,
+    planNote:
+      `時間指定 ${constraintCount}件を含めて、Mapboxで約${apiCalls}段階の道路計算を行います。` +
+      'ここで決めたエリア順を優先し、時間に間に合わない場合だけ一時的に別エリアの配送先を前へ動かします。',
+    onConfirm: areaGroups => openTimeRouteOptions({
+      start,
+      routeItems,
+      areaGroups,
+      noLocationItems,
+      completedItems
+    })
+  });
+}
+
 function buildRouteTailNote(timeWindowItems, noLocationItems, completedItems) {
   return [
     timeWindowItems.length ? `時間指定 ${timeWindowItems.length}件はコース計算から外し、通常配送の後ろに残します。` : '',
@@ -16483,7 +17382,7 @@ function showInsufficientRouteCandidates(action, timeWindowItems) {
 }
 
 // 並べ替え確定処理（おすすめ順・車用・Google車用で共通）
-function confirmAndApplyRouteOrder({ title, summary, suggested, timeWindowItems = [], noLocationItems = [], completedItems = [], geometry = null, clearGeometry = false, successMessage, metricSource = '' }) {
+function confirmAndApplyRouteOrder({ title, summary, suggested, timeWindowItems = [], noLocationItems = [], completedItems = [], geometry = null, clearGeometry = false, successMessage, metricSource = '', onApplied = null }) {
   const tailNote = buildRouteTailNote(timeWindowItems, noLocationItems, completedItems);
   showConfirm(
     title,
@@ -16507,6 +17406,7 @@ function confirmAndApplyRouteOrder({ title, summary, suggested, timeWindowItems 
       } catch (e) {
         optimizedRouteOrderedIds = orderedIds;
       }
+      saveActiveTimeRouteState(null);
       recordDeliveryMetricsPlan(metricSource || title, suggested);
       updateNextSegmentHighlight();
       saveDeliveries();
@@ -16515,6 +17415,7 @@ function confirmAndApplyRouteOrder({ title, summary, suggested, timeWindowItems 
       if (suggested[0] && map) {
         map.flyTo({ center: [suggested[0].lng, suggested[0].lat], zoom: Math.max(map.getZoom(), 16), speed: 1.3 });
       }
+      if (typeof onApplied === 'function') onApplied();
       showToast(successMessage);
     }
   );
@@ -17246,6 +18147,7 @@ function centerOnUser() {
 
 $('btn-menu').addEventListener('click', () => {
   updateRecoveryStatusUi();
+  updateTimeRouteMenuUi();
   openModal('modal-menu');
 });
 $('btn-gps').addEventListener('click', toggleGpsTracking);
@@ -17463,6 +18365,7 @@ $('menu-reset-pickup').addEventListener('click', resetPickupCompletionsManually)
 $('menu-optimize-walk').addEventListener('click', optimizeRouteOrder);
 $('menu-optimize-recommended').addEventListener('click', optimizeRecommendedRouteOrder);
 $('menu-optimize-road-blocks').addEventListener('click', optimizeRoadBlockRouteOrder);
+$('menu-optimize-time-windows').addEventListener('click', optimizeTimeAwareRouteOrder);
 $('menu-optimize-car').addEventListener('click', optimizeCarRouteOrder);
 $('menu-optimize-google').addEventListener('click', optimizeGoogleCarRouteOrder);
 $('menu-road-memory').addEventListener('click', openRoadMemoryModal);
@@ -17503,6 +18406,15 @@ $('route-area-order-list').addEventListener('click', event => {
 });
 $('btn-route-area-cancel').addEventListener('click', cancelRouteAreaPlanner);
 $('btn-route-area-build').addEventListener('click', confirmRouteAreaPlanner);
+$('btn-time-route-cancel').addEventListener('click', cancelTimeRoutePlanner);
+$('btn-time-route-build').addEventListener('click', () => {
+  buildTimeAwareRouteFromModal().catch(error => showToast(error.message || '時間指定込みルートを計算できませんでした', true));
+});
+$('time-route-auto-service').addEventListener('change', updateTimeRouteServiceUi);
+['time-route-start', 'time-route-buffer'].forEach(id => {
+  $(id).addEventListener('input', renderTimeRouteConstraintList);
+  $(id).addEventListener('change', renderTimeRouteConstraintList);
+});
 $('menu-operator').addEventListener('click', () => openOperatorModal());
 $('menu-delivery-sync').addEventListener('click', openDeliverySyncModal);
 $('menu-recovery-status').addEventListener('click', openRecoveryStatusModal);
@@ -17586,10 +18498,15 @@ $('menu-time-windows').addEventListener('click', openTimeWindowSettings);
 $('btn-time-window-add').addEventListener('click', addTimeWindowSettingRow);
 $('btn-time-window-save').addEventListener('click', saveTimeWindowSettingsFromModal);
 $('btn-time-window-reset').addEventListener('click', resetTimeWindowSettings);
+$('time-route-exact-mode').addEventListener('change', updateExactTimeRouteSettingsUi);
 $('time-window-settings-list').addEventListener('click', event => {
   const button = event.target.closest('[data-action="delete-time-window"]');
   if (!button) return;
   button.closest('.time-window-row')?.remove();
+});
+$('time-window-settings-list').addEventListener('change', event => {
+  if (!event.target.matches('[data-field="route-mode"]')) return;
+  updateTimeWindowRouteSettingRow(event.target.closest('.time-window-row'));
 });
 $('btn-cache-admin-search').addEventListener('click', () => loadCacheAdminData().catch(e => showToast(e.message || 'DBキャッシュを読み込めません', true)));
 $('btn-cache-admin-clear-search').addEventListener('click', () => {
@@ -17729,6 +18646,7 @@ registerNativeBackButtonHandler();
     if (restoredGuidanceState) await renderCachedGuidanceRoute();
     updateGpsButton();
     updateModeUi();
+    updateTimeRouteMenuUi();
     ensureGpsWatching();
     updateGpsButton();
     updateRecoveryStatusUi();
