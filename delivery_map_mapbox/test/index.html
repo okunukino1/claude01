@@ -83,6 +83,17 @@
     padding: 6px 10px; font-size: 13px; cursor: pointer;
     min-width: 38px; min-height: 36px;
   }
+  .topbar #btn-road-quick {
+    min-width: 52px;
+    background: #b91c1c;
+    border-color: #fecaca;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  body:not(.work-mode-delivery) #btn-road-quick,
+  body.app-mode-pickup #btn-road-quick {
+    display: none;
+  }
 
   /* ===== Map ===== */
   #map,
@@ -641,8 +652,89 @@
     box-shadow: inset 0 0 0 4px #dc2626;
   }
   body.road-memory-placing .placement-banner {
+    width: min(520px, calc(100vw - 16px));
     background: #dc2626;
+    border-radius: 8px;
+    line-height: 1.35;
+    text-align: center;
   }
+  body.road-memory-placing .map-control,
+  body.road-memory-placing .map-control-left { display: none; }
+
+  .road-quick-panel {
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--list-height) + var(--native-app-bottom-inset) + env(safe-area-inset-bottom) + 8px);
+    width: min(520px, calc(100vw - 16px));
+    transform: translateX(-50%);
+    z-index: 45;
+    padding: 7px;
+    border: 3px solid #b91c1c;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.38);
+    transition: bottom 0.25s ease;
+  }
+  .road-quick-panel[hidden] { display: none; }
+  .road-quick-header {
+    display: flex;
+    align-items: center;
+    min-height: 30px;
+    margin-bottom: 5px;
+    padding-left: 4px;
+  }
+  .road-quick-header strong {
+    flex: 1;
+    color: #7f1d1d;
+    font-size: calc(12px * var(--text-scale));
+  }
+  .road-quick-header button {
+    flex: 0 0 32px;
+    width: 32px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font-size: calc(22px * var(--text-scale));
+    font-weight: 700;
+    line-height: 1;
+  }
+  .road-quick-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .road-quick-options button {
+    min-width: 0;
+    min-height: 58px;
+    padding: 6px 4px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+    font-weight: 800;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+  .road-quick-options button:first-child {
+    background: #b91c1c;
+    border-color: #7f1d1d;
+    color: #fff;
+  }
+  .road-quick-options button span {
+    display: block;
+    font-size: calc(11px * var(--text-scale));
+  }
+  .road-quick-options button small {
+    display: block;
+    margin-top: 3px;
+    font-size: calc(10px * var(--text-scale));
+    font-weight: 800;
+  }
+  body.road-quick-open .temporary-guidance-banner { display: none; }
+  body:not(.work-mode-delivery) .road-quick-panel,
+  body.app-mode-pickup .road-quick-panel { display: none; }
 
   .temporary-guidance-banner {
     position: fixed;
@@ -1399,6 +1491,13 @@
     color: var(--ink);
   }
   @media (max-width: 480px) {
+    .topbar h1 .app-version { display: none; }
+    .topbar #btn-menu {
+      min-width: 40px;
+      padding-right: 8px;
+      padding-left: 8px;
+    }
+    .topbar #btn-menu .menu-label { display: none; }
     #modal-edit .modal-actions {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -2347,8 +2446,9 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.111</span></h1>
-  <button id="btn-menu" type="button">⋮ メニュー</button>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.112</span></h1>
+  <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
+  <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
 
 <div id="map"></div>
@@ -2371,6 +2471,18 @@
 </div>
 
 <div class="placement-banner" id="placement-banner">📍 配送先の位置を地図でタップ (この帯を押すとキャンセル)</div>
+
+<div class="road-quick-panel" id="road-quick-panel" aria-label="通行規制をすぐ登録" hidden>
+  <div class="road-quick-header">
+    <strong>通行規制を登録</strong>
+    <button id="btn-road-quick-close" type="button" title="閉じる" aria-label="閉じる">×</button>
+  </div>
+  <div class="road-quick-options" id="road-quick-options">
+    <button type="button" data-road-quick-mode="blocked"><span>道路全体</span><small>1点</small></button>
+    <button type="button" data-road-quick-mode="direction"><span>一方通行・進入禁止</span><small>2点</small></button>
+    <button type="button" data-road-quick-mode="turn"><span>右左折・Uターン</span><small>3点</small></button>
+  </div>
+</div>
 
 <div class="temporary-guidance-banner" id="temporary-guidance-banner" role="status" aria-live="polite" hidden>
   <div class="temporary-guidance-copy">
@@ -2420,7 +2532,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.111</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.112</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -3053,7 +3165,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.111';
+const APP_VERSION = 'v2026.06.24-test.112';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -3688,6 +3800,10 @@ function modalIsOpen(id) {
 
 async function closeActiveSurfaceForBackButton() {
   if (appLockActive) return true;
+  if (roadQuickPanelIsOpen()) {
+    closeRoadQuickPanel();
+    return true;
+  }
   if (nativeCameraOpen) {
     await closeNativeBatchCamera();
     return true;
@@ -5954,6 +6070,7 @@ function updateWorkModeUi() {
   const deliveryMode = workMode === 'delivery';
   document.body.classList.toggle('app-mode-pickup', !inputModeAvailable);
   document.body.classList.toggle('work-mode-delivery', deliveryMode);
+  if (!inputModeAvailable || !deliveryMode) closeRoadQuickPanel();
   if (!deliveryMode) {
     showMapboxGuidanceSurface();
   }
@@ -16073,9 +16190,49 @@ function renderRoadMemoryModal() {
 }
 
 function openRoadMemoryModal() {
+  closeRoadQuickPanel();
   closeModal('modal-menu');
   renderRoadMemoryModal();
   openModal('modal-road-memory');
+}
+
+function roadQuickPanelIsOpen() {
+  const panel = $('road-quick-panel');
+  return !!(panel && !panel.hidden);
+}
+
+function closeRoadQuickPanel() {
+  const panel = $('road-quick-panel');
+  if (panel) panel.hidden = true;
+  document.body.classList.remove('road-quick-open');
+  const button = $('btn-road-quick');
+  if (button) button.setAttribute('aria-expanded', 'false');
+}
+
+function openRoadQuickPanel() {
+  if (appMode !== 'delivery' || workMode !== 'delivery') return;
+  if (document.body.classList.contains('placing-mode')) {
+    showToast('位置指定中です。赤い帯を押すと取り消せます', true);
+    return;
+  }
+  closeModal('modal-menu');
+  const panel = $('road-quick-panel');
+  if (!panel) return;
+  panel.hidden = false;
+  document.body.classList.add('road-quick-open');
+  const button = $('btn-road-quick');
+  if (button) button.setAttribute('aria-expanded', 'true');
+}
+
+function toggleRoadQuickPanel() {
+  if (roadQuickPanelIsOpen()) closeRoadQuickPanel();
+  else openRoadQuickPanel();
+}
+
+function startRoadQuickPlacement(mode) {
+  if (!['blocked', 'direction', 'turn'].includes(mode)) return;
+  closeRoadQuickPanel();
+  startRoadMemoryPlacement(mode);
 }
 
 function roadMemoryPlacementDefinition(mode) {
@@ -16108,6 +16265,7 @@ function updateRoadMemoryPlacementBanner() {
 }
 
 function startRoadMemoryPlacement(mode) {
+  closeRoadQuickPanel();
   closeModal('modal-road-memory');
   closeModal('modal-menu');
   showMapboxGuidanceSurface();
@@ -18272,9 +18430,17 @@ function centerOnUser() {
 }
 
 $('btn-menu').addEventListener('click', () => {
+  closeRoadQuickPanel();
   updateRecoveryStatusUi();
   updateTimeRouteMenuUi();
   openModal('modal-menu');
+});
+$('btn-road-quick').addEventListener('click', toggleRoadQuickPanel);
+$('btn-road-quick-close').addEventListener('click', closeRoadQuickPanel);
+$('road-quick-options').addEventListener('click', event => {
+  const button = event.target.closest('[data-road-quick-mode]');
+  if (!button) return;
+  startRoadQuickPlacement(button.dataset.roadQuickMode);
 });
 $('btn-gps').addEventListener('click', toggleGpsTracking);
 $('guidance-provider-switch').addEventListener('click', event => {
