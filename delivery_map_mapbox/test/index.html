@@ -2347,7 +2347,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.110</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.111</span></h1>
   <button id="btn-menu" type="button">⋮ メニュー</button>
 </div>
 
@@ -2420,7 +2420,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.110</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.111</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -3053,7 +3053,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.110';
+const APP_VERSION = 'v2026.06.24-test.111';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -12432,7 +12432,7 @@ async function ocrExtractAddress(file, rotation, signal, imageProfile = null) {
     : PHOTO_OCR_QUALITY;
   const compressed = await compressImage(file, maxSize, quality, rotation);
   bumpUsage('ocr');
-  const res = await fetch('../api/extract_address.php', {
+  const res = await fetch('../api/extract_address_test.php', {
     method: 'POST',
     headers: { 'Content-Type': 'image/jpeg' },
     body: compressed,
@@ -12540,6 +12540,107 @@ function normalizeOcrField(value) {
     .trim();
 }
 
+const OCR_POSTAL_TOWN_CORRECTIONS = Object.freeze({
+  '103-0014': '日本橋蛎殻町',
+  '103-0015': '日本橋箱崎町'
+});
+const OCR_CONFUSABLE_TOWNS = Object.freeze([
+  '日本橋蛎殻町',
+  '日本橋蠣殻町',
+  '日本橋箱崎町',
+  '蛎殻町',
+  '蠣殻町',
+  '箱崎町'
+]);
+
+function normalizeOcrPostalCode(value) {
+  const digits = String(value || '').normalize('NFKC').replace(/\D/g, '');
+  return digits.length === 7 ? `${digits.slice(0, 3)}-${digits.slice(3)}` : '';
+}
+
+function correctOcrTownByPostalCode(address, postalCode) {
+  const expectedTown = OCR_POSTAL_TOWN_CORRECTIONS[postalCode];
+  if (!expectedTown) return address;
+  const matchedTown = OCR_CONFUSABLE_TOWNS.find(town => String(address || '').includes(town));
+  return matchedTown ? String(address || '').replace(matchedTown, expectedTown) : address;
+}
+
+function normalizeOcrRoomValue(value) {
+  return normalizeOcrField(value)
+    .replace(/^(?:部屋番号|部屋|room)\s*[:：]?\s*/i, '')
+    .replace(/\s*(?:号室|室)\s*$/u, '')
+    .trim();
+}
+
+function formatOcrRoomNote(value) {
+  const room = normalizeOcrRoomValue(value);
+  return room ? `${room}号室` : '';
+}
+
+function escapeOcrRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stripDeclaredOcrRoomFromAddress(address, room) {
+  const normalizedRoom = normalizeOcrRoomValue(room).replace(/\s+/g, '');
+  if (!normalizedRoom) return address;
+  const roomPattern = escapeOcrRegExp(normalizedRoom).replace(/\\-/g, '[-ー－‐―−]?');
+  const suffixPattern = new RegExp(`(?:[\\s　]+|[-ー－‐―−])${roomPattern}\\s*(?:号室|室)?\\s*$`, 'iu');
+  return String(address || '').replace(suffixPattern, '').replace(/[-\s]+$/g, '').trim();
+}
+
+function splitExplicitOcrRoomFromAddress(address) {
+  const value = normalizeOcrField(address);
+  const match = value.match(/^(.*?)([A-Z]\s*-?\s*\d{2,4}|\d{2,4})\s*(?:号室|室)\s*$/iu);
+  if (!match) return { address: value, room: '' };
+  return {
+    address: match[1].replace(/[-\s]+$/g, '').trim(),
+    room: normalizeOcrRoomValue(match[2])
+  };
+}
+
+function isLikelyOcrRoomNumber(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!/^\d{3,4}$/.test(digits)) return false;
+  const number = Number(digits);
+  const floor = Math.floor(number / 100);
+  const roomOnFloor = number % 100;
+  return floor >= 1 && floor <= 60 && roomOnFloor >= 1 && roomOnFloor <= 40;
+}
+
+function splitLikelyOcrRoomFromNumberChain(address, hasBuildingContext = false) {
+  const value = String(address || '');
+  const match = value.match(/^(.*?)(\d+(?:-\d+){2,})$/);
+  if (!match) return { address: value, room: '' };
+  const numberParts = match[2].split('-');
+  const room = numberParts[numberParts.length - 1];
+  const threePartRoom = numberParts.length === 3 &&
+    (Number(numberParts[0]) >= 10 || hasBuildingContext);
+  const canSeparateRoom = numberParts.length >= 4 || threePartRoom;
+  if (!canSeparateRoom || !isLikelyOcrRoomNumber(room)) {
+    return { address: value, room: '' };
+  }
+  return {
+    address: `${match[1]}${numberParts.slice(0, -1).join('-')}`.trim(),
+    room
+  };
+}
+
+function uniqueOcrNoteParts(parts) {
+  const normalized = parts.map(normalizeOcrField).filter(Boolean);
+  return normalized.filter((part, index, all) => {
+    const key = part.replace(/\s+/g, '').toLowerCase();
+    return !all.some((other, otherIndex) => {
+      if (index === otherIndex) return false;
+      const otherKey = other.replace(/\s+/g, '').toLowerCase();
+      return otherKey.length > key.length && otherKey.includes(key);
+    });
+  }).filter((part, index, all) => {
+    const key = part.replace(/\s+/g, '').toLowerCase();
+    return all.findIndex(other => other.replace(/\s+/g, '').toLowerCase() === key) === index;
+  });
+}
+
 function normalizeOcrAddressNumbering(value) {
   return normalizeOcrField(value)
     .replace(/(\d+)\s*\u4e01\u76ee/g, '$1-')
@@ -12555,31 +12656,56 @@ function splitOcrAddressFields(data) {
   const source = data || {};
   let address = normalizeOcrField(source.address || '');
   const noteParts = [];
-  const sourceNote = normalizeOcrField(source.note || source.building || '');
+  const sourceBuilding = normalizeOcrField(source.building || '');
+  const sourceNote = normalizeOcrField(source.note || '');
+  let room = normalizeOcrRoomValue(source.room || source.room_number || '');
+  if (sourceBuilding) noteParts.push(sourceBuilding);
   if (sourceNote) noteParts.push(sourceNote);
 
-  // \u90f5\u4fbf\u756a\u53f7\u306f\u6368\u3066\u305a\u306b\u4fdd\u6301\u3059\u308b\u3002\u6570\u5b57\u306f\u304b\u3059\u308c\u305f\u6f22\u5b57\u3088\u308a\u8aad\u307f\u53d6\u308a\u304c\u78ba\u5b9f\u3067\u3001
-  // \u300c\u6771\u65e5\u672c\u6a4b\u306e\u6771\u304c\u6b20\u3051\u3066\u65e5\u672c\u6a4b\u300d\u306e\u3088\u3046\u306a\u753a\u540d\u8aa4\u8aad\u3092\u3012\u3067\u88dc\u6b63\u30fb\u691c\u51fa\u3067\u304d\u308b\u3002
+  // Preserve the postal code and use a dedicated field when the model separates it.
   let postalCode = '';
-  address = address.replace(/\u3012?\s*(\d{3})\s*-?\s*(\d{4})/, (m, a, b) => {
+  address = address.replace(/〒?\s*(\d{3})\s*-?\s*(\d{4})/, (m, a, b) => {
     postalCode = `${a}-${b}`;
     return '';
   }).trim();
+  if (!postalCode) postalCode = normalizeOcrPostalCode(source.postal_code || source.postalCode || '');
+
+  // Prefer the model's room field, then recover explicit or likely room suffixes locally.
+  const explicitRoom = splitExplicitOcrRoomFromAddress(address);
+  address = explicitRoom.address;
+  if (!room && explicitRoom.room) room = explicitRoom.room;
+  if (room) address = stripDeclaredOcrRoomFromAddress(address, room);
   address = normalizeOcrAddressNumbering(address);
 
-  const prefecture = '(?:\\u6771\\u4eac\\u90fd|\\u5317\\u6d77\\u9053|\\u5927\\u962a\\u5e9c|\\u4eac\\u90fd\\u5e9c|[\\u4e00-\\u9fff]{2,3}\\u770c)';
+  if (!room) {
+    const likelyRoom = splitLikelyOcrRoomFromNumberChain(address, !!(sourceBuilding || sourceNote));
+    address = likelyRoom.address;
+    room = likelyRoom.room;
+  }
+
+  // Digits in the postal code are more reliable than these visually similar town names.
+  address = correctOcrTownByPostalCode(address, postalCode);
+
+  const prefecture = '(?:東京都|北海道|大阪府|京都府|[一-鿿]{2,3}県)';
   const corePattern = new RegExp('^\\s*((?:' + prefecture + ')?[\\s\\S]*?\\d+(?:-\\d+){0,3})([\\s\\S]*)$');
   const match = address.match(corePattern);
   if (match && match[1] && match[1].length >= 6) {
     address = match[1].trim();
     const rest = normalizeOcrField(match[2] || '');
-    if (rest) noteParts.unshift(rest);
+    if (rest) {
+      const restRoom = normalizeOcrRoomValue(rest);
+      if (!room && isLikelyOcrRoomNumber(restRoom)) {
+        room = restRoom;
+      } else {
+        noteParts.unshift(rest);
+      }
+    }
   }
 
+  if (room) noteParts.push(formatOcrRoomNote(room));
+
   const seen = new Set();
-  const note = noteParts
-    .map(normalizeOcrField)
-    .filter(Boolean)
+  const note = uniqueOcrNoteParts(noteParts)
     .filter(part => {
       const key = part.replace(/\s+/g, '').toLowerCase();
       if (seen.has(key)) return false;
@@ -12589,10 +12715,10 @@ function splitOcrAddressFields(data) {
     .join('\n');
 
   return {
-    // 〒付きで返す: 住所検索でGoogleが郵便番号を重視するため精度が上がる
     address: (postalCode ? `〒${postalCode} ` : '') + address.trim(),
     note,
-    postalCode
+    postalCode,
+    room
   };
 }
 
