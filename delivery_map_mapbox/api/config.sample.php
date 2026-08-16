@@ -16,6 +16,13 @@ define('APP_ALLOWED_HOSTS', ['rys-services.com', 'www.rys-services.com']);
 define('GEMINI_API_KEY', 'AIza...Gemini APIキー...');
 define('GEMINI_MODEL', 'gemini-2.5-flash-lite');
 
+// === テスト版 Cloud Vision OCR読み比べ ===
+// 専用キーを設定した場合はこれを優先します。空欄の場合はサーバー内の
+// GEMINI_API_KEYを同じGoogle Cloudプロジェクトのキーとして試します。
+// Cloud Vision API (vision.googleapis.com) と課金を有効にしてください。
+// このキーはテスト専用API内だけで使い、ブラウザーへは返しません。
+define('GOOGLE_CLOUD_VISION_TEST_API_KEY', '');
+
 // === Mapbox 地図表示用 アクセストークン ===
 // https://account.mapbox.com/ で発行する 'pk.' で始まるパブリックトークン。
 // 月50,000マップロードまで無料。

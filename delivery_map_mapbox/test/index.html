@@ -2446,7 +2446,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.114</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.115</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2532,7 +2532,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.114</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.115</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2557,6 +2557,7 @@
       <button id="menu-copy" type="button">📋 リストをコピー (テキスト)</button>
       <button id="menu-clear-done" type="button">✓ 完了分を削除</button>
       <button id="menu-clear-all" type="button">🗑 全件クリア</button>
+      <button id="menu-ocr-comparison" type="button">🔎 OCR読み比べ（試験）</button>
       <button id="menu-usage" type="button">📊 API使用状況</button>
       <button id="menu-cache-admin" type="button">🗄 DBキャッシュ管理</button>
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
@@ -3133,6 +3134,30 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-ocr-comparison">
+  <div class="modal">
+    <h3>OCR読み比べ（試験）</h3>
+    <div class="metrics-summary">
+      <div class="recovery-status-row"><span>Cloud Vision</span><strong id="ocr-compare-status">撮影待ち</strong></div>
+      <div class="recovery-status-row"><span>比較した写真</span><strong id="ocr-compare-count">0枚</strong></div>
+      <div class="recovery-status-row"><span>Gemini成功</span><strong id="ocr-compare-gemini">記録なし</strong></div>
+      <div class="recovery-status-row"><span>Vision成功</span><strong id="ocr-compare-vision">記録なし</strong></div>
+      <div class="recovery-status-row"><span>保存で確認済み</span><strong id="ocr-compare-confirmed">0件</strong></div>
+    </div>
+    <div class="metrics-status-note" id="ocr-compare-note">
+      Geminiを従来どおり使い、同じ写真をCloud Visionでも裏で1回だけ読みます。配送処理はVisionを待ちません。
+    </div>
+    <div class="metrics-list" id="ocr-compare-details"></div>
+    <div class="modal-actions">
+      <button id="btn-ocr-compare-copy" type="button">集計をコピー</button>
+      <button class="danger" id="btn-ocr-compare-clear" type="button">比較データを削除</button>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" type="button" data-close="modal-ocr-comparison">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div class="loading-overlay" id="loading">
   <div class="loading-spinner"></div>
   <div class="msg" id="loading-msg">処理中...</div>
@@ -3165,7 +3190,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.114';
+const APP_VERSION = 'v2026.06.24-test.115';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -3210,6 +3235,11 @@ const PICKUP_REGULAR_CACHE_PREFIX = 'rys-mapbox-test-pickup-regular-cache-v1:';
 const APP_MODE_KEY = 'rys-mapbox-test-app-mode';
 const WORK_MODE_KEY = 'rys-mapbox-test-work-mode-v1';
 const USAGE_KEY = 'rys-mapbox-test-usage-v1';
+const OCR_COMPARISON_STORAGE_KEY = 'rys-mapbox-test-ocr-comparison-v1';
+const OCR_VISION_COMPARE_API = '../api/extract_address_vision_test.php';
+const OCR_COMPARISON_MAX_RECORDS = 100;
+const OCR_COMPARISON_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const OCR_VISION_TIMEOUT_MS = 22000;
 const NEIGHBORHOOD_KEY = 'rys-mapbox-test-neighborhoods-visible';
 const GSI_OVERLAY_KEY = 'rys-mapbox-test-gsi-overlay-visible';
 const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
@@ -3588,11 +3618,13 @@ const banchiStatus = {
 };
 
 const OCR_COST_PER_CALL = 0.00015;
+const OCR_VISION_COST_PER_CALL = 0.0015;
 const GEOCODE_COST_PER_CALL = 0.005;
 const MAPBOX_OPTIMIZE_COST_PER_CALL = 0.002;
 
 let usage = JSON.parse(localStorage.getItem(USAGE_KEY) || '{"ocr":0,"geocode":0}');
 usage.ocr = usage.ocr || 0;
+usage.visionOcr = usage.visionOcr || 0;
 usage.geocode = usage.geocode || 0;
 usage.mapboxAddressGeocode = usage.mapboxAddressGeocode || 0;
 usage.routeOptimize = usage.routeOptimize || 0;
@@ -11982,6 +12014,7 @@ async function reGeocodeEditedItem() {
     showToast('管理者確認に失敗したため、住所再検索を取り消しました', true);
     return;
   }
+  confirmOcrComparisonForDelivery(editedId, d.address, d.note);
   recordDeliveryMetricsPinCorrection(d, { source: 'address_search', from: before, to: d });
   map.flyTo({ center: [d.lng, d.lat], zoom: Math.max(map.getZoom(), 17), speed: 1.4 });
   closeModal('modal-edit');
@@ -12093,6 +12126,7 @@ async function saveEditedItem() {
     showToast('管理者確認に失敗したため、住所変更を取り消しました', true);
     return;
   }
+  confirmOcrComparisonForDelivery(editedId, d.address, d.note);
   closeModal('modal-edit');
   clearEditPhotoEntries();
   editingItemId = null;
@@ -12547,13 +12581,227 @@ function resetPhotoPreviewState() {
   }
 }
 
+function ocrComparisonSafeText(value, maxLength = 240) {
+  return String(value || '').normalize('NFKC').replace(/[\t\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function normalizeOcrComparisonRecord(value) {
+  if (!value || !value.id) return null;
+  const createdAt = Number(value.createdAt || Date.now());
+  if (Date.now() - createdAt > OCR_COMPARISON_RETENTION_MS) return null;
+  const normalizeProvider = provider => ({
+    state: ocrComparisonSafeText(provider && provider.state, 40) || 'pending',
+    ok: !!(provider && provider.ok),
+    address: ocrComparisonSafeText(provider && provider.address),
+    postalCode: ocrComparisonSafeText(provider && provider.postalCode, 20),
+    room: ocrComparisonSafeText(provider && provider.room, 40),
+    addressCandidates: Array.isArray(provider && provider.addressCandidates)
+      ? provider.addressCandidates.map(value => ocrComparisonSafeText(value)).filter(Boolean).slice(0, 10)
+      : [],
+    postalCodes: Array.isArray(provider && provider.postalCodes)
+      ? provider.postalCodes.map(value => ocrComparisonSafeText(value, 20)).filter(Boolean).slice(0, 8)
+      : [],
+    roomCandidates: Array.isArray(provider && provider.roomCandidates)
+      ? provider.roomCandidates.map(value => ocrComparisonSafeText(value, 40)).filter(Boolean).slice(0, 12)
+      : [],
+    elapsedMs: Math.max(0, Number(provider && provider.elapsedMs || 0)),
+    attempts: Math.max(0, Number(provider && provider.attempts || 0)),
+    errorCode: ocrComparisonSafeText(provider && provider.errorCode, 60),
+    error: ocrComparisonSafeText(provider && provider.error, 180)
+  });
+  return {
+    id: String(value.id),
+    createdAt,
+    source: ocrComparisonSafeText(value.source, 40) || 'photo',
+    deliveryId: String(value.deliveryId || ''),
+    confirmed: !!value.confirmed,
+    acceptedAddress: ocrComparisonSafeText(value.acceptedAddress),
+    acceptedRoom: ocrComparisonSafeText(value.acceptedRoom, 40),
+    workflowError: ocrComparisonSafeText(value.workflowError, 180),
+    gemini: normalizeProvider(value.gemini || {}),
+    vision: normalizeProvider(value.vision || {})
+  };
+}
+
+function loadOcrComparisonRecords() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(OCR_COMPARISON_STORAGE_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeOcrComparisonRecord).filter(Boolean)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, OCR_COMPARISON_MAX_RECORDS);
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveOcrComparisonRecords(records) {
+  const normalized = (Array.isArray(records) ? records : [])
+    .map(normalizeOcrComparisonRecord).filter(Boolean)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, OCR_COMPARISON_MAX_RECORDS);
+  try { localStorage.setItem(OCR_COMPARISON_STORAGE_KEY, JSON.stringify(normalized)); }
+  catch (e) { console.warn('OCR comparison storage failed', e); }
+  return normalized;
+}
+
+function upsertOcrComparisonRecord(record) {
+  const normalized = normalizeOcrComparisonRecord(record);
+  if (!normalized) return null;
+  const records = loadOcrComparisonRecords();
+  const index = records.findIndex(item => item.id === normalized.id);
+  if (index >= 0) records[index] = normalized;
+  else records.unshift(normalized);
+  saveOcrComparisonRecords(records);
+  const modal = $('modal-ocr-comparison');
+  if (modal && modal.classList.contains('show')) renderOcrComparisonModal();
+  return normalized;
+}
+
+function createOcrComparisonSession(source, stableId = '') {
+  return {
+    id: `ocr-${stableId || uid()}`,
+    source: String(source || 'photo'),
+    createdAt: Date.now(),
+    geminiStartedAt: (window.performance && performance.now) ? performance.now() : Date.now(),
+    geminiAttempts: 0,
+    visionStarted: false,
+    visionPromise: null,
+    visionController: null,
+    finalized: false
+  };
+}
+
+function markOcrComparisonGeminiComplete(session) {
+  if (!session || session.geminiElapsedMs) return;
+  const nowPerf = (window.performance && performance.now) ? performance.now() : Date.now();
+  session.geminiElapsedMs = Math.max(0, Math.round(nowPerf - session.geminiStartedAt));
+}
+
+function startVisionOcrComparison(compressed, session) {
+  if (!session || session.visionStarted || !compressed) return;
+  session.visionStarted = true;
+  session.visionController = ('AbortController' in window) ? new AbortController() : null;
+  const startedAt = (window.performance && performance.now) ? performance.now() : Date.now();
+  const timeoutId = setTimeout(() => {
+    if (session.visionController) session.visionController.abort();
+  }, OCR_VISION_TIMEOUT_MS);
+  bumpUsage('visionOcr');
+  session.visionPromise = fetch(OCR_VISION_COMPARE_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: compressed,
+    signal: session.visionController ? session.visionController.signal : undefined
+  }).then(async res => {
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    const elapsedMs = Math.round(((window.performance && performance.now) ? performance.now() : Date.now()) - startedAt);
+    if (!res.ok || !data || !data.ok) {
+      return {
+        state: 'error',
+        ok: false,
+        elapsedMs: Number(data && data.elapsed_ms) || elapsedMs,
+        errorCode: String(data && data.error_code || `http_${res.status}`),
+        error: String(data && (data.detail || data.error) || `HTTP ${res.status}`)
+      };
+    }
+    return {
+      state: data.has_text === false ? 'no_text' : 'success',
+      ok: data.has_text !== false,
+      elapsedMs: Number(data.elapsed_ms) || elapsedMs,
+      addressCandidates: Array.isArray(data.address_candidates) ? data.address_candidates : [],
+      postalCodes: Array.isArray(data.postal_codes) ? data.postal_codes : [],
+      roomCandidates: Array.isArray(data.room_candidates) ? data.room_candidates : [],
+      errorCode: data.has_text === false ? 'no_text' : '',
+      error: data.has_text === false ? '文字を検出できませんでした' : ''
+    };
+  }).catch(error => ({
+    state: 'error',
+    ok: false,
+    elapsedMs: Math.round(((window.performance && performance.now) ? performance.now() : Date.now()) - startedAt),
+    errorCode: error && error.name === 'AbortError' ? 'timeout' : 'network_error',
+    error: error && error.name === 'AbortError' ? 'Cloud Vision比較がタイムアウトしました' : ((error && error.message) || String(error))
+  })).finally(() => {
+    clearTimeout(timeoutId);
+    session.visionController = null;
+  });
+  session.visionPromise.catch(() => {});
+}
+
+function extractOcrComparisonRoom(address, note) {
+  const text = `${address || ''}\n${note || ''}`.normalize('NFKC');
+  const explicit = text.match(/(?:部屋番号|room)\s*[:：]?\s*([A-Z]?\s*-?\s*\d{2,4})|([A-Z]\s*-\s*\d{2,4}|\d{2,4})\s*(?:号室|室)/iu);
+  return ocrComparisonSafeText(explicit && (explicit[1] || explicit[2]), 40).replace(/\s+/g, '');
+}
+
+function completeOcrComparison(session, geminiData, context = {}) {
+  if (!session || session.finalized) return;
+  session.finalized = true;
+  let geminiFields = { address: '', postalCode: '', room: '' };
+  if (geminiData) {
+    try { geminiFields = splitOcrAddressFields(geminiData); } catch (e) {}
+  }
+  const nowPerf = (window.performance && performance.now) ? performance.now() : Date.now();
+  const acceptedAddress = context.acceptedAddress || geminiFields.address || '';
+  const acceptedRoom = context.acceptedRoom || geminiFields.room || extractOcrComparisonRoom(acceptedAddress, context.acceptedNote || '');
+  const record = {
+    id: session.id,
+    createdAt: session.createdAt,
+    source: session.source,
+    deliveryId: String(context.deliveryId || ''),
+    confirmed: !!context.confirmed,
+    acceptedAddress,
+    acceptedRoom,
+    workflowError: context.workflowError || '',
+    gemini: {
+      state: geminiData && geminiFields.address ? 'success' : 'error',
+      ok: !!(geminiData && geminiFields.address),
+      address: geminiFields.address || '',
+      postalCode: geminiFields.postalCode || normalizeOcrPostalCode(geminiData && geminiData.postal_code || ''),
+      room: geminiFields.room || normalizeOcrRoomValue(geminiData && geminiData.room || ''),
+      elapsedMs: session.geminiElapsedMs || Math.max(0, Math.round(nowPerf - session.geminiStartedAt)),
+      attempts: session.geminiAttempts,
+      errorCode: geminiData && geminiFields.address ? '' : 'gemini_failed',
+      error: context.geminiError || (geminiData && geminiData.error) || ''
+    },
+    vision: { state: session.visionPromise ? 'pending' : 'not_started', ok: false }
+  };
+  upsertOcrComparisonRecord(record);
+  if (!session.visionPromise) return;
+  session.visionPromise.then(vision => {
+    const records = loadOcrComparisonRecords();
+    const current = records.find(item => item.id === session.id);
+    if (!current || current.createdAt !== session.createdAt) return;
+    current.vision = vision;
+    upsertOcrComparisonRecord(current);
+  });
+}
+
+function confirmOcrComparisonForDelivery(deliveryId, address, note) {
+  if (!deliveryId) return;
+  const records = loadOcrComparisonRecords();
+  let changed = false;
+  records.forEach(record => {
+    if (record.deliveryId !== String(deliveryId)) return;
+    record.confirmed = true;
+    record.acceptedAddress = address || record.acceptedAddress;
+    record.acceptedRoom = extractOcrComparisonRoom(address, note) || record.acceptedRoom;
+    changed = true;
+  });
+  if (changed) saveOcrComparisonRecords(records);
+}
+
 // 1回分のOCR呼び出し (回転角度つき・バイナリ送信)
-async function ocrExtractAddress(file, rotation, signal, imageProfile = null) {
+async function ocrExtractAddress(file, rotation, signal, imageProfile = null, comparisonSession = null) {
   const maxSize = imageProfile && imageProfile.maxSize || PHOTO_OCR_MAX_SIZE;
   const quality = imageProfile && Number.isFinite(imageProfile.quality)
     ? imageProfile.quality
     : PHOTO_OCR_QUALITY;
   const compressed = await compressImage(file, maxSize, quality, rotation);
+  if (comparisonSession) {
+    comparisonSession.geminiAttempts++;
+    startVisionOcrComparison(compressed, comparisonSession);
+  }
   bumpUsage('ocr');
   const res = await fetch('../api/extract_address_test.php', {
     method: 'POST',
@@ -12609,9 +12857,10 @@ function startPendingPhotoOcr() {
   cancelPendingPhotoOcr();
   const controller = ('AbortController' in window) ? new AbortController() : null;
   const file = pendingPhotoFile;
-  const job = { rotation, controller, promise: null };
+  const comparisonSession = createOcrComparisonSession('preview');
+  const job = { rotation, controller, comparisonSession, promise: null };
   job.promise = ocrWithRotationRetry(
-    (rot) => ocrExtractAddress(file, rot, controller ? controller.signal : undefined),
+    (rot) => ocrExtractAddress(file, rot, controller ? controller.signal : undefined, null, comparisonSession),
     rotation,
     () => {
       const loadingEl = $('loading');
@@ -12619,6 +12868,10 @@ function startPendingPhotoOcr() {
         $('loading-msg').textContent = '向きを変えて再試行中...';
       }
     }
+  );
+  job.promise.then(
+    () => markOcrComparisonGeminiComplete(comparisonSession),
+    () => markOcrComparisonGeminiComplete(comparisonSession)
   );
   job.promise.catch(() => {}); // 裏実行中の未処理エラー通知を抑止 (await側で処理する)
   pendingOcrJob = job;
@@ -12628,6 +12881,10 @@ function startPendingPhotoOcr() {
 function cancelPendingPhotoOcr() {
   if (pendingOcrJob && pendingOcrJob.controller) {
     try { pendingOcrJob.controller.abort(); } catch (e) {}
+  }
+  if (pendingOcrJob && pendingOcrJob.comparisonSession &&
+      !pendingOcrJob.comparisonSession.finalized && pendingOcrJob.comparisonSession.visionController) {
+    try { pendingOcrJob.comparisonSession.visionController.abort(); } catch (e) {}
   }
   pendingOcrJob = null;
 }
@@ -12861,6 +13118,10 @@ async function readPendingPhoto() {
     }
     // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
     const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address || '');
+    completeOcrComparison(job.comparisonSession, data, {
+      acceptedAddress: resolved.address,
+      acceptedNote: note
+    });
     hideLoading();
     // OCRは読み取り用コピーだけを回転する。撮影写真の保存向きは変更しない。
     const photoForDelivery = { file: pendingPhotoFile, rotation: 0 };
@@ -12883,6 +13144,10 @@ async function readPendingPhoto() {
     resetPhotoPreviewState();
   } catch (e) {
     hideLoading();
+    completeOcrComparison(job && job.comparisonSession, null, {
+      geminiError: e && e.message,
+      workflowError: e && e.message
+    });
     // 写真を保持したままプレビューに戻すため、撮り直さず再試行できる。
     pendingOcrJob = null;
     showToast('読み取り失敗: ' + e.message, true);
@@ -13655,6 +13920,13 @@ async function processBatchPhoto(file, options = {}) {
   const packageType = normalizePackageType(options.packageType);
   const recoveryJobId = String(options.recoveryJobId || '');
   const recoveryDeliveryId = String(options.recoveryDeliveryId || '');
+  const comparisonSession = createOcrComparisonSession(
+    String(options.source || 'batch'),
+    recoveryJobId
+  );
+  let comparisonGeminiData = null;
+  let comparisonAddress = '';
+  let comparisonNote = '';
   if (recoveryJobId) {
     const processed = deliveries.find(delivery =>
       Array.isArray(delivery.captureJobIds) && delivery.captureJobIds.includes(recoveryJobId));
@@ -13673,10 +13945,12 @@ async function processBatchPhoto(file, options = {}) {
       quality: BATCH_PHOTO_OCR_QUALITY
     };
     const data = await ocrWithRotationRetry(
-      (rot) => ocrExtractAddress(file, rot, undefined, batchImageProfile),
+      (rot) => ocrExtractAddress(file, rot, undefined, batchImageProfile, comparisonSession),
       0,
       null
     );
+    markOcrComparisonGeminiComplete(comparisonSession);
+    comparisonGeminiData = data;
 
     const ocrFields = splitOcrAddressFields(data);
     const recipient = normalizeOcrField(data.recipient || '');
@@ -13687,6 +13961,8 @@ async function processBatchPhoto(file, options = {}) {
     // お届け先/発送元の両方が読めた場合は現在地に近い方をお届け先に
     const resolved = await resolveDestinationAddress(data, ocrFields.address || data.address);
     const address = resolved.address;
+    comparisonAddress = address;
+    comparisonNote = note;
     // OCRの再試行角度は保存写真へ反映しない。EXIFの正立処理だけに任せる。
     const photoRotation = 0;
 
@@ -13714,6 +13990,11 @@ async function processBatchPhoto(file, options = {}) {
       renderList();
       if (!recoveryJobId) photoSaved = await persistDeliveryPhoto(dupActive.id, file, photoRotation);
       if (trackBatchStats) batchStats.stacked++;
+      completeOcrComparison(comparisonSession, data, {
+        deliveryId: dupActive.id,
+        acceptedAddress: address,
+        acceptedNote: note
+      });
       showToast(
         photoSaved
           ? `📦 複数個口: ${address} (${dupActive.packageCount}個)`
@@ -13761,6 +14042,11 @@ async function processBatchPhoto(file, options = {}) {
     renderMarkers();
     renderList();
     if (!recoveryJobId) photoSaved = await persistDeliveryPhoto(newId, file, photoRotation);
+    completeOcrComparison(comparisonSession, data, {
+      deliveryId: newId,
+      acceptedAddress: address,
+      acceptedNote: note
+    });
     if (reviewReasons.length > 0) {
       if (trackBatchStats) batchStats.review++;
       if (options.immediateReview && !options.deferImmediateReview) {
@@ -13785,6 +14071,12 @@ async function processBatchPhoto(file, options = {}) {
       return { status: 'added', id: newId, address };
     }
   } catch (e) {
+    completeOcrComparison(comparisonSession, comparisonGeminiData, {
+      acceptedAddress: comparisonAddress,
+      acceptedNote: comparisonNote,
+      geminiError: comparisonGeminiData ? '' : (e && e.message),
+      workflowError: e && e.message
+    });
     if (trackBatchStats) batchStats.failed++;
     const retryable = isRetryablePhotoProcessingError(e);
     const recoveryAttempt = Math.max(0, Number(options.recoveryAttempt || 0));
@@ -13941,9 +14233,189 @@ function clearAll() {
   });
 }
 
+function ocrComparisonCanonical(value) {
+  return String(value || '').normalize('NFKC')
+    .replace(/^\s*〒?\s*\d{3}[-\s]?\d{4}\s*/, '')
+    .replace(/[\s　]/g, '')
+    .replace(/[－ー―‐−–—]/g, '-')
+    .replace(/(\d+)丁目/g, '$1-')
+    .replace(/(\d+)番地?/g, '$1-')
+    .replace(/(\d+)号/g, '$1')
+    .replace(/-+/g, '-')
+    .replace(/-$/g, '')
+    .toLowerCase();
+}
+
+function ocrComparisonPostal(value) {
+  const match = String(value || '').normalize('NFKC').match(/(?:〒\s*)?(\d{3})[-\s]?(\d{4})/);
+  return match ? `${match[1]}-${match[2]}` : '';
+}
+
+function ocrComparisonTown(value) {
+  const canonical = ocrComparisonCanonical(value);
+  const digitIndex = canonical.search(/\d/);
+  return digitIndex > 0 ? canonical.slice(0, digitIndex) : canonical;
+}
+
+function ocrComparisonExactMatch(expected, actual) {
+  const a = ocrComparisonCanonical(expected);
+  const b = ocrComparisonCanonical(actual);
+  return !!a && a === b;
+}
+
+function ocrComparisonCandidateMatch(expected, candidates, mode = 'address') {
+  if (!expected || !Array.isArray(candidates)) return false;
+  if (mode === 'postal') {
+    const postal = ocrComparisonPostal(expected) || String(expected || '');
+    return !!postal && candidates.some(value => ocrComparisonPostal(value) === postal || String(value) === postal);
+  }
+  if (mode === 'room') {
+    const room = String(expected || '').normalize('NFKC').replace(/[\s\-－ー―‐−–—]/g, '').toLowerCase();
+    return !!room && candidates.some(value => String(value || '').normalize('NFKC').replace(/[\s\-－ー―‐−–—]/g, '').toLowerCase() === room);
+  }
+  const reference = mode === 'town' ? ocrComparisonTown(expected) : ocrComparisonCanonical(expected);
+  if (!reference) return false;
+  return candidates.some(value => {
+    const candidate = mode === 'town' ? ocrComparisonTown(value) : ocrComparisonCanonical(value);
+    return candidate === reference ||
+      (reference.length >= 6 && candidate.includes(reference)) ||
+      (candidate.length >= 6 && reference.includes(candidate));
+  });
+}
+
+function ocrComparisonAverageMs(records, providerName) {
+  const values = records.map(record => record[providerName])
+    .filter(provider => provider && provider.ok && provider.elapsedMs > 0)
+    .map(provider => provider.elapsedMs);
+  if (!values.length) return 0;
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function ocrComparisonRatio(matches, total) {
+  return total > 0 ? `${matches}/${total}件 (${Math.round(matches / total * 100)}%)` : '対象なし';
+}
+
+function buildOcrComparisonSummary() {
+  const records = loadOcrComparisonRecords();
+  const geminiSuccess = records.filter(record => record.gemini.ok).length;
+  const visionSuccess = records.filter(record => record.vision.ok).length;
+  const pending = records.filter(record => record.vision.state === 'pending').length;
+  const confirmed = records.filter(record => record.confirmed && record.acceptedAddress);
+  const latestVisionError = records.map(record => record.vision)
+    .find(provider => provider && provider.state === 'error');
+  const statusLabels = {
+    service_disabled: 'API有効化待ち',
+    key_rejected: 'APIキー制限を確認',
+    not_configured: '設定待ち',
+    quota_exceeded: '利用上限を確認',
+    timeout: 'タイムアウト',
+    network_error: '通信エラー'
+  };
+  let status = '撮影すると自動比較';
+  if (visionSuccess > 0) status = pending > 0 ? `利用中・${pending}件処理中` : '利用中';
+  else if (pending > 0) status = `${pending}件処理中`;
+  else if (latestVisionError) status = statusLabels[latestVisionError.errorCode] || '比較APIエラー';
+
+  const scores = {
+    geminiPostal: 0, visionPostal: 0, postalTotal: 0,
+    geminiTown: 0, visionTown: 0, townTotal: 0,
+    geminiAddress: 0, visionAddress: 0, addressTotal: 0,
+    geminiRoom: 0, visionRoom: 0, roomTotal: 0
+  };
+  confirmed.forEach(record => {
+    const accepted = record.acceptedAddress;
+    if (accepted) {
+      scores.addressTotal++;
+      scores.townTotal++;
+      if (ocrComparisonExactMatch(accepted, record.gemini.address)) scores.geminiAddress++;
+      if (ocrComparisonCandidateMatch(accepted, record.vision.addressCandidates)) scores.visionAddress++;
+      if (ocrComparisonTown(accepted) === ocrComparisonTown(record.gemini.address)) scores.geminiTown++;
+      if (ocrComparisonCandidateMatch(accepted, record.vision.addressCandidates, 'town')) scores.visionTown++;
+    }
+    const postal = ocrComparisonPostal(accepted);
+    if (postal) {
+      scores.postalTotal++;
+      if (ocrComparisonPostal(record.gemini.postalCode || record.gemini.address) === postal) scores.geminiPostal++;
+      if (ocrComparisonCandidateMatch(postal, record.vision.postalCodes, 'postal')) scores.visionPostal++;
+    }
+    if (record.acceptedRoom) {
+      scores.roomTotal++;
+      if (ocrComparisonCandidateMatch(record.acceptedRoom, [record.gemini.room], 'room')) scores.geminiRoom++;
+      if (ocrComparisonCandidateMatch(record.acceptedRoom, record.vision.roomCandidates, 'room')) scores.visionRoom++;
+    }
+  });
+  return { records, geminiSuccess, visionSuccess, pending, confirmed, latestVisionError, status, scores };
+}
+
+function renderOcrComparisonModal() {
+  const summary = buildOcrComparisonSummary();
+  const geminiAverage = ocrComparisonAverageMs(summary.records, 'gemini');
+  const visionAverage = ocrComparisonAverageMs(summary.records, 'vision');
+  $('ocr-compare-status').textContent = summary.status;
+  $('ocr-compare-count').textContent = `${summary.records.length}枚`;
+  $('ocr-compare-gemini').textContent = summary.records.length
+    ? `${summary.geminiSuccess}/${summary.records.length}枚${geminiAverage ? `・平均${(geminiAverage / 1000).toFixed(1)}秒` : ''}`
+    : '記録なし';
+  $('ocr-compare-vision').textContent = summary.records.length
+    ? `${summary.visionSuccess}/${summary.records.length}枚${visionAverage ? `・平均${(visionAverage / 1000).toFixed(1)}秒` : ''}`
+    : '記録なし';
+  $('ocr-compare-confirmed').textContent = `${summary.confirmed.length}件`;
+  const s = summary.scores;
+  const errorText = summary.latestVisionError && summary.visionSuccess === 0
+    ? `<div class="metrics-status-note">直近エラー: ${escapeHtml(summary.latestVisionError.error || summary.latestVisionError.errorCode || '不明')}</div>`
+    : '';
+  $('ocr-compare-details').innerHTML = `
+    <h4 class="metrics-section-title">保存内容との一致</h4>
+    <div class="recovery-status-row"><span>郵便番号</span><strong>Gemini ${ocrComparisonRatio(s.geminiPostal, s.postalTotal)} / Vision ${ocrComparisonRatio(s.visionPostal, s.postalTotal)}</strong></div>
+    <div class="recovery-status-row"><span>町名まで</span><strong>Gemini ${ocrComparisonRatio(s.geminiTown, s.townTotal)} / Vision ${ocrComparisonRatio(s.visionTown, s.townTotal)}</strong></div>
+    <div class="recovery-status-row"><span>住所全体</span><strong>Gemini ${ocrComparisonRatio(s.geminiAddress, s.addressTotal)} / Vision ${ocrComparisonRatio(s.visionAddress, s.addressTotal)}</strong></div>
+    <div class="recovery-status-row"><span>部屋番号</span><strong>Gemini ${ocrComparisonRatio(s.geminiRoom, s.roomTotal)} / Vision ${ocrComparisonRatio(s.visionRoom, s.roomTotal)}</strong></div>
+    ${errorText}
+  `;
+  $('ocr-compare-note').textContent = summary.confirmed.length
+    ? '「配送先を編集」で保存した内容を確認値として集計します。Visionは候補文字列に確認値が含まれたかを数え、宛先選択の正しさはまだ判定しません。比較記録はこの端末だけに最大100件・7日間保存します。'
+    : 'Geminiを従来どおり使い、同じ写真をCloud Visionでも裏で1回だけ読みます。配送処理はVisionを待ちません。編集画面で保存すると精度比較に加わります。';
+}
+
+function openOcrComparisonModal() {
+  closeModal('modal-menu');
+  renderOcrComparisonModal();
+  openModal('modal-ocr-comparison');
+}
+
+function copyOcrComparisonSummary() {
+  const summary = buildOcrComparisonSummary();
+  const s = summary.scores;
+  const lines = [
+    `OCR比較 ${APP_VERSION}`,
+    `状態: ${summary.status}`,
+    `写真: ${summary.records.length}枚`,
+    `Gemini成功: ${summary.geminiSuccess}/${summary.records.length} 平均${ocrComparisonAverageMs(summary.records, 'gemini')}ms`,
+    `Vision成功: ${summary.visionSuccess}/${summary.records.length} 平均${ocrComparisonAverageMs(summary.records, 'vision')}ms`,
+    `保存確認: ${summary.confirmed.length}件`,
+    `郵便番号: Gemini ${ocrComparisonRatio(s.geminiPostal, s.postalTotal)} / Vision ${ocrComparisonRatio(s.visionPostal, s.postalTotal)}`,
+    `町名: Gemini ${ocrComparisonRatio(s.geminiTown, s.townTotal)} / Vision ${ocrComparisonRatio(s.visionTown, s.townTotal)}`,
+    `住所全体: Gemini ${ocrComparisonRatio(s.geminiAddress, s.addressTotal)} / Vision ${ocrComparisonRatio(s.visionAddress, s.addressTotal)}`,
+    `部屋番号: Gemini ${ocrComparisonRatio(s.geminiRoom, s.roomTotal)} / Vision ${ocrComparisonRatio(s.visionRoom, s.roomTotal)}`
+  ];
+  navigator.clipboard.writeText(lines.join('\n')).then(
+    () => showToast('個別住所を含まないOCR集計をコピーしました'),
+    () => showToast('集計をコピーできませんでした', true)
+  );
+}
+
+function clearOcrComparisonRecords() {
+  showConfirm('OCR比較データを削除', 'この端末のOCR読み比べ記録をすべて削除しますか？\n配送先と伝票写真は削除しません。', () => {
+    localStorage.removeItem(OCR_COMPARISON_STORAGE_KEY);
+    renderOcrComparisonModal();
+    showToast('OCR比較データを削除しました');
+  });
+}
+
 function showUsage() {
   closeModal('modal-menu');
   const ocrCost = (usage.ocr * OCR_COST_PER_CALL).toFixed(4);
+  const visionOcrCost = (usage.visionOcr * OCR_VISION_COST_PER_CALL).toFixed(4);
   const geoCost = (usage.geocode * GEOCODE_COST_PER_CALL).toFixed(3);
   const routeCost = (usage.routeOptimize * MAPBOX_OPTIMIZE_COST_PER_CALL).toFixed(3);
   const total = (parseFloat(ocrCost) + parseFloat(geoCost) + parseFloat(routeCost)).toFixed(3);
@@ -13951,6 +14423,9 @@ function showUsage() {
     <p><b>伝票OCR (Gemini)</b><br>
     呼び出し回数: ${usage.ocr} 回<br>
     推定費用: $${ocrCost}</p>
+    <p><b>OCR読み比べ (Google Cloud Vision・テスト版)</b><br>
+    呼び出し回数: ${usage.visionOcr} 回<br>
+    月1,000画像の無料枠超過後の目安: $${visionOcrCost}</p>
     <p><b>住所→緯度経度 (Google Geocoding)</b><br>
     呼び出し回数: ${usage.geocode} 回<br>
     推定費用: $${geoCost}</p>
@@ -13980,6 +14455,7 @@ function resetUsage() {
   showConfirm('使用状況リセット', 'カウンターをリセットしますか？', () => {
     usage = {
       ocr: 0,
+      visionOcr: 0,
       geocode: 0,
       mapboxAddressGeocode: 0,
       routeOptimize: 0,
@@ -18735,6 +19211,7 @@ $('menu-export-json').addEventListener('click', exportDeliveriesAsJSON);
 $('menu-copy').addEventListener('click', copyListToClipboard);
 $('menu-clear-done').addEventListener('click', clearCompleted);
 $('menu-clear-all').addEventListener('click', clearAll);
+$('menu-ocr-comparison').addEventListener('click', openOcrComparisonModal);
 $('menu-usage').addEventListener('click', showUsage);
 $('menu-cache-admin').addEventListener('click', openCacheAdminModal);
 $('menu-toggle-neighborhoods').addEventListener('click', () => {
@@ -18784,6 +19261,8 @@ $('btn-metrics-copy-csv').addEventListener('click', copyDeliveryMetricsCsv);
 $('btn-metrics-download-csv').addEventListener('click', downloadDeliveryMetricsCsv);
 $('btn-metrics-clear-day').addEventListener('click', requestClearDeliveryMetricsDay);
 $('btn-metrics-clear-all').addEventListener('click', requestClearAllDeliveryMetrics);
+$('btn-ocr-compare-copy').addEventListener('click', copyOcrComparisonSummary);
+$('btn-ocr-compare-clear').addEventListener('click', clearOcrComparisonRecords);
 $('btn-recovery-retry').addEventListener('click', () => {
   closeModal('modal-recovery-status');
   retryRecoveryPhotoJobs({ includeFailed: true, announce: true })
