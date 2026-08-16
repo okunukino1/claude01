@@ -20,7 +20,7 @@ function delivery_test_gemini_response_schema() {
       'note' => $string + ['description' => 'Other delivery note such as floor, or empty.'],
       'confidence' => ['type' => 'STRING', 'enum' => ['high', 'medium', 'low']],
       'error' => $string + ['description' => 'Reason when no recipient address can be read, otherwise empty.'],
-      'rotation_hint' => ['type' => 'INTEGER', 'enum' => [0, 90, 180, 270]]
+      'rotation_hint' => ['type' => 'INTEGER', 'description' => 'Clockwise rotation hint: 0, 90, 180, or 270.']
     ],
     'required' => [
       'address', 'postal_code', 'sender_address', 'recipient', 'building',
