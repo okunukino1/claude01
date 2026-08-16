@@ -1,3 +1,4 @@
 /vendor/
 /data/private/*.json
 /api/*.runtime.php
+/api/*.deploy.php

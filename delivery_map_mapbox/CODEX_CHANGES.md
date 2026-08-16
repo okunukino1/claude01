@@ -1,5 +1,10 @@
 # Claude / Codex 現状報告 — プロジェクト全体の状態 (2026-08-16)
 
+## 0. Codex追記（2026-08-17 / Cloud Vision設定）
+
+- Gemini専用キーとCloud Vision APIを組み合わせられないGoogle側の制限に対応し、GitHub Actionsの `GOOGLE_CLOUD_VISION_TEST_API_KEY` からテスト専用のサーバー秘密ファイルを生成する経路を追加した。キーはリポジトリ、ブラウザー、Actionsログへ出さず、`api/extract_address_vision_test.php` だけが優先して読む。
+- 通常版HTML・通常版OCR API・既存Geminiキーは変更していない。Vision比較が設定されていない場合の非同期・非阻害動作も維持する。
+
 ## 0. Codex追記（2026-08-16 / test.115）
 
 - 作業開始基準は最新 `origin/main` のコミット `a13c4bd29df535e57e44caeb4dfaeb3a5a636438`。安定版は引き続き **v2026.07.10-1** で、通常版HTML・通常版OCR APIは変更していない。

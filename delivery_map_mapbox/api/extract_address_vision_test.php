@@ -23,9 +23,18 @@ delivery_app_require_same_origin_request();
 
 $apiKey = '';
 $keySource = '';
+$runtimeKeyFile = __DIR__ . '/vision_test_secret.deploy.php';
+if (is_file($runtimeKeyFile)) {
+  $candidate = require $runtimeKeyFile;
+  $candidate = is_string($candidate) ? trim($candidate) : '';
+  if ($candidate !== '' && strpos($candidate, 'AIza') === 0) {
+    $apiKey = $candidate;
+    $keySource = 'dedicated-runtime';
+  }
+}
 if (defined('GOOGLE_CLOUD_VISION_TEST_API_KEY')) {
   $candidate = trim((string)GOOGLE_CLOUD_VISION_TEST_API_KEY);
-  if ($candidate !== '' && strpos($candidate, 'ここに') === false && strpos($candidate, 'AIza...') !== 0) {
+  if ($apiKey === '' && $candidate !== '' && strpos($candidate, 'ここに') === false && strpos($candidate, 'AIza...') !== 0) {
     $apiKey = $candidate;
     $keySource = 'dedicated';
   }
