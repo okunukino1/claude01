@@ -17,6 +17,7 @@ if (!file_exists($configFile)) {
 }
 require_once $configFile;
 require_once __DIR__ . '/request_guard.php';
+require_once __DIR__ . '/extract_address_test_support.php';
 delivery_app_require_same_origin_request();
 
 if (!defined('GEMINI_API_KEY') || !GEMINI_API_KEY || GEMINI_API_KEY === 'AIza...ここにAPIキーを入れる...') {
@@ -119,9 +120,10 @@ $prompt = <<<TXT
 - 宛名が読める場合はrecipientへ入れてください。
 - 不明な文字は無理に推測しないでください。
 
-回答は必ずJSONのみで返してください。説明文や余計なテキストは禁止です。
+回答は必ず指定されたJSON形式だけで返してください。説明文や余計なテキストは禁止です。
+すべての項目を必ず含め、該当しない文字列項目は空文字、rotation_hintは0にしてください。
 住所が読めた場合:
-{"address":"〒XXX-XXXX 東京都...", "postal_code":"XXX-XXXX", "sender_address":"ご依頼主(発送元)の住所(読めれば、なければ空文字)", "recipient":"宛名(あれば、なければ空文字)", "building":"建物名(あれば、なければ空文字)", "room":"部屋番号(あれば、なければ空文字)", "note":"階数などその他の補足(あれば)", "confidence":"high または medium または low"}
+{"address":"〒XXX-XXXX 東京都...", "postal_code":"XXX-XXXX", "sender_address":"ご依頼主(発送元)の住所(読めれば、なければ空文字)", "recipient":"宛名(あれば、なければ空文字)", "building":"建物名(あれば、なければ空文字)", "room":"部屋番号(あれば、なければ空文字)", "note":"階数などその他の補足(あれば)", "confidence":"high または medium または low", "error":"", "rotation_hint":0}
 
 注意:
 - addressには郵便番号・市区町村・番地までを中心に入れてください。
@@ -139,7 +141,7 @@ $prompt = <<<TXT
   → room: 102
 
 住所が読み取れない場合:
-{"error":"理由を簡潔に", "confidence":"low", "rotation_hint":0}
+{"address":"", "postal_code":"", "sender_address":"", "recipient":"", "building":"", "room":"", "note":"", "confidence":"low", "error":"理由を簡潔に", "rotation_hint":0}
 - rotation_hint: 画像の回転が原因で読めない場合、文字を正しい向きにするために画像を時計回りに回すべき角度(90/180/270のどれか)。回転が原因でなければ0。
 TXT;
 
@@ -153,8 +155,9 @@ $requestBody = [
   ]],
   'generationConfig' => [
     'temperature' => 0,
-    'maxOutputTokens' => 384,
-    'responseMimeType' => 'application/json'
+    'maxOutputTokens' => 512,
+    'responseMimeType' => 'application/json',
+    'responseSchema' => delivery_test_gemini_response_schema()
   ]
 ];
 
@@ -197,20 +200,27 @@ if (isset($data['candidates'][0]['content']['parts']) && is_array($data['candida
   }
 }
 $text = trim($text);
+$finishReason = (string)($data['candidates'][0]['finishReason'] ?? '');
 if ($text === '') {
   http_response_code(502);
-  echo json_encode(['error' => 'Geminiの応答が空です', 'detail' => substr($response, 0, 800)], JSON_UNESCAPED_UNICODE);
+  echo json_encode([
+    'error' => 'Geminiの応答が空です',
+    'detail' => 'finishReason=' . ($finishReason ?: 'unknown') . '; ' . substr($response, 0, 800)
+  ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
   exit;
 }
-if (!preg_match('/\{[\s\S]*\}/', $text, $m)) {
-  http_response_code(502);
-  echo json_encode(['error' => 'Gemini応答からJSONを取得できませんでした', 'detail' => substr($text, 0, 500)], JSON_UNESCAPED_UNICODE);
-  exit;
-}
-$result = json_decode($m[0], true);
+$decodeError = '';
+$result = delivery_test_decode_gemini_json($text, $decodeError);
 if (!is_array($result)) {
   http_response_code(502);
-  echo json_encode(['error' => 'Gemini応答JSONの解析に失敗しました', 'detail' => substr($m[0], 0, 500)], JSON_UNESCAPED_UNICODE);
+  $error = $finishReason === 'MAX_TOKENS'
+    ? 'Geminiの応答が途中で切れました'
+    : 'Gemini応答JSONの解析に失敗しました';
+  echo json_encode([
+    'error' => $error,
+    'detail' => 'finishReason=' . ($finishReason ?: 'unknown') . '; jsonError=' . $decodeError . '; ' . substr($text, 0, 500)
+  ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
   exit;
 }
+$result = delivery_test_normalize_ocr_result($result);
 echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

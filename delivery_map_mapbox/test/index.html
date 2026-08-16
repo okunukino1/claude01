@@ -2446,7 +2446,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.112</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.113</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2532,7 +2532,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.112</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.113</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -3165,7 +3165,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.112';
+const APP_VERSION = 'v2026.06.24-test.113';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -3191,6 +3191,7 @@ const DELIVERY_RECOVERY_STATUS_KEY = 'rys-mapbox-test-recovery-status-v1';
 const DELIVERY_RECOVERY_BACKUP_SUFFIX = ':recovery-backup-v1';
 const DELIVERY_PHOTO_JOB_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 const DELIVERY_PHOTO_RETRY_DELAY_MS = 8000;
+const DELIVERY_PHOTO_AUTO_RETRY_LIMIT = 2;
 const DELIVERY_PHOTO_RETENTION_DAYS = 7;
 const DELIVERY_PHOTO_RETENTION_MS = DELIVERY_PHOTO_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const PHOTO_PRIVACY_STATE_KEY = 'rys-mapbox-test-photo-privacy-state-v1';
@@ -4326,6 +4327,13 @@ async function requestDeliveryPhotoPersistence() {
 function normalizeRecoveryPhotoJob(value) {
   if (!value || !value.id || !value.blob) return null;
   const createdAt = Number(value.createdAt || Date.now());
+  const attempts = Math.max(0, Number(value.attempts || 0));
+  let state = ['pending', 'processing', 'waiting', 'needs_attention'].includes(value.state)
+    ? value.state
+    : 'pending';
+  if (state !== 'needs_attention' && attempts >= DELIVERY_PHOTO_AUTO_RETRY_LIMIT) {
+    state = 'needs_attention';
+  }
   return {
     id: String(value.id),
     candidateDeliveryId: String(value.candidateDeliveryId || uid()),
@@ -4333,10 +4341,8 @@ function normalizeRecoveryPhotoJob(value) {
     source: String(value.source || 'batch'),
     packageType: normalizePackageType(value.packageType),
     draft: value.draft && typeof value.draft === 'object' ? { ...value.draft } : null,
-    state: ['pending', 'processing', 'waiting', 'needs_attention'].includes(value.state)
-      ? value.state
-      : 'pending',
-    attempts: Math.max(0, Number(value.attempts || 0)),
+    state,
+    attempts,
     lastError: String(value.lastError || ''),
     createdAt,
     updatedAt: Number(value.updatedAt || createdAt)
@@ -12965,7 +12971,8 @@ async function runRecoveryPhotoJob(job, file, options = {}, onResult = null) {
     result = await processBatchPhoto(file, {
       ...options,
       recoveryJobId: storedJob ? storedJob.id : '',
-      recoveryDeliveryId: storedJob ? storedJob.candidateDeliveryId : ''
+      recoveryDeliveryId: storedJob ? storedJob.candidateDeliveryId : '',
+      recoveryAttempt: storedJob ? storedJob.attempts : 0
     });
     if (onResult) {
       try { await onResult(result); }
@@ -12983,7 +12990,9 @@ async function runRecoveryPhotoJob(job, file, options = {}, onResult = null) {
           console.warn('completed recovery photo job cleanup failed', deleteError);
         }
       } else {
-        storedJob.state = result && result.retryable ? 'waiting' : 'needs_attention';
+        const canAutoRetry = !!(result && result.retryable) &&
+          Number(storedJob.attempts || 0) < DELIVERY_PHOTO_AUTO_RETRY_LIMIT;
+        storedJob.state = canAutoRetry ? 'waiting' : 'needs_attention';
         storedJob.lastError = String(result && result.error || '写真処理に失敗しました');
         storedJob.updatedAt = Date.now();
         await putRecoveryPhotoJob(storedJob);
@@ -12992,7 +13001,9 @@ async function runRecoveryPhotoJob(job, file, options = {}, onResult = null) {
   } catch (error) {
     result = { status: 'failed', error: error.message || String(error), retryable: isRetryablePhotoProcessingError(error) };
     if (storedJob) {
-      storedJob.state = result.retryable ? 'waiting' : 'needs_attention';
+      const canAutoRetry = result.retryable &&
+        Number(storedJob.attempts || 0) < DELIVERY_PHOTO_AUTO_RETRY_LIMIT;
+      storedJob.state = canAutoRetry ? 'waiting' : 'needs_attention';
       storedJob.lastError = result.error;
       storedJob.updatedAt = Date.now();
       try { await putRecoveryPhotoJob(storedJob); }
@@ -13025,7 +13036,8 @@ async function retryRecoveryPhotoJobs(options = {}) {
   const includeFailed = !!options.includeFailed;
   const jobs = [...recoveryPhotoJobs.values()].filter(job =>
     !recoveryPhotoJobsInFlight.has(job.id) &&
-    (job.state !== 'needs_attention' || includeFailed));
+    (job.state !== 'needs_attention' || includeFailed) &&
+    (includeFailed || Number(job.attempts || 0) < DELIVERY_PHOTO_AUTO_RETRY_LIMIT));
   if (!jobs.length) {
     if (options.announce) showToast('再開する写真処理はありません');
     updateRecoveryStatusUi();
@@ -13042,7 +13054,8 @@ async function retryRecoveryPhotoJobs(options = {}) {
         packageType: job.packageType,
         immediateReview: true,
         reviewSource: 'single',
-        trackBatchStats: false
+        trackBatchStats: false,
+        suppressFailureToast: !options.announce
       }, async processed => {
         if (!job.draft || !processed || !processed.id || processed.status === 'failed') return;
         applySinglePhotoDraftToDelivery({ draft: job.draft }, processed);
@@ -13774,14 +13787,20 @@ async function processBatchPhoto(file, options = {}) {
   } catch (e) {
     if (trackBatchStats) batchStats.failed++;
     const retryable = isRetryablePhotoProcessingError(e);
-    showToast(
-      recoveryJobId && retryable
-        ? `写真を端末に保存しました。通信回復後に再開します (${e.message})`
-        : recoveryJobId
-          ? `読み取り失敗。写真は復旧状況から再処理できます (${e.message})`
-          : `読み取り失敗。写真をもう一度撮影してください (${e.message})`,
-      true
-    );
+    const recoveryAttempt = Math.max(0, Number(options.recoveryAttempt || 0));
+    const canAutoRetry = retryable && recoveryAttempt < DELIVERY_PHOTO_AUTO_RETRY_LIMIT;
+    if (!options.suppressFailureToast) {
+      showToast(
+        recoveryJobId && canAutoRetry
+          ? (navigator.onLine
+              ? `写真を端末に保存しました。あとで1回だけ自動再試行します (${e.message})`
+              : `写真を端末に保存しました。通信回復後に1回だけ再試行します (${e.message})`)
+          : recoveryJobId
+            ? `読み取りを続けられません。写真は端末に保存済みです。保存・復旧状況から再処理または削除できます (${e.message})`
+            : `読み取り失敗。写真をもう一度撮影してください (${e.message})`,
+        true
+      );
+    }
     return { status: 'failed', error: (e && e.message) || String(e), retryable };
   } finally {
     if (trackBatchStats) {
@@ -18945,13 +18964,16 @@ registerNativeBackButtonHandler();
     hideLoading();
     refreshRecoveryPhotoJobsFromStorage({ markRestored: true }).then(jobs => {
       updateRecoveryStatusUi();
-      if (recoveryUsedDeliveryBackup || jobs.length) {
+      const autoRetryJobs = jobs.filter(job =>
+        job.state !== 'needs_attention' &&
+        Number(job.attempts || 0) < DELIVERY_PHOTO_AUTO_RETRY_LIMIT);
+      if (recoveryUsedDeliveryBackup || autoRetryJobs.length) {
         const parts = [];
         if (recoveryUsedDeliveryBackup) parts.push(`配送先${recoveryRestoredDeliveryCount}件`);
-        if (jobs.length) parts.push(`処理途中の写真${jobs.length}件`);
+        if (autoRetryJobs.length) parts.push(`処理途中の写真${autoRetryJobs.length}件`);
         showToast(`${parts.join('と')}を復元しました`);
       }
-      if (jobs.length) {
+      if (autoRetryJobs.length) {
         retryRecoveryPhotoJobs().catch(error => console.warn('startup recovery retry failed', error));
       }
     }).catch(error => {
