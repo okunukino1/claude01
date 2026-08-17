@@ -1343,6 +1343,7 @@
     padding: 16px;
   }
   .modal-bg.show { display: flex; }
+  #modal-confirm { z-index: 220; }
   .modal {
     background: white;
     border-radius: 12px;
@@ -2446,7 +2447,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.116</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.117</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2532,7 +2533,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.116</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.117</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -3194,7 +3195,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.116';
+const APP_VERSION = 'v2026.06.24-test.117';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
