@@ -2447,7 +2447,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.117</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.118</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2533,7 +2533,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.117</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.118</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -3195,7 +3195,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.117';
+const APP_VERSION = 'v2026.06.24-test.118';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -12634,6 +12634,7 @@ function normalizeOcrComparisonRecord(value) {
       : [],
     elapsedMs: Math.max(0, Number(provider && provider.elapsedMs || 0)),
     attempts: Math.max(0, Number(provider && provider.attempts || 0)),
+    reconstruction: ocrComparisonSafeText(provider && provider.reconstruction, 40),
     errorCode: ocrComparisonSafeText(provider && provider.errorCode, 60),
     error: ocrComparisonSafeText(provider && provider.error, 180)
   });
@@ -12796,6 +12797,7 @@ function completeOcrComparison(session, geminiData, context = {}) {
       room: geminiFields.room || normalizeOcrRoomValue(geminiData && geminiData.room || ''),
       elapsedMs: session.geminiElapsedMs || Math.max(0, Math.round(nowPerf - session.geminiStartedAt)),
       attempts: session.geminiAttempts,
+      reconstruction: ocrComparisonSafeText(geminiData && geminiData.address_reconstruction, 40),
       errorCode: geminiData && geminiFields.address ? '' : 'gemini_failed',
       error: context.geminiError || (geminiData && geminiData.error) || ''
     },
@@ -14534,6 +14536,8 @@ function buildOcrComparisonSummary() {
   const geminiSuccess = geminiRecords.filter(record => record.gemini.ok).length;
   const visionSuccess = records.filter(record => record.vision.ok).length;
   const pending = records.filter(record => record.vision.state === 'pending').length;
+  const reconstructionUsed = geminiRecords.filter(record => record.gemini.reconstruction === 'used_lines').length;
+  const reconstructionConflicts = geminiRecords.filter(record => record.gemini.reconstruction === 'conflict').length;
   const confirmed = records.filter(record => record.confirmed && record.acceptedAddress);
   const scored = confirmed.filter(ocrComparisonHasGeminiRecord);
   const latestVisionError = records.map(record => record.vision)
@@ -14579,7 +14583,11 @@ function buildOcrComparisonSummary() {
       if (ocrComparisonCandidateMatch(record.acceptedRoom, record.vision.roomCandidates, 'room')) scores.visionRoom++;
     }
   });
-  return { records, geminiRecords, geminiSuccess, visionSuccess, pending, confirmed, scored, latestVisionError, status, scores };
+  return {
+    records, geminiRecords, geminiSuccess, visionSuccess, pending,
+    reconstructionUsed, reconstructionConflicts,
+    confirmed, scored, latestVisionError, status, scores
+  };
 }
 
 function renderOcrComparisonModal() {
@@ -14600,6 +14608,7 @@ function renderOcrComparisonModal() {
     ? `<div class="metrics-status-note">直近エラー: ${escapeHtml(summary.latestVisionError.error || summary.latestVisionError.errorCode || '不明')}</div>`
     : '';
   $('ocr-compare-details').innerHTML = `
+    <div class="recovery-status-row"><span>住所行の再構成</span><strong>${summary.reconstructionUsed}件${summary.reconstructionConflicts ? ` / 矛盾 ${summary.reconstructionConflicts}件` : ''}</strong></div>
     <h4 class="metrics-section-title">保存中の住所との一致</h4>
     <div class="recovery-status-row"><span>郵便番号</span><strong>Gemini ${ocrComparisonRatio(s.geminiPostal, s.postalTotal)} / Vision ${ocrComparisonRatio(s.visionPostal, s.postalTotal)}</strong></div>
     <div class="recovery-status-row"><span>町名まで</span><strong>Gemini ${ocrComparisonRatio(s.geminiTown, s.townTotal)} / Vision ${ocrComparisonRatio(s.visionTown, s.townTotal)}</strong></div>
@@ -14634,6 +14643,7 @@ function copyOcrComparisonSummary() {
     `写真: ${summary.records.length}枚`,
     `Gemini成功: ${summary.geminiSuccess}/${summary.geminiRecords.length} 平均${ocrComparisonAverageMs(summary.records, 'gemini')}ms`,
     `Vision成功: ${summary.visionSuccess}/${summary.records.length} 平均${ocrComparisonAverageMs(summary.records, 'vision')}ms`,
+    `住所行の再構成: ${summary.reconstructionUsed}件 / 矛盾: ${summary.reconstructionConflicts}件`,
     `比較基準の住所あり: ${summary.confirmed.length}件`,
     `郵便番号: Gemini ${ocrComparisonRatio(s.geminiPostal, s.postalTotal)} / Vision ${ocrComparisonRatio(s.visionPostal, s.postalTotal)}`,
     `町名: Gemini ${ocrComparisonRatio(s.geminiTown, s.townTotal)} / Vision ${ocrComparisonRatio(s.visionTown, s.townTotal)}`,
