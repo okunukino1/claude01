@@ -2447,7 +2447,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.118</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.119</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2533,7 +2533,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.118</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.119</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -3195,7 +3195,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.118';
+const APP_VERSION = 'v2026.06.24-test.119';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -13026,7 +13026,58 @@ async function requestSavedPhotoOcrComparison() {
   );
 }
 
-// 1回分のOCR呼び出し (回転角度つき・バイナリ送信)
+async function ocrBlobToBase64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function parseTestOcrResponse(response) {
+  let data = null;
+  let parsedJson = false;
+  try {
+    data = await response.json();
+    parsedJson = !!data && typeof data === 'object';
+  } catch (e) {}
+  return {
+    ok: response.ok,
+    status: response.status,
+    data: data || {},
+    parsedJson
+  };
+}
+
+async function postTestOcrRequest(body, contentType, signal) {
+  const response = await fetch('../api/extract_address_test.php', {
+    method: 'POST',
+    headers: { 'Content-Type': contentType },
+    body,
+    signal
+  });
+  return parseTestOcrResponse(response);
+}
+
+async function requestTestOcr(compressed, signal) {
+  let result = await postTestOcrRequest(compressed, 'image/jpeg', signal);
+
+  // The hosting WAF can mistake raw JPEG bytes for an attack. Its 403 is HTML,
+  // while application and Gemini errors are JSON and must not be retried.
+  if (result.status === 403 && !result.parsedJson) {
+    const image = await ocrBlobToBase64(compressed);
+    result = await postTestOcrRequest(JSON.stringify({
+      image,
+      mimeType: 'image/jpeg'
+    }), 'application/json', signal);
+  }
+
+  return { ok: result.ok, status: result.status, data: result.data };
+}
+
+// 1回分のOCR呼び出し (回転角度つき・WAF誤検知時はJSONで再送)
 async function ocrExtractAddress(file, rotation, signal, imageProfile = null, comparisonSession = null) {
   const maxSize = imageProfile && imageProfile.maxSize || PHOTO_OCR_MAX_SIZE;
   const quality = imageProfile && Number.isFinite(imageProfile.quality)
@@ -13038,15 +13089,7 @@ async function ocrExtractAddress(file, rotation, signal, imageProfile = null, co
     startVisionOcrComparison(compressed, comparisonSession);
   }
   bumpUsage('ocr');
-  const res = await fetch('../api/extract_address_test.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'image/jpeg' },
-    body: compressed,
-    signal
-  });
-  let data = null;
-  try { data = await res.json(); } catch (e) {}
-  return { ok: res.ok, status: res.status, data: data || {} };
+  return requestTestOcr(compressed, signal);
 }
 
 // 向き自動リカバリー付きOCR。
@@ -13064,7 +13107,7 @@ async function ocrWithRotationRetry(attempt, baseRotation, onRetry) {
       return data;
     }
     lastError = (data && data.error) || '住所が読み取れませんでした';
-    if (!ok && (Number(status) === 429 || Number(status) >= 500)) {
+    if (!ok) {
       throw new Error(`HTTP ${status}: ${lastError}`);
     }
     const hint = Number(data && data.rotation_hint);
