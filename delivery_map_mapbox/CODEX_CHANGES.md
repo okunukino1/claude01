@@ -1,4 +1,13 @@
-# Claude / Codex 現状報告 — プロジェクト全体の状態 (2026-08-17)
+# Claude / Codex 現状報告 — プロジェクト全体の状態 (2026-08-19)
+
+## 0. Codex追記（2026-08-19 / test.120）
+
+- 作業開始基準は最新 `origin/main` のコミット `9a47f9d`。安定版は引き続き **v2026.07.10-1** で、通常版HTML・通常版OCR APIは変更していない。
+- テスト版を **v2026.06.24-test.120** へ更新し、伝票OCRの採用経路をCloud VisionとGeminiの併用へ切り替えた。テスト専用 `api/extract_address_hybrid_test.php` がVisionで全文を読み、その文字と住所候補をGeminiへ渡して、お届け先・建物名・部屋番号・宛名を整理する。
+- Visionで文字を読めない、Geminiの選別が低信頼、番地不足、郵便番号矛盾、応答解析失敗の場合は、その写真だけ従来の `api/extract_address_test.php` によるGemini画像OCRへ戻す。回転再試行ではVisionを重複呼び出しせず、2回目以降は画像OCRだけを使う。
+- Visionへの画像送信は、実機比較で非JSON HTTP 403を避けられたBase64 JSONを最初から使う。Visionの生OCR全文はGeminiへ渡すサーバー内処理だけに使用し、ブラウザー、比較記録、配送データへ返さない。
+- `OCR読み比べ（試験）` に併用採用件数と画像OCRへ戻した件数を追加した。利用回数表示は運用中のVision呼び出しも数え、概算合計へVision分を含める。
+- `scripts/test-delivery-hybrid-ocr.php` と拡張した `scripts/test-delivery-test-ocr-transport.mjs` で、文字選別の妥当性判定、個人情報全文を応答へ残さないこと、併用成功、画像OCRフォールバック、WAF 403再送、Vision重複防止を確認する。
 
 ## 0. Codex追記（2026-08-17 / test.119）
 

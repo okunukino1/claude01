@@ -2447,7 +2447,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.119</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.120</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2533,7 +2533,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.119</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.120</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -3141,7 +3141,7 @@
     <div class="metrics-summary">
       <div class="recovery-status-row"><span>Cloud Vision</span><strong id="ocr-compare-status">撮影待ち</strong></div>
       <div class="recovery-status-row"><span>比較した写真</span><strong id="ocr-compare-count">0枚</strong></div>
-      <div class="recovery-status-row"><span>Gemini成功</span><strong id="ocr-compare-gemini">記録なし</strong></div>
+      <div class="recovery-status-row"><span>採用結果</span><strong id="ocr-compare-gemini">記録なし</strong></div>
       <div class="recovery-status-row"><span>Vision成功</span><strong id="ocr-compare-vision">記録なし</strong></div>
       <div class="recovery-status-row"><span>比較基準の住所あり</span><strong id="ocr-compare-confirmed">0件</strong></div>
     </div>
@@ -3150,7 +3150,7 @@
     </div>
     <div class="metrics-status-note" id="ocr-compare-saved-status" role="status" aria-live="polite" hidden></div>
     <div class="metrics-status-note" id="ocr-compare-note">
-      Geminiを従来どおり使い、同じ写真をCloud Visionでも裏で1回だけ読みます。配送処理はVisionを待ちません。
+      Cloud Visionで文字を読み、Geminiが届け先・建物名・部屋番号を整理します。判断できない写真だけ従来の画像OCRへ戻します。
     </div>
     <div class="metrics-list" id="ocr-compare-details"></div>
     <div class="modal-actions">
@@ -3195,7 +3195,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.119';
+const APP_VERSION = 'v2026.06.24-test.120';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -3242,6 +3242,7 @@ const WORK_MODE_KEY = 'rys-mapbox-test-work-mode-v1';
 const USAGE_KEY = 'rys-mapbox-test-usage-v1';
 const OCR_COMPARISON_STORAGE_KEY = 'rys-mapbox-test-ocr-comparison-v1';
 const OCR_VISION_COMPARE_API = '../api/extract_address_vision_test.php';
+const OCR_HYBRID_API = '../api/extract_address_hybrid_test.php';
 const OCR_COMPARISON_MAX_RECORDS = 100;
 const OCR_COMPARISON_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const OCR_VISION_TIMEOUT_MS = 22000;
@@ -12634,6 +12635,8 @@ function normalizeOcrComparisonRecord(value) {
       : [],
     elapsedMs: Math.max(0, Number(provider && provider.elapsedMs || 0)),
     attempts: Math.max(0, Number(provider && provider.attempts || 0)),
+    mode: ocrComparisonSafeText(provider && provider.mode, 60),
+    fallbackReason: ocrComparisonSafeText(provider && provider.fallbackReason, 100),
     reconstruction: ocrComparisonSafeText(provider && provider.reconstruction, 40),
     errorCode: ocrComparisonSafeText(provider && provider.errorCode, 60),
     error: ocrComparisonSafeText(provider && provider.error, 180)
@@ -12697,6 +12700,8 @@ function createOcrComparisonSession(source, stableId = '') {
     createdAt: Date.now(),
     geminiStartedAt: (window.performance && performance.now) ? performance.now() : Date.now(),
     geminiAttempts: 0,
+    hybridAttempted: false,
+    hybridFallbackReason: '',
     visionStarted: false,
     visionPromise: null,
     visionController: null,
@@ -12710,6 +12715,37 @@ function markOcrComparisonGeminiComplete(session) {
   session.geminiElapsedMs = Math.max(0, Math.round(nowPerf - session.geminiStartedAt));
 }
 
+function normalizeVisionComparisonProvider(data, status = 200, elapsedMs = 0) {
+  const source = data && typeof data === 'object' ? data : {};
+  const hasText = source.has_text !== false && source.state !== 'no_text';
+  const ok = !!source.ok && hasText;
+  const state = String(source.state || (ok ? 'success' : (hasText ? 'error' : 'no_text')));
+  const noText = state === 'no_text';
+  return {
+    state,
+    ok,
+    elapsedMs: Number(source.elapsed_ms || source.elapsedMs) || elapsedMs,
+    addressCandidates: Array.isArray(source.address_candidates)
+      ? source.address_candidates
+      : (Array.isArray(source.addressCandidates) ? source.addressCandidates : []),
+    postalCodes: Array.isArray(source.postal_codes)
+      ? source.postal_codes
+      : (Array.isArray(source.postalCodes) ? source.postalCodes : []),
+    roomCandidates: Array.isArray(source.room_candidates)
+      ? source.room_candidates
+      : (Array.isArray(source.roomCandidates) ? source.roomCandidates : []),
+    errorCode: String(source.error_code || source.errorCode || (ok ? '' : (noText ? 'no_text' : `http_${status}`))),
+    error: String(source.detail || source.error || (ok ? '' : (noText ? '文字を検出できませんでした' : `HTTP ${status}`)))
+  };
+}
+
+function assignOcrComparisonVisionResult(session, provider) {
+  if (!session) return;
+  session.visionStarted = true;
+  session.visionController = null;
+  session.visionPromise = Promise.resolve(provider);
+}
+
 function startVisionOcrComparison(compressed, session) {
   if (!session || !compressed) return null;
   if (session.visionStarted) return session.visionPromise;
@@ -12720,34 +12756,16 @@ function startVisionOcrComparison(compressed, session) {
     if (session.visionController) session.visionController.abort();
   }, OCR_VISION_TIMEOUT_MS);
   bumpUsage('visionOcr');
-  session.visionPromise = fetch(OCR_VISION_COMPARE_API, {
+  session.visionPromise = ocrBlobToBase64(compressed).then(image => fetch(OCR_VISION_COMPARE_API, {
     method: 'POST',
-    headers: { 'Content-Type': 'image/jpeg' },
-    body: compressed,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image, mimeType: 'image/jpeg' }),
     signal: session.visionController ? session.visionController.signal : undefined
-  }).then(async res => {
+  })).then(async res => {
     let data = null;
     try { data = await res.json(); } catch (e) {}
     const elapsedMs = Math.round(((window.performance && performance.now) ? performance.now() : Date.now()) - startedAt);
-    if (!res.ok || !data || !data.ok) {
-      return {
-        state: 'error',
-        ok: false,
-        elapsedMs: Number(data && data.elapsed_ms) || elapsedMs,
-        errorCode: String(data && data.error_code || `http_${res.status}`),
-        error: String(data && (data.detail || data.error) || `HTTP ${res.status}`)
-      };
-    }
-    return {
-      state: data.has_text === false ? 'no_text' : 'success',
-      ok: data.has_text !== false,
-      elapsedMs: Number(data.elapsed_ms) || elapsedMs,
-      addressCandidates: Array.isArray(data.address_candidates) ? data.address_candidates : [],
-      postalCodes: Array.isArray(data.postal_codes) ? data.postal_codes : [],
-      roomCandidates: Array.isArray(data.room_candidates) ? data.room_candidates : [],
-      errorCode: data.has_text === false ? 'no_text' : '',
-      error: data.has_text === false ? '文字を検出できませんでした' : ''
-    };
+    return normalizeVisionComparisonProvider(data, res.status, elapsedMs);
   }).catch(error => ({
     state: 'error',
     ok: false,
@@ -12797,6 +12815,8 @@ function completeOcrComparison(session, geminiData, context = {}) {
       room: geminiFields.room || normalizeOcrRoomValue(geminiData && geminiData.room || ''),
       elapsedMs: session.geminiElapsedMs || Math.max(0, Math.round(nowPerf - session.geminiStartedAt)),
       attempts: session.geminiAttempts,
+      mode: ocrComparisonSafeText(geminiData && geminiData.ocr_mode, 60) || 'gemini_image',
+      fallbackReason: ocrComparisonSafeText(geminiData && geminiData.hybrid_fallback_reason, 100),
       reconstruction: ocrComparisonSafeText(geminiData && geminiData.address_reconstruction, 40),
       errorCode: geminiData && geminiFields.address ? '' : 'gemini_failed',
       error: context.geminiError || (geminiData && geminiData.error) || ''
@@ -13051,8 +13071,8 @@ async function parseTestOcrResponse(response) {
   };
 }
 
-async function postTestOcrRequest(body, contentType, signal) {
-  const response = await fetch('../api/extract_address_test.php', {
+async function postTestOcrRequest(endpoint, body, contentType, signal) {
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': contentType },
     body,
@@ -13062,13 +13082,13 @@ async function postTestOcrRequest(body, contentType, signal) {
 }
 
 async function requestTestOcr(compressed, signal) {
-  let result = await postTestOcrRequest(compressed, 'image/jpeg', signal);
+  let result = await postTestOcrRequest('../api/extract_address_test.php', compressed, 'image/jpeg', signal);
 
   // The hosting WAF can mistake raw JPEG bytes for an attack. Its 403 is HTML,
   // while application and Gemini errors are JSON and must not be retried.
   if (result.status === 403 && !result.parsedJson) {
     const image = await ocrBlobToBase64(compressed);
-    result = await postTestOcrRequest(JSON.stringify({
+    result = await postTestOcrRequest('../api/extract_address_test.php', JSON.stringify({
       image,
       mimeType: 'image/jpeg'
     }), 'application/json', signal);
@@ -13077,19 +13097,79 @@ async function requestTestOcr(compressed, signal) {
   return { ok: result.ok, status: result.status, data: result.data };
 }
 
-// 1回分のOCR呼び出し (回転角度つき・WAF誤検知時はJSONで再送)
+async function requestHybridTestOcr(compressed, signal) {
+  const image = await ocrBlobToBase64(compressed);
+  const result = await postTestOcrRequest(OCR_HYBRID_API, JSON.stringify({
+    image,
+    mimeType: 'image/jpeg'
+  }), 'application/json', signal);
+  return { ok: result.ok, status: result.status, data: result.data };
+}
+
+async function requestOperationalOcr(compressed, signal, session) {
+  if (!session || session.hybridAttempted) {
+    if (session) session.geminiAttempts++;
+    bumpUsage('ocr');
+    return requestTestOcr(compressed, signal);
+  }
+
+  session.hybridAttempted = true;
+  session.geminiAttempts++;
+  bumpUsage('visionOcr');
+  bumpUsage('ocr');
+  const startedAt = (window.performance && performance.now) ? performance.now() : Date.now();
+  const hybrid = await requestHybridTestOcr(compressed, signal);
+  const elapsedMs = Math.round(((window.performance && performance.now) ? performance.now() : Date.now()) - startedAt);
+  const hybridData = hybrid.data && typeof hybrid.data === 'object' ? hybrid.data : {};
+  const visionProvider = normalizeVisionComparisonProvider(
+    hybridData.vision || {
+      state: 'error',
+      ok: false,
+      error_code: hybridData.error_code || `http_${hybrid.status}`,
+      error: hybridData.detail || hybridData.error || `HTTP ${hybrid.status}`
+    },
+    hybrid.status,
+    elapsedMs
+  );
+  assignOcrComparisonVisionResult(session, visionProvider);
+
+  if (hybrid.ok && hybridData.ok && hybridData.result && hybridData.result.address) {
+    return { ok: true, status: hybrid.status, data: hybridData.result };
+  }
+
+  if (hybridData.fallback_required === false) {
+    return {
+      ok: false,
+      status: hybrid.status,
+      data: {
+        error: hybridData.error || '届け先の選別処理に失敗しました',
+        detail: hybridData.detail || '',
+        error_code: hybridData.error_code || ''
+      }
+    };
+  }
+
+  session.hybridFallbackReason = String(
+    hybridData.error_code || hybridData.error || `http_${hybrid.status}`
+  );
+  session.geminiAttempts++;
+  bumpUsage('ocr');
+  const fallback = await requestTestOcr(compressed, signal);
+  if (fallback.data && typeof fallback.data === 'object') {
+    fallback.data.ocr_mode = 'gemini_image_fallback';
+    fallback.data.hybrid_fallback_reason = session.hybridFallbackReason;
+  }
+  return fallback;
+}
+
+// 1回分のOCR呼び出し。最初はVision + Gemini文字選別、判断不能時だけ画像Geminiへ戻す。
 async function ocrExtractAddress(file, rotation, signal, imageProfile = null, comparisonSession = null) {
   const maxSize = imageProfile && imageProfile.maxSize || PHOTO_OCR_MAX_SIZE;
   const quality = imageProfile && Number.isFinite(imageProfile.quality)
     ? imageProfile.quality
     : PHOTO_OCR_QUALITY;
   const compressed = await compressImage(file, maxSize, quality, rotation);
-  if (comparisonSession) {
-    comparisonSession.geminiAttempts++;
-    startVisionOcrComparison(compressed, comparisonSession);
-  }
-  bumpUsage('ocr');
-  return requestTestOcr(compressed, signal);
+  return requestOperationalOcr(compressed, signal, comparisonSession);
 }
 
 // 向き自動リカバリー付きOCR。
@@ -14581,6 +14661,8 @@ function buildOcrComparisonSummary() {
   const pending = records.filter(record => record.vision.state === 'pending').length;
   const reconstructionUsed = geminiRecords.filter(record => record.gemini.reconstruction === 'used_lines').length;
   const reconstructionConflicts = geminiRecords.filter(record => record.gemini.reconstruction === 'conflict').length;
+  const hybridAdopted = geminiRecords.filter(record => record.gemini.mode === 'vision_gemini_text').length;
+  const imageFallbacks = geminiRecords.filter(record => record.gemini.mode === 'gemini_image_fallback').length;
   const confirmed = records.filter(record => record.confirmed && record.acceptedAddress);
   const scored = confirmed.filter(ocrComparisonHasGeminiRecord);
   const latestVisionError = records.map(record => record.vision)
@@ -14628,7 +14710,7 @@ function buildOcrComparisonSummary() {
   });
   return {
     records, geminiRecords, geminiSuccess, visionSuccess, pending,
-    reconstructionUsed, reconstructionConflicts,
+    reconstructionUsed, reconstructionConflicts, hybridAdopted, imageFallbacks,
     confirmed, scored, latestVisionError, status, scores
   };
 }
@@ -14651,12 +14733,13 @@ function renderOcrComparisonModal() {
     ? `<div class="metrics-status-note">直近エラー: ${escapeHtml(summary.latestVisionError.error || summary.latestVisionError.errorCode || '不明')}</div>`
     : '';
   $('ocr-compare-details').innerHTML = `
+    <div class="recovery-status-row"><span>採用方式</span><strong>併用 ${summary.hybridAdopted}件 / 画像へ戻した ${summary.imageFallbacks}件</strong></div>
     <div class="recovery-status-row"><span>住所行の再構成</span><strong>${summary.reconstructionUsed}件${summary.reconstructionConflicts ? ` / 矛盾 ${summary.reconstructionConflicts}件` : ''}</strong></div>
     <h4 class="metrics-section-title">保存中の住所との一致</h4>
-    <div class="recovery-status-row"><span>郵便番号</span><strong>Gemini ${ocrComparisonRatio(s.geminiPostal, s.postalTotal)} / Vision ${ocrComparisonRatio(s.visionPostal, s.postalTotal)}</strong></div>
-    <div class="recovery-status-row"><span>町名まで</span><strong>Gemini ${ocrComparisonRatio(s.geminiTown, s.townTotal)} / Vision ${ocrComparisonRatio(s.visionTown, s.townTotal)}</strong></div>
-    <div class="recovery-status-row"><span>住所全体</span><strong>Gemini ${ocrComparisonRatio(s.geminiAddress, s.addressTotal)} / Vision ${ocrComparisonRatio(s.visionAddress, s.addressTotal)}</strong></div>
-    <div class="recovery-status-row"><span>部屋番号</span><strong>Gemini ${ocrComparisonRatio(s.geminiRoom, s.roomTotal)} / Vision ${ocrComparisonRatio(s.visionRoom, s.roomTotal)}</strong></div>
+    <div class="recovery-status-row"><span>郵便番号</span><strong>採用結果 ${ocrComparisonRatio(s.geminiPostal, s.postalTotal)} / Vision候補 ${ocrComparisonRatio(s.visionPostal, s.postalTotal)}</strong></div>
+    <div class="recovery-status-row"><span>町名まで</span><strong>採用結果 ${ocrComparisonRatio(s.geminiTown, s.townTotal)} / Vision候補 ${ocrComparisonRatio(s.visionTown, s.townTotal)}</strong></div>
+    <div class="recovery-status-row"><span>住所全体</span><strong>採用結果 ${ocrComparisonRatio(s.geminiAddress, s.addressTotal)} / Vision候補 ${ocrComparisonRatio(s.visionAddress, s.addressTotal)}</strong></div>
+    <div class="recovery-status-row"><span>部屋番号</span><strong>採用結果 ${ocrComparisonRatio(s.geminiRoom, s.roomTotal)} / Vision候補 ${ocrComparisonRatio(s.visionRoom, s.roomTotal)}</strong></div>
     ${errorText}
   `;
   const savedButton = $('btn-ocr-compare-saved');
@@ -14667,8 +14750,8 @@ function renderOcrComparisonModal() {
   const clearButton = $('btn-ocr-compare-clear');
   if (clearButton) clearButton.disabled = ocrSavedPhotoCompareRunning;
   $('ocr-compare-note').textContent = summary.confirmed.length
-    ? '端末に保存中の配送先住所を比較基準にします。Visionは候補文字列にその住所が含まれたかを数え、撮影時のGemini記録がない古い写真は一致率の集計から除きます。比較記録はこの端末だけに最大100件・7日間保存します。'
-    : 'Geminiを従来どおり使い、同じ写真をCloud Visionでも裏で1回だけ読みます。保存写真からも最大20枚ずつVisionを試せます。配送処理はVisionを待ちません。';
+    ? '端末に保存中の配送先住所を比較基準にします。新しい撮影はVisionの文字をGeminiが整理した採用結果とVision候補を記録します。比較記録はこの端末だけに最大100件・7日間保存し、生のOCR全文は保存しません。'
+    : '新しい撮影はVisionで文字を読み、Geminiが届け先を整理します。判断できない写真だけ従来の画像OCRへ戻し、保存写真からの比較はVision候補だけを追加します。';
 }
 
 function openOcrComparisonModal() {
@@ -14684,14 +14767,15 @@ function copyOcrComparisonSummary() {
     `OCR比較 ${APP_VERSION}`,
     `状態: ${summary.status}`,
     `写真: ${summary.records.length}枚`,
-    `Gemini成功: ${summary.geminiSuccess}/${summary.geminiRecords.length} 平均${ocrComparisonAverageMs(summary.records, 'gemini')}ms`,
+    `採用結果成功: ${summary.geminiSuccess}/${summary.geminiRecords.length} 平均${ocrComparisonAverageMs(summary.records, 'gemini')}ms`,
     `Vision成功: ${summary.visionSuccess}/${summary.records.length} 平均${ocrComparisonAverageMs(summary.records, 'vision')}ms`,
+    `採用方式: 併用 ${summary.hybridAdopted}件 / 画像へ戻した ${summary.imageFallbacks}件`,
     `住所行の再構成: ${summary.reconstructionUsed}件 / 矛盾: ${summary.reconstructionConflicts}件`,
     `比較基準の住所あり: ${summary.confirmed.length}件`,
-    `郵便番号: Gemini ${ocrComparisonRatio(s.geminiPostal, s.postalTotal)} / Vision ${ocrComparisonRatio(s.visionPostal, s.postalTotal)}`,
-    `町名: Gemini ${ocrComparisonRatio(s.geminiTown, s.townTotal)} / Vision ${ocrComparisonRatio(s.visionTown, s.townTotal)}`,
-    `住所全体: Gemini ${ocrComparisonRatio(s.geminiAddress, s.addressTotal)} / Vision ${ocrComparisonRatio(s.visionAddress, s.addressTotal)}`,
-    `部屋番号: Gemini ${ocrComparisonRatio(s.geminiRoom, s.roomTotal)} / Vision ${ocrComparisonRatio(s.visionRoom, s.roomTotal)}`
+    `郵便番号: 採用結果 ${ocrComparisonRatio(s.geminiPostal, s.postalTotal)} / Vision候補 ${ocrComparisonRatio(s.visionPostal, s.postalTotal)}`,
+    `町名: 採用結果 ${ocrComparisonRatio(s.geminiTown, s.townTotal)} / Vision候補 ${ocrComparisonRatio(s.visionTown, s.townTotal)}`,
+    `住所全体: 採用結果 ${ocrComparisonRatio(s.geminiAddress, s.addressTotal)} / Vision候補 ${ocrComparisonRatio(s.visionAddress, s.addressTotal)}`,
+    `部屋番号: 採用結果 ${ocrComparisonRatio(s.geminiRoom, s.roomTotal)} / Vision候補 ${ocrComparisonRatio(s.visionRoom, s.roomTotal)}`
   ];
   navigator.clipboard.writeText(lines.join('\n')).then(
     () => showToast('個別住所を含まないOCR集計をコピーしました'),
@@ -14717,12 +14801,12 @@ function showUsage() {
   const visionOcrCost = (usage.visionOcr * OCR_VISION_COST_PER_CALL).toFixed(4);
   const geoCost = (usage.geocode * GEOCODE_COST_PER_CALL).toFixed(3);
   const routeCost = (usage.routeOptimize * MAPBOX_OPTIMIZE_COST_PER_CALL).toFixed(3);
-  const total = (parseFloat(ocrCost) + parseFloat(geoCost) + parseFloat(routeCost)).toFixed(3);
+  const total = (parseFloat(ocrCost) + parseFloat(visionOcrCost) + parseFloat(geoCost) + parseFloat(routeCost)).toFixed(3);
   $('usage-content').innerHTML = `
-    <p><b>伝票OCR (Gemini)</b><br>
+    <p><b>届け先整理・予備画像OCR (Gemini)</b><br>
     呼び出し回数: ${usage.ocr} 回<br>
     推定費用: $${ocrCost}</p>
-    <p><b>OCR読み比べ (Google Cloud Vision・テスト版)</b><br>
+    <p><b>伝票文字読取・読み比べ (Google Cloud Vision・テスト版)</b><br>
     呼び出し回数: ${usage.visionOcr} 回<br>
     月1,000画像の無料枠超過後の目安: $${visionOcrCost}</p>
     <p><b>住所→緯度経度 (Google Geocoding)</b><br>
