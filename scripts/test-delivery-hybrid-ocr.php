@@ -27,6 +27,7 @@ $prompt = delivery_test_hybrid_prompt($vision);
 assert_hybrid_same(true, strpos($prompt, '先頭候補を自動採用せず') !== false, 'prompt rejects first-candidate shortcut');
 assert_hybrid_same(true, strpos($prompt, '日本橋箱崎町43-') !== false, 'prompt contains Vision text');
 assert_hybrid_same(true, strpos($prompt, '日本橋蛎殻町1-2-3') !== false, 'prompt contains sender candidate');
+assert_hybrid_same(true, strpos($prompt, '3-26や3-12へ短縮してはいけません') !== false, 'prompt forbids omitted street numbers');
 
 $summary = delivery_test_hybrid_vision_summary($vision, 731);
 assert_hybrid_same('success', $summary['state'], 'summary state');
@@ -65,6 +66,38 @@ $addressConflict = $usable;
 $addressConflict['address_reconstruction'] = 'conflict';
 assert_hybrid_same(false, delivery_test_hybrid_result_is_usable($addressConflict, $vision, $reason), 'address conflict fallback');
 assert_hybrid_same('selector_address_conflict', $reason, 'address conflict reason');
+
+$missingTail = $usable;
+$missingTail['address'] = '〒103-0015 東京都中央区日本橋箱崎町43';
+assert_hybrid_same(false, delivery_test_hybrid_result_is_usable($missingTail, $vision, $reason), 'missing trailing street number fallback');
+assert_hybrid_same('selector_number_omission', $reason, 'missing trailing street number reason');
+
+$middleNumberVision = $vision;
+$middleNumberVision['address_candidates'] = [
+  '東京都中央区日本橋箱崎町3-26-12',
+  '東京都中央区日本橋蛎殻町1-2-3'
+];
+$missingMiddle = $usable;
+$missingMiddle['address'] = '〒103-0015 東京都中央区日本橋箱崎町3-12';
+assert_hybrid_same(false, delivery_test_hybrid_result_is_usable($missingMiddle, $middleNumberVision, $reason), 'missing middle street number fallback');
+assert_hybrid_same('selector_number_omission', $reason, 'missing middle street number reason');
+
+$differentNumber = $usable;
+$differentNumber['address'] = '〒103-0015 東京都中央区日本橋箱崎町43-6';
+assert_hybrid_same(true, delivery_test_hybrid_result_is_usable($differentNumber, $vision, $reason), 'different number is not classified as omission');
+
+$differentTownVision = $vision;
+$differentTownVision['address_candidates'] = ['東京都中央区日本橋蛎殻町43-5-7'];
+assert_hybrid_same(true, delivery_test_hybrid_result_is_usable($missingTail, $differentTownVision, $reason), 'different town candidate is ignored');
+
+$senderSameTownVision = $vision;
+$senderSameTownVision['address_candidates'] = [
+  '東京都中央区日本橋箱崎町43',
+  '東京都中央区日本橋箱崎町43-5'
+];
+$senderSameTown = $missingTail;
+$senderSameTown['sender_address'] = '東京都中央区日本橋箱崎町43-5';
+assert_hybrid_same(true, delivery_test_hybrid_result_is_usable($senderSameTown, $senderSameTownVision, $reason), 'known sender candidate is ignored');
 
 $noTextSummary = delivery_test_hybrid_vision_summary(['ok' => true, 'has_text' => false], 90);
 assert_hybrid_same('no_text', $noTextSummary['state'], 'no-text summary');
