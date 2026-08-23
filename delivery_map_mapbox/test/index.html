@@ -2447,7 +2447,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.122</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.123</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2533,7 +2533,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.122</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.123</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -3195,7 +3195,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.122';
+const APP_VERSION = 'v2026.06.24-test.123';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -3224,7 +3224,16 @@ const DELIVERY_PHOTO_RETRY_DELAY_MS = 8000;
 const DELIVERY_PHOTO_AUTO_RETRY_LIMIT = 2;
 const GPS_TRANSIENT_RESTART_DELAY_MS = 1000;
 const GPS_MAP_RETURN_FRESH_MS = 2000;
-const GPS_MAP_RETURN_TIMEOUT_MS = 6000;
+const GPS_MAP_RETURN_TIMEOUT_MS = 4000;
+const GPS_MAP_RETURN_SAMPLE_SETTLE_MS = 1200;
+const GPS_GOOD_ACCURACY_M = 25;
+const GPS_USABLE_ACCURACY_M = 60;
+const GPS_POOR_POSITION_HOLD_MS = 12000;
+const GPS_DEGRADED_POSITION_HOLD_MS = 3000;
+const GPS_RAW_POSITION_MAX_AGE_MS = 15000;
+const GPS_MAX_PLAUSIBLE_SPEED_MPS = 55;
+const GPS_JUMP_CONFIRM_WINDOW_MS = 5000;
+const GPS_JUMP_CONFIRM_RADIUS_M = 80;
 const DELIVERY_PHOTO_RETENTION_DAYS = 7;
 const DELIVERY_PHOTO_RETENTION_MS = DELIVERY_PHOTO_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const PHOTO_PRIVACY_STATE_KEY = 'rys-mapbox-test-photo-privacy-state-v1';
@@ -3570,6 +3579,8 @@ let gpsLastUpdatedAt = 0;
 let gpsLastError = '';
 let gpsRestartTimer = null;
 let gpsMapReturnRefreshId = 0;
+let gpsMapReturnCollector = null;
+let gpsPendingJump = null;
 let gpsTransientNoticeAt = 0;
 let gpsInitialCenterPending = true;
 let gpsInitialCenterStartedAt = 0;
@@ -19188,7 +19199,7 @@ function updateUserLocation(pos, moveMap = false) {
   recentGpsTrail = recentGpsTrail
     .filter(point => Date.now() - Number(point.at || 0) <= 2 * 60 * 1000)
     .slice(-12);
-  lastKnownGps = { lat: latitude, lng: longitude, heading, speed, accuracy };
+  lastKnownGps = { lat: latitude, lng: longitude, heading, speed, accuracy, at: gpsLastUpdatedAt };
   updateGoogleGuidanceUserMarker();
   banchiSchedulePrefetch(longitude, latitude);
   if (guidanceRestoreRefreshPending && workMode === 'delivery' && guidanceHasRouteTarget()) {
@@ -19216,10 +19227,152 @@ function updateUserLocation(pos, moveMap = false) {
   }
 }
 
-function gpsHasFreshPosition(maxAgeMs = GPS_MAP_RETURN_FRESH_MS) {
-  if (!userMarker || !gpsLastUpdatedAt) return false;
+function gpsPositionSnapshot(pos) {
+  if (!pos || !pos.coords) return null;
+  const lat = Number(pos.coords.latitude);
+  const lng = Number(pos.coords.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) ||
+      lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  const rawAccuracy = Number(pos.coords.accuracy);
+  const rawTimestamp = Number(pos.timestamp);
+  return {
+    lat,
+    lng,
+    accuracy: Number.isFinite(rawAccuracy) && rawAccuracy >= 0
+      ? rawAccuracy
+      : Number.POSITIVE_INFINITY,
+    timestamp: Number.isFinite(rawTimestamp) && rawTimestamp > 0 ? rawTimestamp : Date.now()
+  };
+}
+
+function gpsAssessPosition(pos, options = {}) {
+  const candidate = gpsPositionSnapshot(pos);
+  if (!candidate) return { accept: false, reason: 'invalid', candidate: null };
+  if (!lastKnownGps || !gpsLastUpdatedAt) {
+    gpsPendingJump = null;
+    return { accept: true, reason: 'initial', candidate };
+  }
+
+  const now = Date.now();
+  const lastAt = Number(gpsLastUpdatedAt);
+  const lastAgeMs = Math.max(0, now - lastAt);
+  if (candidate.timestamp < lastAt - 2000 && lastAgeMs <= GPS_POOR_POSITION_HOLD_MS) {
+    return { accept: false, reason: 'stale', candidate };
+  }
+  if (now - candidate.timestamp > GPS_RAW_POSITION_MAX_AGE_MS &&
+      lastAgeMs <= GPS_POOR_POSITION_HOLD_MS) {
+    return { accept: false, reason: 'stale', candidate };
+  }
+  if (candidate.accuracy > GPS_USABLE_ACCURACY_M &&
+      lastAgeMs <= GPS_POOR_POSITION_HOLD_MS && options.allowPoorIfStale !== true) {
+    return { accept: false, reason: 'poor_accuracy', candidate };
+  }
+
+  const lastAccuracyRaw = Number(lastKnownGps.accuracy);
+  const lastAccuracy = Number.isFinite(lastAccuracyRaw)
+    ? Math.max(0, lastAccuracyRaw)
+    : GPS_USABLE_ACCURACY_M;
+  const distance = distanceMeters(lastKnownGps, candidate);
+  const elapsedSeconds = Math.max(0.5, lastAgeMs / 1000);
+  const candidateAccuracy = Number.isFinite(candidate.accuracy)
+    ? candidate.accuracy
+    : GPS_USABLE_ACCURACY_M;
+  const plausibleDistance = Math.max(
+    GPS_JUMP_CONFIRM_RADIUS_M,
+    elapsedSeconds * GPS_MAX_PLAUSIBLE_SPEED_MPS + candidateAccuracy + lastAccuracy
+  );
+
+  if (distance > plausibleDistance) {
+    const pending = gpsPendingJump;
+    const pendingIsRecent = pending && now - Number(pending.seenAt || 0) <= GPS_JUMP_CONFIRM_WINDOW_MS;
+    const confirmationRadius = pending
+      ? Math.max(GPS_JUMP_CONFIRM_RADIUS_M, candidateAccuracy + Number(pending.accuracy || 0))
+      : GPS_JUMP_CONFIRM_RADIUS_M;
+    if (pendingIsRecent && distanceMeters(pending, candidate) <= confirmationRadius) {
+      gpsPendingJump = null;
+      return { accept: true, reason: 'confirmed_jump', candidate };
+    }
+    gpsPendingJump = { ...candidate, seenAt: now };
+    return { accept: false, reason: 'jump', candidate };
+  }
+
+  gpsPendingJump = null;
+  const degradedThreshold = Math.max(GPS_GOOD_ACCURACY_M + 10, lastAccuracy * 1.5);
+  if (candidate.accuracy > degradedThreshold &&
+      lastAgeMs <= GPS_DEGRADED_POSITION_HOLD_MS &&
+      distance <= Math.max(40, candidateAccuracy)) {
+    return { accept: false, reason: 'degraded_accuracy', candidate };
+  }
+  return { accept: true, reason: 'usable', candidate };
+}
+
+function updateGpsFilterStatus(pos, reason) {
+  const el = $('gps-status');
+  const candidate = gpsPositionSnapshot(pos);
+  if (!el || !candidate) return;
+  gpsLastError = '';
+  const accuracy = Number.isFinite(candidate.accuracy) ? `約${Math.round(candidate.accuracy)}m` : '不明';
+  const state = reason === 'jump' ? '位置飛びを確認中' : '再測位中';
+  const previous = gpsLastUpdatedAt
+    ? new Date(gpsLastUpdatedAt).toLocaleTimeString('ja-JP', {
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      })
+    : '未取得';
+  el.innerHTML = `GPS精度: ${accuracy} (${state})<br>前回位置: ${previous}`;
+  el.classList.add('show');
+  updateRecoveryStatusUi();
+}
+
+function handleGpsPosition(pos, moveMap = false, options = {}) {
+  const assessment = gpsAssessPosition(pos, options);
+  if (assessment.accept) {
+    updateUserLocation(pos, moveMap);
+  } else {
+    updateGpsFilterStatus(pos, assessment.reason);
+  }
+  considerGpsMapReturnCandidate(pos, assessment.accept);
+  if (!gpsActive && !document.hidden) scheduleGpsRestart(250);
+  return assessment.accept;
+}
+
+function finishGpsMapReturnRefresh(requestId) {
+  const collector = gpsMapReturnCollector;
+  if (!collector || collector.requestId !== requestId) return;
+  clearTimeout(collector.deadlineTimer);
+  clearTimeout(collector.settleTimer);
+  gpsMapReturnCollector = null;
+  if (requestId !== gpsMapReturnRefreshId || !collector.refreshGuidance) return;
+  refreshGuidanceAfterMapReturn();
+}
+
+function considerGpsMapReturnCandidate(pos, accepted) {
+  const collector = gpsMapReturnCollector;
+  const candidate = gpsPositionSnapshot(pos);
+  if (!collector || !candidate || Date.now() - candidate.timestamp > GPS_RAW_POSITION_MAX_AGE_MS) return;
+  if (!collector.best || candidate.accuracy < collector.best.accuracy ||
+      (candidate.accuracy === collector.best.accuracy && candidate.timestamp > collector.best.timestamp)) {
+    collector.best = { ...candidate, accepted: accepted === true };
+  }
+  if (accepted && candidate.accuracy <= GPS_GOOD_ACCURACY_M) {
+    finishGpsMapReturnRefresh(collector.requestId);
+    return;
+  }
+  if (candidate.accuracy <= GPS_USABLE_ACCURACY_M && !collector.settleTimer) {
+    collector.settleTimer = setTimeout(
+      () => finishGpsMapReturnRefresh(collector.requestId),
+      GPS_MAP_RETURN_SAMPLE_SETTLE_MS
+    );
+  }
+}
+
+function gpsHasFreshPosition(
+  maxAgeMs = GPS_MAP_RETURN_FRESH_MS,
+  maxAccuracyM = GPS_GOOD_ACCURACY_M
+) {
+  if (!userMarker || !gpsLastUpdatedAt || !lastKnownGps) return false;
   const ageMs = Math.max(0, Date.now() - Number(gpsLastUpdatedAt));
-  return ageMs <= maxAgeMs;
+  const accuracy = Number(lastKnownGps.accuracy);
+  return ageMs <= maxAgeMs && Number.isFinite(accuracy) && accuracy <= maxAccuracyM;
 }
 
 function refreshGuidanceAfterMapReturn() {
@@ -19232,6 +19385,11 @@ function refreshGuidanceAfterMapReturn() {
 function refreshGpsAfterMapReturn(options = {}) {
   const refreshGuidance = options.refreshGuidance === true;
   const requestId = ++gpsMapReturnRefreshId;
+  if (gpsMapReturnCollector) {
+    clearTimeout(gpsMapReturnCollector.deadlineTimer);
+    clearTimeout(gpsMapReturnCollector.settleTimer);
+    gpsMapReturnCollector = null;
+  }
   const refreshRoute = () => {
     if (requestId !== gpsMapReturnRefreshId || !refreshGuidance) return;
     refreshGuidanceAfterMapReturn();
@@ -19254,27 +19412,27 @@ function refreshGpsAfterMapReturn(options = {}) {
     updateGuidanceBannerUi();
   }
 
-  let settled = false;
-  let fallbackTimer = null;
-  const finish = (pos = null) => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(fallbackTimer);
-    if (requestId !== gpsMapReturnRefreshId) return;
-    if (pos) updateUserLocation(pos, gpsAutoFollow);
-    refreshRoute();
+  gpsMapReturnCollector = {
+    requestId,
+    refreshGuidance,
+    best: null,
+    settleTimer: null,
+    deadlineTimer: setTimeout(
+      () => finishGpsMapReturnRefresh(requestId),
+      GPS_MAP_RETURN_TIMEOUT_MS
+    )
   };
-
-  fallbackTimer = setTimeout(() => finish(), GPS_MAP_RETURN_TIMEOUT_MS + 500);
   try {
     navigator.geolocation.getCurrentPosition(
-      (pos) => finish(pos),
-      () => finish(),
+      (pos) => { handleGpsPosition(pos, gpsAutoFollow); },
+      (error) => {
+        if (Number(error && error.code) === 1) finishGpsMapReturnRefresh(requestId);
+      },
       { enableHighAccuracy: true, timeout: GPS_MAP_RETURN_TIMEOUT_MS, maximumAge: 0 }
     );
   } catch (error) {
     console.warn('fresh GPS request after map return failed', error);
-    finish();
+    finishGpsMapReturnRefresh(requestId);
   }
 }
 
@@ -19289,7 +19447,7 @@ function ensureGpsWatching() {
   updateRecoveryStatusUi();
   if (!gpsInitialCenterStartedAt) gpsInitialCenterStartedAt = Date.now();
   gpsWatchId = navigator.geolocation.watchPosition(
-    (pos) => { updateUserLocation(pos, gpsAutoFollow); },
+    (pos) => { handleGpsPosition(pos, gpsAutoFollow); },
     (err) => {
       let msg = '位置情報を取得できません';
       if (err.code === 1) msg = '位置情報の許可が必要です';
@@ -19375,7 +19533,7 @@ function centerOnUser() {
   }
   showToast('現在地を取得中...');
   navigator.geolocation.getCurrentPosition(
-    (pos) => { updateUserLocation(pos, true); showToast('現在地を表示しました'); },
+    (pos) => { handleGpsPosition(pos, true, { allowPoorIfStale: true }); showToast('現在地を表示しました'); },
     () => showToast('位置情報を取得できません', true),
     { enableHighAccuracy: true, timeout: 8000, maximumAge: 5000 }
   );
