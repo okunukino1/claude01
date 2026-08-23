@@ -2447,7 +2447,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.121</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.122</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2533,7 +2533,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.121</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.122</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -3195,7 +3195,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.121';
+const APP_VERSION = 'v2026.06.24-test.122';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -3222,6 +3222,9 @@ const DELIVERY_RECOVERY_BACKUP_SUFFIX = ':recovery-backup-v1';
 const DELIVERY_PHOTO_JOB_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 const DELIVERY_PHOTO_RETRY_DELAY_MS = 8000;
 const DELIVERY_PHOTO_AUTO_RETRY_LIMIT = 2;
+const GPS_TRANSIENT_RESTART_DELAY_MS = 1000;
+const GPS_MAP_RETURN_FRESH_MS = 2000;
+const GPS_MAP_RETURN_TIMEOUT_MS = 6000;
 const DELIVERY_PHOTO_RETENTION_DAYS = 7;
 const DELIVERY_PHOTO_RETENTION_MS = DELIVERY_PHOTO_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const PHOTO_PRIVACY_STATE_KEY = 'rys-mapbox-test-photo-privacy-state-v1';
@@ -3566,6 +3569,8 @@ let gpsAutoFollow = false;
 let gpsLastUpdatedAt = 0;
 let gpsLastError = '';
 let gpsRestartTimer = null;
+let gpsMapReturnRefreshId = 0;
+let gpsTransientNoticeAt = 0;
 let gpsInitialCenterPending = true;
 let gpsInitialCenterStartedAt = 0;
 let neighborhoodVisible = localStorage.getItem(NEIGHBORHOOD_KEY) !== '0';
@@ -11959,10 +11964,9 @@ async function toggleEditedItemDone() {
   syncPickupProgress(d, operatorName);
   if (nextCompleted && isPickupCompletionNotificationTarget(d)) notifySpotPickupCompleted(d, operatorName);
   if (nextCompleted && temporaryGuidanceTargetId === editedId) {
-    clearTemporaryGuidance();
-  } else if (optimizedRouteOrderedIds.length > 0) {
-    updateNextSegmentHighlight();
+    clearTemporaryGuidance({ resume: false });
   }
+  refreshGpsAfterMapReturn({ refreshGuidance: optimizedRouteOrderedIds.length > 0 });
   presentQueuedPhotoReviewIfIdle();
 }
 
@@ -19212,6 +19216,68 @@ function updateUserLocation(pos, moveMap = false) {
   }
 }
 
+function gpsHasFreshPosition(maxAgeMs = GPS_MAP_RETURN_FRESH_MS) {
+  if (!userMarker || !gpsLastUpdatedAt) return false;
+  const ageMs = Math.max(0, Date.now() - Number(gpsLastUpdatedAt));
+  return ageMs <= maxAgeMs;
+}
+
+function refreshGuidanceAfterMapReturn() {
+  if (optimizedRouteOrderedIds.length === 0) return;
+  updateNextSegmentHighlight().catch(error => {
+    console.warn('map return guidance refresh failed', error);
+  });
+}
+
+function refreshGpsAfterMapReturn(options = {}) {
+  const refreshGuidance = options.refreshGuidance === true;
+  const requestId = ++gpsMapReturnRefreshId;
+  const refreshRoute = () => {
+    if (requestId !== gpsMapReturnRefreshId || !refreshGuidance) return;
+    refreshGuidanceAfterMapReturn();
+  };
+
+  if (!navigator.geolocation) {
+    refreshRoute();
+    return;
+  }
+
+  ensureGpsWatching();
+  if (gpsHasFreshPosition()) {
+    refreshRoute();
+    return;
+  }
+
+  if (refreshGuidance) {
+    clearNextSegmentLayer();
+    saveGuidanceRouteCache({ route: null });
+    updateGuidanceBannerUi();
+  }
+
+  let settled = false;
+  let fallbackTimer = null;
+  const finish = (pos = null) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(fallbackTimer);
+    if (requestId !== gpsMapReturnRefreshId) return;
+    if (pos) updateUserLocation(pos, gpsAutoFollow);
+    refreshRoute();
+  };
+
+  fallbackTimer = setTimeout(() => finish(), GPS_MAP_RETURN_TIMEOUT_MS + 500);
+  try {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => finish(pos),
+      () => finish(),
+      { enableHighAccuracy: true, timeout: GPS_MAP_RETURN_TIMEOUT_MS, maximumAge: 0 }
+    );
+  } catch (error) {
+    console.warn('fresh GPS request after map return failed', error);
+    finish();
+  }
+}
+
 function ensureGpsWatching() {
   if (!navigator.geolocation) { showToast('位置情報が利用できません', true); return false; }
   if (gpsActive && gpsWatchId !== null) return true;
@@ -19230,23 +19296,31 @@ function ensureGpsWatching() {
       else if (err.code === 2) msg = '現在地を取得できませんでした';
       else if (err.code === 3) msg = 'GPS取得がタイムアウトしました';
       gpsLastError = msg;
-      showToast(msg, true);
       if (gpsWatchId !== null) {
         navigator.geolocation.clearWatch(gpsWatchId);
         gpsWatchId = null;
       }
       gpsActive = false;
-      gpsAutoFollow = false;
+      if (err.code === 1) {
+        gpsAutoFollow = false;
+        showToast(msg, true);
+      } else {
+        const now = Date.now();
+        if (now - gpsTransientNoticeAt >= 30000) {
+          gpsTransientNoticeAt = now;
+          showToast(`${msg}。GPSを再接続します`, true);
+        }
+        scheduleGpsRestart();
+      }
       updateGpsButton();
       updateRecoveryStatusUi();
-      if (err.code !== 1) scheduleGpsRestart();
     },
     { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
   );
   return true;
 }
 
-function scheduleGpsRestart(delay = DELIVERY_PHOTO_RETRY_DELAY_MS) {
+function scheduleGpsRestart(delay = GPS_TRANSIENT_RESTART_DELAY_MS) {
   if (gpsRestartTimer || document.hidden || !navigator.geolocation) return;
   gpsRestartTimer = setTimeout(() => {
     gpsRestartTimer = null;
