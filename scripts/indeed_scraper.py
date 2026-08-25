@@ -34,12 +34,27 @@ SHEET_GID       = int(os.environ.get("SHEET_GID", "1404155345"))
 TARGET_DATE     = os.environ.get("TARGET_DATE", "")
 
 # サービスアカウント: JSONファイルパス指定 or JSON文字列（GitHub Actions用）
-_sa_file = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON_FILE", "")
-if _sa_file:
-    _sa_file_path = Path(__file__).parent / _sa_file
-    GOOGLE_SA_JSON = _sa_file_path.read_text(encoding="utf-8")
-else:
-    GOOGLE_SA_JSON = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
+def load_google_service_account_json() -> str:
+    json_text = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    file_value = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON_FILE", "").strip()
+
+    if file_value:
+        file_path = Path(file_value)
+        if not file_path.is_absolute():
+            file_path = Path(__file__).parent / file_path
+        if file_path.exists():
+            return file_path.read_text(encoding="utf-8")
+        if json_text:
+            print(f"Service account file not found, using GOOGLE_SERVICE_ACCOUNT_JSON: {file_path}")
+            return json_text
+        raise FileNotFoundError(f"サービスアカウントJSONファイルが見つかりません: {file_path}")
+
+    if json_text:
+        return json_text
+    raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON または GOOGLE_SERVICE_ACCOUNT_JSON_FILE を設定してください")
+
+
+GOOGLE_SA_JSON = load_google_service_account_json()
 
 # Indeed アナリティクスURL（月次＋日別表示）
 ANALYTICS_URL = (
@@ -193,7 +208,7 @@ async def scrape_indeed(target_date) -> tuple[list, list]:
             date_str,
         )
 
-        await browser.close()
+        await ctx.close()
 
     return result, captured_api
 
