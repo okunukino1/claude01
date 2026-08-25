@@ -4,11 +4,13 @@ const WATCH_CONFIG = {
   // 空欄のままで現在のGoogleアカウント宛てに送ります。
   // 宛先取得でエラーになる場合だけ、ここにGmailアドレスを直接入れてください。
   recipientEmail: "",
-  watchedPhrases: [
+  decisivePhrases: [
     "Windows can't currently control another computer from the Codex App",
-    "You can control a Windows host from ChatGPT on iOS or Android",
-    "or from a Mac running Codex",
-    "Codex mobile setup supports Codex App hosts on macOS and Windows"
+    "You can control a host from ChatGPT on iOS or Android, or from another Mac or Windows device when Control other devices is available",
+    "On a Mac or Windows device where the feature is available, use Settings > Connections > Control other devices to add the other host",
+    "Access and control other devices from this computer",
+    "Control this Mac or PC",
+    "Control other devices"
   ]
 };
 
@@ -26,47 +28,50 @@ function checkCodexWindowsRemoteUpdates() {
   const html = response.getContentText();
   const text = normalizePage(html);
   const snapshot = buildRelevantSnapshot(text);
+  const targetStatus = detectTargetAvailability(text);
   const hash = digest(snapshot);
   const previousHash = props.getProperty("remoteConnectionsSnapshotHash");
   const previousSnapshot = props.getProperty("remoteConnectionsSnapshot") || "";
+  const previousTargetStatus = props.getProperty("remoteConnectionsTargetStatus") || "";
 
   props.setProperty("remoteConnectionsSnapshotHash", hash);
   props.setProperty("remoteConnectionsSnapshot", snapshot);
+  props.setProperty("remoteConnectionsTargetStatus", targetStatus);
 
-  if (!previousHash || previousHash === hash) {
+  if (!previousHash || previousTargetStatus === targetStatus) {
     return;
   }
 
-  const removedPhrases = WATCH_CONFIG.watchedPhrases.filter((phrase) => previousSnapshot.includes(phrase) && !snapshot.includes(phrase));
-  const addedPhrases = WATCH_CONFIG.watchedPhrases.filter((phrase) => !previousSnapshot.includes(phrase) && snapshot.includes(phrase));
+  if (!shouldNotifyForTargetStatusChange(previousTargetStatus, targetStatus)) {
+    return;
+  }
 
   const lines = [
-    "OpenAI Codex Remote connections公式ページの重要監視部分に変更がありました。",
+    "Codex / ChatGPT Remote のPC同士の操作可否に関係する変更を検出しました。",
+    "",
+    "判定:",
+    "- 前回: " + statusLabel(previousTargetStatus),
+    "- 今回: " + statusLabel(targetStatus),
     "",
     "確認ポイント:",
-    "- Windows PCから別のWindows PCをCodex Appで制御できるようになったか",
-    "- Remote Control / mobile access / Windows host の制限が変わったか",
+    "- Windows PCから別のPCを操作できる状態になったか",
+    "- Control other devices がWindows側で使える状態になったか",
+    "- ただし、公式ページ上の availability can vary by rollout はアカウントごとの提供差を意味します",
     "",
     "URL:",
     WATCH_CONFIG.remoteConnectionsUrl,
     "",
     "HTTP status: " + status,
     "",
-    "追加された監視文言:",
-    addedPhrases.length ? addedPhrases.map((phrase) => "- " + phrase).join("\n") : "- なし",
-    "",
-    "消えた監視文言:",
-    removedPhrases.length ? removedPhrases.map((phrase) => "- " + phrase).join("\n") : "- なし",
-    "",
     "現在の監視スナップショット:",
     snapshot,
     "",
-    "公式ページを開いて、実質的な仕様変更か確認してください。"
+    "公式ページと自分のChatGPTデスクトップアプリの Settings > Connections を確認してください。"
   ];
 
   MailApp.sendEmail({
     to: getRecipientEmail(),
-    subject: WATCH_CONFIG.subjectPrefix + " 重要監視部分に変更あり",
+    subject: WATCH_CONFIG.subjectPrefix + " PC同士の遠隔操作に関係する変更あり",
     body: lines.join("\n")
   });
 }
@@ -96,8 +101,42 @@ function sendTestCodexWindowsRemoteWatchEmail() {
   });
 }
 
+function shouldNotifyForTargetStatusChange(previousStatus, currentStatus) {
+  if (currentStatus === "desktop_control_available_rollout") {
+    return previousStatus !== "desktop_control_available_rollout";
+  }
+  if (previousStatus === "desktop_control_available_rollout" && currentStatus !== "desktop_control_available_rollout") {
+    return true;
+  }
+  return false;
+}
+
+function detectTargetAvailability(text) {
+  const lower = text.toLowerCase();
+  const oldWindowsBlocked = lower.includes("windows can't currently control another computer from the codex app".toLowerCase());
+  const desktopControlAvailable =
+    lower.includes("from another mac or windows device when control other devices is available") ||
+    lower.includes("on a mac or windows device where the feature is available") ||
+    (lower.includes("control other devices") && lower.includes("access and control other devices from this computer") && lower.includes("windows device"));
+
+  if (desktopControlAvailable) {
+    return "desktop_control_available_rollout";
+  }
+  if (oldWindowsBlocked) {
+    return "windows_control_blocked";
+  }
+  return "unknown_or_unrelated";
+}
+
+function statusLabel(status) {
+  if (status === "desktop_control_available_rollout") return "PC同士の遠隔操作に関係する文言あり（提供状況はロールアウト依存）";
+  if (status === "windows_control_blocked") return "Windowsから別PCを操作できない文言あり";
+  if (status === "unknown_or_unrelated") return "判定対象外または不明";
+  return status || "初回実行";
+}
+
 function buildRelevantSnapshot(text) {
-  const snippets = WATCH_CONFIG.watchedPhrases.map((phrase) => {
+  const snippets = WATCH_CONFIG.decisivePhrases.map((phrase) => {
     const index = text.indexOf(phrase);
     if (index < 0) {
       return "MISSING: " + phrase;
