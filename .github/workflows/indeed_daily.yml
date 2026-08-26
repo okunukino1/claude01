@@ -1,9 +1,6 @@
 name: Indeed 日次アナリティクス取得
 
 on:
-  schedule:
-    # 毎朝10:00 JST (01:00 UTC) に実行
-    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       target_date:
