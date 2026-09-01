@@ -58,13 +58,15 @@
   /* ===== A4 用紙 ===== */
   .sheet {
     width: 190mm;
-    min-height: 277mm;
+    height: 277mm;          /* A4縦 - 上下余白10mm。用紙からはみ出さないよう高さを固定する */
+    overflow: hidden;
     margin: 0 auto 12px;
     background: #fff;
     box-shadow: 0 2px 12px rgba(0,0,0,.2);
     display: flex;
     flex-direction: column;
   }
+  .sheet-title, .sheet > table.meta, .sheet > .bottom, .sheet > .foot { flex: none; }
   .sheet-title {
     font-size: 17px;
     font-weight: 700;
@@ -91,11 +93,13 @@
   }
   table.meta td[contenteditable]:focus { outline: 2px solid #1f6fd0; }
 
+  /* 地図は残りの高さをすべて使う。表題や欄の文字が増えた分は地図が縮んで吸収する */
   .map-frame {
     position: relative;
     border: 1px solid var(--line);
     border-top: none;
-    height: 180mm;
+    flex: 1 1 auto;
+    min-height: 60mm;
   }
   .map { position: absolute; inset: 0; }
 
@@ -122,6 +126,8 @@
     display: flex;
     gap: 3mm;
     margin-top: 3mm;
+    max-height: 58mm;
+    overflow: hidden;
   }
   .legend, .locator-box, .spot-box {
     border: 1px solid var(--line);
@@ -223,7 +229,8 @@
   @media print {
     body { background: #fff; }
     .toolbar, .sheet-caption, .leaflet-control-zoom, .leaflet-control-layers { display: none !important; }
-    .sheet { width: auto; margin: 0; box-shadow: none; break-before: page; }
+    /* 100vh は印刷時の用紙内寸。余白設定を変えても1枚に収まる */
+    .sheet { width: auto; height: 100vh; max-height: 100vh; margin: 0; box-shadow: none; break-before: page; }
     .sheet.first-print { break-before: auto; }
     .sheet.hidden-sheet { display: none !important; }
     @page { size: A4 portrait; margin: 10mm; }
