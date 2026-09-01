@@ -224,6 +224,7 @@
     <option value="std">地理院 標準地図</option>
     <option value="photo">航空写真</option>
   </select>
+  <button id="btn-geocode">🔍 住所から位置</button>
   <button id="btn-store">📍 店舗位置を設定</button>
   <button id="btn-spot">🅿 駐車予定地点を追加</button>
   <button id="btn-clear">🗑 駐車地点を全消去</button>
@@ -295,7 +296,8 @@ const chome = (town, list) => list.map(n => town + n + '丁目');
 const STORE_PROFILES = {
   kobunacho: {
     name: '日本橋小舟町店',
-    address: '東京都中央区日本橋小舟町',
+    address: '〒103-0024 東京都中央区日本橋小舟町4-6',
+    // 初期位置は小舟町の代表点（仮）。「🔍 住所から位置」または地図クリックで実際の位置に合わせる。
     store: { lat: 35.686672, lng: 139.778364 },
     groups: [
       { label: '日本橋本石町 1〜4丁目', color: '#d2413a', names: chome('日本橋本石町', [1, 2, 3, 4]) },
@@ -440,6 +442,39 @@ map.on('click', (e) => {
     spots.push({ lat: e.latlng.lat, lng: e.latlng.lng, memo: '' });
     saveJSON(SPOT_KEY, spots);
     renderSpots();
+  }
+});
+
+/* 所在地欄の住所から営業所★の位置を合わせる（サイト上に置いたときのみ利用可） */
+const GEOCODE_ENDPOINT = '../api/geocode_address.php';
+document.getElementById('btn-geocode').addEventListener('click', async () => {
+  const address = document.getElementById('meta-addr').textContent.trim();
+  if (!address) { alert('所在地欄に住所を入力してください。'); return; }
+  const btn = document.getElementById('btn-geocode');
+  btn.disabled = true;
+  try {
+    const res = await fetch(GEOCODE_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address })
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || typeof data.lat !== 'number') {
+      throw new Error((data && (data.error || data.detail)) || ('HTTP ' + res.status));
+    }
+    setMode(null);
+    store.lat = data.lat; store.lng = data.lng;
+    storeMarker.setLatLng([data.lat, data.lng]);
+    saveJSON(STORE_KEY, store);
+    map.panTo([data.lat, data.lng]);
+    alert('住所の位置に合わせました。\n' + (data.formatted || address) +
+      (data.approx ? '\n\n※おおよその位置です。番地までの精度が必要な場合は「📍 店舗位置を設定」で微調整してください。' : ''));
+  } catch (e) {
+    alert('住所からの位置検索に使えませんでした。\n' + e.message +
+      '\n\nこの機能は rys-services.com 上に置いたページでのみ動きます。' +
+      'ローカルのファイルを開いている場合は「📍 店舗位置を設定」で地図をクリックしてください。');
+  } finally {
+    btn.disabled = false;
   }
 });
 
