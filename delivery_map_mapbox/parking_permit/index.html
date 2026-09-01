@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>駐車許可申請 区域図 - 日本橋小舟町店</title>
+<title>駐車許可申請 区域図</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root {
@@ -42,15 +42,24 @@
     cursor: pointer;
   }
   .toolbar button.on { background: #1f6fd0; border-color: #1f6fd0; color: #fff; }
+  .toolbar button:disabled { opacity: .5; cursor: progress; }
   .toolbar .spacer { flex: 1; }
   .toolbar .hint { color: #666; font-size: 12px; }
+
+  .sheet-caption {
+    width: 190mm;
+    margin: 18px auto 4px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #555;
+  }
+  .sheet-caption .off { color: #b00; font-weight: 400; }
 
   /* ===== A4 用紙 ===== */
   .sheet {
     width: 190mm;
     min-height: 277mm;
-    margin: 12px auto;
-    padding: 0;
+    margin: 0 auto 12px;
     background: #fff;
     box-shadow: 0 2px 12px rgba(0,0,0,.2);
     display: flex;
@@ -88,7 +97,7 @@
     border-top: none;
     height: 180mm;
   }
-  #map { position: absolute; inset: 0; }
+  .map { position: absolute; inset: 0; }
 
   .north {
     position: absolute;
@@ -126,6 +135,7 @@
     border-bottom: 1px solid #ddd;
     padding-bottom: 1mm;
   }
+  .legend ul { margin: 0; padding: 0; }
   .legend li {
     list-style: none;
     display: flex;
@@ -142,7 +152,7 @@
   }
   .legend .star { font-size: 14px; color: #c0272d; }
   .locator-box { width: 52mm; padding: 0; position: relative; }
-  #locator { position: absolute; inset: 0; }
+  .locator { position: absolute; inset: 0; }
   .locator-cap {
     position: absolute;
     left: 0; bottom: 0;
@@ -175,6 +185,7 @@
     text-align: center;
     pointer-events: none;
   }
+  .town-label.sub { font-size: 10px; color: #55636e; font-weight: 400; }
   .store-pin {
     font-size: 26px;
     line-height: 1;
@@ -206,10 +217,15 @@
     text-align: center;
   }
 
+  @media screen {
+    .sheet.hidden-sheet { display: none; }
+  }
   @media print {
     body { background: #fff; }
-    .toolbar, .leaflet-control-zoom, .leaflet-control-layers { display: none !important; }
-    .sheet { width: auto; margin: 0; box-shadow: none; }
+    .toolbar, .sheet-caption, .leaflet-control-zoom, .leaflet-control-layers { display: none !important; }
+    .sheet { width: auto; margin: 0; box-shadow: none; break-before: page; }
+    .sheet.first-print { break-before: auto; }
+    .sheet.hidden-sheet { display: none !important; }
     @page { size: A4 portrait; margin: 10mm; }
   }
 </style>
@@ -218,6 +234,7 @@
 
 <div class="toolbar">
   <button id="btn-print">🖨 印刷 / PDF保存</button>
+  <select id="printmode" title="印刷する用紙"></select>
   <select id="profile" title="営業所"></select>
   <select id="basemap">
     <option value="pale">地理院 淡色地図</option>
@@ -230,59 +247,10 @@
   <button id="btn-clear">🗑 駐車地点を全消去</button>
   <button id="btn-fit">🔄 表示範囲リセット</button>
   <span class="spacer"></span>
-  <span class="hint">表題・住所欄は直接クリックして書き換えできます</span>
+  <span class="hint">★や駐車地点の設定は1枚目（全体図）で行います。町別の各ページは地図をドラッグ／ズームして写る範囲を調整できます。</span>
 </div>
 
-<div class="sheet">
-  <div class="sheet-title" contenteditable="true">駐 車 許 可 申 請　区 域 図</div>
-  <table class="meta">
-    <tr>
-      <th>営業所</th>
-      <td contenteditable="true" id="meta-store">日本橋小舟町店</td>
-      <th>所在地</th>
-      <td contenteditable="true" id="meta-addr">東京都中央区日本橋小舟町</td>
-    </tr>
-    <tr>
-      <th>対象区域</th>
-      <td colspan="3" contenteditable="true" id="meta-area">東京都中央区　日本橋本石町1〜4丁目・日本橋室町1〜4丁目・日本橋本町1〜4丁目・日本橋小舟町（着色部分）</td>
-    </tr>
-    <tr>
-      <th>用途</th>
-      <td contenteditable="true">貨物の集配（積卸し）</td>
-      <th>作成日</th>
-      <td contenteditable="true" id="meta-date">　</td>
-    </tr>
-  </table>
-
-  <div class="map-frame">
-    <div id="map"></div>
-    <div class="north"><span>▲</span>N</div>
-  </div>
-
-  <div class="bottom">
-    <div class="legend">
-      <h4>凡例</h4>
-      <ul id="legend-list" style="margin:0;padding:0"></ul>
-    </div>
-    <div class="locator-box">
-      <div id="locator"></div>
-      <div class="locator-cap">位置図（広域）</div>
-    </div>
-    <div class="spot-box">
-      <h4>駐車予定地点</h4>
-      <table class="spots" id="spot-table" hidden>
-        <thead><tr><th class="no">No</th><th>場所・備考</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <p class="spots-empty" id="spot-empty">「駐車予定地点を追加」を押してから地図をクリックすると、番号付きで記入できます。</p>
-    </div>
-  </div>
-
-  <div class="foot">
-    <span>背景地図：国土地理院「地理院タイル」／区域界：政府統計の総合窓口(e-Stat) 小地域境界データ</span>
-    <span>縮尺：<span id="scale-note">—</span></span>
-  </div>
-</div>
+<div id="sheets"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -300,10 +268,10 @@ const STORE_PROFILES = {
     // 初期位置は小舟町の代表点（仮）。「🔍 住所から位置」または地図クリックで実際の位置に合わせる。
     store: { lat: 35.686672, lng: 139.778364 },
     groups: [
-      { label: '日本橋本石町 1〜4丁目', color: '#d2413a', names: chome('日本橋本石町', [1, 2, 3, 4]) },
-      { label: '日本橋室町 1〜4丁目',   color: '#2f6fbf', names: chome('日本橋室町',   [1, 2, 3, 4]) },
-      { label: '日本橋本町 1〜4丁目',   color: '#1f8f52', names: chome('日本橋本町',   [1, 2, 3, 4]) },
-      { label: '日本橋小舟町',          color: '#d98a20', names: ['日本橋小舟町'] }
+      { key: 'hongokucho', label: '日本橋本石町 1〜4丁目', color: '#d2413a', names: chome('日本橋本石町', [1, 2, 3, 4]) },
+      { key: 'muromachi',  label: '日本橋室町 1〜4丁目',   color: '#2f6fbf', names: chome('日本橋室町',   [1, 2, 3, 4]) },
+      { key: 'honcho',     label: '日本橋本町 1〜4丁目',   color: '#1f8f52', names: chome('日本橋本町',   [1, 2, 3, 4]) },
+      { key: 'kobunacho',  label: '日本橋小舟町',          color: '#d98a20', names: ['日本橋小舟町'] }
     ]
   },
   hamacho: {
@@ -311,9 +279,9 @@ const STORE_PROFILES = {
     address: '東京都中央区日本橋浜町',
     store: { lat: 35.687862, lng: 139.78833 },
     groups: [
-      { label: '日本橋浜町 1〜3丁目', color: '#d2413a', names: chome('日本橋浜町', [1, 2, 3]) },
-      { label: '東日本橋 1〜2丁目',   color: '#2f6fbf', names: chome('東日本橋',   [1, 2]) },
-      { label: '日本橋中洲',          color: '#d98a20', names: ['日本橋中洲'] }
+      { key: 'hamacho',       label: '日本橋浜町 1〜3丁目', color: '#d2413a', names: chome('日本橋浜町', [1, 2, 3]) },
+      { key: 'higashinihon',  label: '東日本橋 1〜2丁目',   color: '#2f6fbf', names: chome('東日本橋',   [1, 2]) },
+      { key: 'nakasu',        label: '日本橋中洲',          color: '#d98a20', names: ['日本橋中洲'] }
     ]
   }
 };
@@ -331,124 +299,402 @@ const GSI = {
 const GSI_ATTR = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>';
 const STORE_KEY = 'parking-permit-store-v1:' + PROFILE_KEY;
 const SPOT_KEY  = 'parking-permit-spots-v1:' + PROFILE_KEY;
+const SOURCE_NOTE = '背景地図：国土地理院「地理院タイル」／区域界：政府統計の総合窓口(e-Stat) 小地域境界データ';
 
 const GROUP_BY_NAME = new Map();
 AREA_GROUPS.forEach(g => g.names.forEach(n => GROUP_BY_NAME.set(n, g)));
 const groupOf = (name) => GROUP_BY_NAME.get(name) || null;
 const isTarget = (name) => GROUP_BY_NAME.has(name);
+const featuresOf = (group) => BOUNDARIES.features.filter(f => group.names.includes(f.properties.name));
 
-/* ===== 地図本体 ===== */
-const map = L.map('map', { zoomSnap: 0.25, zoomControl: true, attributionControl: true });
-let baseLayer = L.tileLayer(GSI.pale.url, { maxZoom: GSI.pale.max, maxNativeZoom: GSI.pale.max, attribution: GSI_ATTR }).addTo(map);
-L.control.scale({ imperial: false, maxWidth: 140 }).addTo(map);
-
-const targetLayer = L.geoJSON(BOUNDARIES, {
-  filter: f => isTarget(f.properties.name),
-  style: f => ({ color: groupOf(f.properties.name).color, weight: 2.5, opacity: 1, fillColor: groupOf(f.properties.name).color, fillOpacity: 0.22 })
-}).addTo(map);
-
-L.geoJSON(BOUNDARIES, {
-  filter: f => !isTarget(f.properties.name),
-  style: { color: '#7a7a7a', weight: 1, opacity: 0.65, fill: false, dashArray: '4 3' }
-}).addTo(map);
-
-BOUNDARIES.features.filter(f => isTarget(f.properties.name)).forEach(f => {
-  const p = f.properties;
-  L.marker([p.centerLat, p.centerLng], {
-    interactive: false,
-    icon: L.divIcon({ className: '', html: '<div class="town-label">' + p.shortName + '</div>', iconSize: [90, 16], iconAnchor: [45, 8] })
-  }).addTo(map);
-});
-
-const AREA_BOUNDS = targetLayer.getBounds();
-const fitArea = () => map.fitBounds(AREA_BOUNDS, { padding: [12, 12] });
-fitArea();
-
-/* ===== 位置図（広域） ===== */
-const locator = L.map('locator', {
-  zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
-  doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false
-});
-L.tileLayer(GSI.pale.url, { maxZoom: 18 }).addTo(locator);
-L.geoJSON(BOUNDARIES, { filter: f => isTarget(f.properties.name), style: { color: '#c0272d', weight: 1, fillColor: '#c0272d', fillOpacity: 0.45 } }).addTo(locator);
-locator.setView(AREA_BOUNDS.getCenter(), 13);
-
-/* ===== 営業所マーカー ===== */
 let store = loadJSON(STORE_KEY) || Object.assign({}, STORE_DEFAULT);
-const storeIcon = () => L.divIcon({
-  className: '',
-  html: '<div class="store-pin">★<b>' + escapeHTML(store.name) + '</b></div>',
-  iconSize: [120, 44], iconAnchor: [60, 14]
-});
-const storeMarker = L.marker([store.lat, store.lng], { icon: storeIcon(), draggable: false, zIndexOffset: 1000 }).addTo(map);
-storeMarker.on('dragend', () => {
-  const ll = storeMarker.getLatLng();
-  store.lat = ll.lat; store.lng = ll.lng;
-  saveJSON(STORE_KEY, store);
-});
-
-/* ===== 駐車予定地点 ===== */
 let spots = loadJSON(SPOT_KEY) || [];
-const spotMarkers = [];
-function renderSpots() {
-  spotMarkers.forEach(m => map.removeLayer(m));
-  spotMarkers.length = 0;
-  const tbody = document.querySelector('#spot-table tbody');
-  tbody.innerHTML = '';
-  spots.forEach((s, i) => {
-    const m = L.marker([s.lat, s.lng], {
-      draggable: true, zIndexOffset: 900,
-      icon: L.divIcon({ className: '', html: '<div class="spot-pin">' + (i + 1) + '</div>', iconSize: [22, 22], iconAnchor: [11, 11] })
-    }).addTo(map);
-    m.on('dragend', () => { const ll = m.getLatLng(); s.lat = ll.lat; s.lng = ll.lng; saveJSON(SPOT_KEY, spots); });
-    m.on('contextmenu', () => { spots.splice(i, 1); saveJSON(SPOT_KEY, spots); renderSpots(); });
-    spotMarkers.push(m);
+let baseKey = 'pale';
+const sheets = [];
 
+/* ===== 用紙（シート）を組み立てる ===== */
+const SHEET_SPECS = [{ kind: 'overview', group: null, caption: '全体図' }].concat(
+  AREA_GROUPS.map(g => ({ kind: 'town', group: g, caption: g.label }))
+);
+
+const sheetsRoot = document.getElementById('sheets');
+SHEET_SPECS.forEach((spec, index) => sheets.push(buildSheet(spec, index)));
+
+function buildSheet(spec, index) {
+  const caption = document.createElement('div');
+  caption.className = 'sheet-caption';
+  caption.textContent = (index + 1) + '枚目：' + spec.caption +
+    (spec.kind === 'overview' ? '（申請区域の全体）' : '（拡大図）');
+  sheetsRoot.appendChild(caption);
+
+  const el = document.createElement('div');
+  el.className = 'sheet';
+  el.dataset.kind = spec.kind;
+  const areaText = spec.kind === 'overview'
+    ? '東京都中央区　' + AREA_GROUPS.map(g => g.label).join('・') + '（着色部分）'
+    : '東京都中央区　' + spec.group.label + '（着色部分）';
+  const titleText = spec.kind === 'overview'
+    ? '駐 車 許 可 申 請　区 域 図'
+    : '駐車許可申請 区域図（' + spec.group.label + '）';
+  el.innerHTML = `
+    <div class="sheet-title" contenteditable="true">${escapeHTML(titleText)}</div>
+    <table class="meta">
+      <tr>
+        <th>営業所</th><td class="meta-store" contenteditable="true">${escapeHTML(PROFILE.name)}</td>
+        <th>所在地</th><td class="meta-addr" contenteditable="true">${escapeHTML(PROFILE.address)}</td>
+      </tr>
+      <tr>
+        <th>対象区域</th><td colspan="3" class="meta-area" contenteditable="true">${escapeHTML(areaText)}</td>
+      </tr>
+      <tr>
+        <th>用途</th><td contenteditable="true">貨物の集配（積卸し）</td>
+        <th>作成日</th><td class="meta-date"></td>
+      </tr>
+    </table>
+    <div class="map-frame">
+      <div class="map"></div>
+      <div class="north"><span>▲</span>N</div>
+    </div>
+    <div class="bottom">
+      <div class="legend"><h4>凡例</h4><ul></ul></div>
+      <div class="locator-box"><div class="locator"></div><div class="locator-cap">位置図（${spec.kind === 'overview' ? '広域' : '申請区域全体'}）</div></div>
+      <div class="spot-box">
+        <h4>駐車予定地点${spec.kind === 'overview' ? '' : '（この区域内）'}</h4>
+        <table class="spots" hidden><thead><tr><th class="no">No</th><th>場所・備考</th></tr></thead><tbody></tbody></table>
+        <p class="spots-empty"></p>
+      </div>
+    </div>
+    <div class="foot"><span>${SOURCE_NOTE}</span><span>縮尺：<span class="scale-note">—</span></span></div>
+  `;
+  sheetsRoot.appendChild(el);
+
+  const sheet = { spec, el, index };
+  setupSheetMap(sheet);
+  setupSheetLocator(sheet);
+  fillLegend(sheet);
+  el.querySelector('.meta-date').textContent = formatToday();
+  return sheet;
+}
+
+/* ===== 各シートの主図 ===== */
+function setupSheetMap(sheet) {
+  const spec = sheet.spec;
+  const map = L.map(sheet.el.querySelector('.map'), { zoomSnap: 0.25, attributionControl: true });
+  sheet.map = map;
+  sheet.base = L.tileLayer(GSI[baseKey].url, { maxZoom: GSI[baseKey].max, maxNativeZoom: GSI[baseKey].max, attribution: GSI_ATTR }).addTo(map);
+  L.control.scale({ imperial: false, maxWidth: 140 }).addTo(map);
+
+  const subject = spec.kind === 'town' ? spec.group : null;
+  const inSubject = (name) => !subject || groupOf(name) === subject;
+
+  // 対象区域（このシートの主役）
+  const mainLayer = L.geoJSON(BOUNDARIES, {
+    filter: f => isTarget(f.properties.name) && inSubject(f.properties.name),
+    style: f => {
+      const g = groupOf(f.properties.name);
+      return { color: g.color, weight: subject ? 3 : 2.5, opacity: 1, fillColor: g.color, fillOpacity: subject ? 0.2 : 0.22 };
+    }
+  }).addTo(map);
+
+  // 申請区域のうち、このシートの主役ではない町（薄く表示）
+  if (subject) {
+    L.geoJSON(BOUNDARIES, {
+      filter: f => isTarget(f.properties.name) && !inSubject(f.properties.name),
+      style: f => ({ color: groupOf(f.properties.name).color, weight: 1.2, opacity: .8, fillColor: groupOf(f.properties.name).color, fillOpacity: 0.06 })
+    }).addTo(map);
+  }
+
+  // 申請区域外
+  L.geoJSON(BOUNDARIES, {
+    filter: f => !isTarget(f.properties.name),
+    style: { color: '#7a7a7a', weight: 1, opacity: 0.65, fill: false, dashArray: '4 3' }
+  }).addTo(map);
+
+  sheet.townLabels = BOUNDARIES.features.filter(f => isTarget(f.properties.name)).map(f => {
+    const p = f.properties;
+    const sub = subject && groupOf(p.name) !== subject;
+    const latlng = L.latLng(p.centerLat, p.centerLng);
+    const marker = L.marker(latlng, {
+      interactive: false,
+      icon: L.divIcon({ className: '', html: '<div class="town-label' + (sub ? ' sub' : '') + '">' + escapeHTML(sub ? p.name : p.shortName) + '</div>', iconSize: [110, 16], iconAnchor: [55, 8] })
+    }).addTo(map);
+    return { marker, latlng };
+  });
+
+  sheet.bounds = mainLayer.getBounds();
+  sheet.fit = () => map.fitBounds(sheet.bounds, { padding: [12, 12] });
+  sheet.fit();
+
+  const scaleNote = sheet.el.querySelector('.scale-note');
+  const updateScale = () => {
+    const c = map.getCenter();
+    const metersPerPixel = 40075016.686 * Math.cos(c.lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8);
+    const denom = Math.round(metersPerPixel / 0.00026458333 / 100) * 100;   // 1px ≒ 0.264583mm
+    scaleNote.textContent = '約 1 : ' + denom.toLocaleString();
+  };
+  map.on('zoomend moveend', () => { updateScale(); hideLabelsUnderStore(sheet); });
+  updateScale();
+
+  if (spec.kind === 'overview') {
+    map.on('click', onOverviewClick);
+  }
+}
+
+/* ===== 位置図（小さい方） ===== */
+function setupSheetLocator(sheet) {
+  const locator = L.map(sheet.el.querySelector('.locator'), {
+    zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
+    doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false
+  });
+  L.tileLayer(GSI[baseKey].url, { maxZoom: 18 }).addTo(locator);
+  sheet.locatorBase = locator;
+
+  const all = L.geoJSON(BOUNDARIES, {
+    filter: f => isTarget(f.properties.name),
+    style: f => (sheet.spec.kind === 'town' && groupOf(f.properties.name) === sheet.spec.group)
+      ? { color: '#c0272d', weight: 1.5, fillColor: '#c0272d', fillOpacity: 0.75 }
+      : { color: '#8a8a8a', weight: 1, fillColor: '#8a8a8a', fillOpacity: 0.25 }
+  }).addTo(locator);
+
+  if (sheet.spec.kind === 'overview') {
+    locator.setView(all.getBounds().getCenter(), 13);
+  } else {
+    locator.fitBounds(all.getBounds(), { padding: [4, 4] });
+  }
+}
+
+function fillLegend(sheet) {
+  const groups = sheet.spec.kind === 'overview' ? AREA_GROUPS : [sheet.spec.group];
+  const rows = groups.map(g =>
+    '<li><span class="swatch" style="background:' + g.color + '55;border-color:' + g.color + '"></span>' + escapeHTML(g.label) + '</li>'
+  );
+  if (sheet.spec.kind === 'town') {
+    rows.push('<li><span class="swatch" style="background:#ffffff;border-color:#9a9a9a"></span>申請区域のうち他の町</li>');
+  }
+  rows.push('<li><span class="star">★</span>営業所（申請者）</li>');
+  rows.push('<li><span class="spot-pin" style="width:16px;height:16px;line-height:13px;font-size:10px">1</span>駐車予定地点</li>');
+  sheet.el.querySelector('.legend ul').innerHTML = rows.join('');
+}
+
+/* ===== 営業所★と駐車予定地点（全シートに反映） ===== */
+function storeIconHTML() {
+  return '<div class="store-pin">★<b>' + escapeHTML(store.name) + '</b></div>';
+}
+
+/* 町名ラベルが営業所★と重なったら、そのラベルだけ隠す */
+function hideLabelsUnderStore(sheet) {
+  if (!sheet.townLabels) return;
+  const p = sheet.map.latLngToContainerPoint([store.lat, store.lng]);
+  sheet.townLabels.forEach(({ marker, latlng }) => {
+    const q = sheet.map.latLngToContainerPoint(latlng);
+    const el = marker.getElement();
+    if (el) el.style.visibility = (Math.abs(p.x - q.x) < 62 && Math.abs(p.y - q.y) < 24) ? 'hidden' : '';
+  });
+}
+
+function refreshStore() {
+  sheets.forEach(sheet => {
+    const icon = L.divIcon({ className: '', html: storeIconHTML(), iconSize: [120, 44], iconAnchor: [60, 14] });
+    if (!sheet.storeMarker) {
+      sheet.storeMarker = L.marker([store.lat, store.lng], { icon, zIndexOffset: 1000, draggable: sheet.spec.kind === 'overview' }).addTo(sheet.map);
+      if (sheet.spec.kind === 'overview') {
+        sheet.storeMarker.dragging.disable();
+        sheet.storeMarker.on('dragend', () => {
+          const ll = sheet.storeMarker.getLatLng();
+          store.lat = ll.lat; store.lng = ll.lng;
+          saveJSON(STORE_KEY, store);
+          refreshStore();
+        });
+      }
+    } else {
+      sheet.storeMarker.setIcon(icon);
+      sheet.storeMarker.setLatLng([store.lat, store.lng]);
+    }
+    hideLabelsUnderStore(sheet);
+  });
+}
+
+function refreshSpots() {
+  sheets.forEach(sheet => {
+    (sheet.spotMarkers || []).forEach(m => sheet.map.removeLayer(m));
+    sheet.spotMarkers = [];
+    const editable = sheet.spec.kind === 'overview';
+    spots.forEach((s, i) => {
+      const m = L.marker([s.lat, s.lng], {
+        draggable: editable, zIndexOffset: 900,
+        icon: L.divIcon({ className: '', html: '<div class="spot-pin">' + (i + 1) + '</div>', iconSize: [22, 22], iconAnchor: [11, 11] })
+      }).addTo(sheet.map);
+      if (editable) {
+        m.on('dragend', () => { const ll = m.getLatLng(); s.lat = ll.lat; s.lng = ll.lng; saveJSON(SPOT_KEY, spots); refreshSpots(); });
+        m.on('contextmenu', () => { spots.splice(i, 1); saveJSON(SPOT_KEY, spots); refreshSpots(); });
+      }
+      sheet.spotMarkers.push(m);
+    });
+    fillSpotTable(sheet);
+  });
+}
+
+function fillSpotTable(sheet) {
+  const rows = spots
+    .map((s, i) => ({ s, no: i + 1 }))
+    .filter(r => sheet.spec.kind === 'overview' || inGroup(r.s, sheet.spec.group));
+  const table = sheet.el.querySelector('table.spots');
+  const tbody = table.querySelector('tbody');
+  const empty = sheet.el.querySelector('.spots-empty');
+  tbody.innerHTML = '';
+  rows.forEach(r => {
     const tr = document.createElement('tr');
     const td1 = document.createElement('td');
-    td1.className = 'no'; td1.textContent = i + 1;
+    td1.className = 'no'; td1.textContent = r.no;
     const td2 = document.createElement('td');
     td2.contentEditable = 'true';
-    td2.textContent = s.memo || '';
-    td2.addEventListener('input', () => { s.memo = td2.textContent.trim(); saveJSON(SPOT_KEY, spots); });
+    td2.textContent = r.s.memo || '';
+    td2.addEventListener('input', () => {
+      r.s.memo = td2.textContent.trim();
+      saveJSON(SPOT_KEY, spots);
+      sheets.forEach(other => { if (other !== sheet) fillSpotTable(other); });
+    });
     tr.append(td1, td2);
     tbody.appendChild(tr);
   });
-  document.getElementById('spot-table').hidden = spots.length === 0;
-  document.getElementById('spot-empty').hidden = spots.length > 0;
+  table.hidden = rows.length === 0;
+  empty.hidden = rows.length > 0;
+  empty.textContent = sheet.spec.kind === 'overview'
+    ? '「駐車予定地点を追加」を押してから地図をクリックすると、番号付きで記入できます。'
+    : 'この区域内に登録された駐車予定地点はありません。';
 }
-renderSpots();
 
-/* ===== 操作モード ===== */
+function inGroup(spot, group) {
+  return featuresOf(group).some(f => pointInFeature(spot.lng, spot.lat, f));
+}
+
+function pointInFeature(lng, lat, feature) {
+  const g = feature.geometry;
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  return polys.some(rings =>
+    pointInRing(lng, lat, rings[0]) && !rings.slice(1).some(hole => pointInRing(lng, lat, hole))
+  );
+}
+
+function pointInRing(lng, lat, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+    if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+refreshStore();
+refreshSpots();
+
+/* ===== 操作モード（1枚目の全体図で操作する） ===== */
 let mode = null;   // null / 'store' / 'spot'
 const btnStore = document.getElementById('btn-store');
 const btnSpot = document.getElementById('btn-spot');
+const overviewSheet = sheets[0];
+
 function setMode(next) {
   mode = (mode === next) ? null : next;
   btnStore.classList.toggle('on', mode === 'store');
   btnSpot.classList.toggle('on', mode === 'spot');
-  storeMarker.dragging[mode === 'store' ? 'enable' : 'disable']();
-  map.getContainer().style.cursor = mode ? 'crosshair' : '';
+  overviewSheet.storeMarker.dragging[mode === 'store' ? 'enable' : 'disable']();
+  overviewSheet.map.getContainer().style.cursor = mode ? 'crosshair' : '';
+  if (mode) overviewSheet.el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 btnStore.addEventListener('click', () => setMode('store'));
 btnSpot.addEventListener('click', () => setMode('spot'));
 
-map.on('click', (e) => {
+function onOverviewClick(e) {
   if (mode === 'store') {
     store.lat = e.latlng.lat; store.lng = e.latlng.lng;
-    storeMarker.setLatLng(e.latlng);
     saveJSON(STORE_KEY, store);
+    refreshStore();
   } else if (mode === 'spot') {
     spots.push({ lat: e.latlng.lat, lng: e.latlng.lng, memo: '' });
     saveJSON(SPOT_KEY, spots);
-    renderSpots();
+    refreshSpots();
   }
+}
+
+/* ===== ツールバー ===== */
+document.getElementById('btn-clear').addEventListener('click', () => {
+  if (!spots.length || !confirm('駐車予定地点をすべて消去します。よろしいですか？')) return;
+  spots = [];
+  saveJSON(SPOT_KEY, spots);
+  refreshSpots();
 });
 
-/* 所在地欄の住所から営業所★の位置を合わせる（サイト上に置いたときのみ利用可） */
+document.getElementById('btn-fit').addEventListener('click', () => {
+  setMode(null);
+  sheets.forEach(s => { s.map.invalidateSize(); s.fit(); });
+});
+
+document.getElementById('btn-print').addEventListener('click', () => {
+  setMode(null);
+  sheets.forEach(s => { s.map.invalidateSize(); s.locatorBase.invalidateSize(); });
+  setTimeout(() => window.print(), 300);
+});
+
+document.getElementById('basemap').addEventListener('change', (e) => {
+  baseKey = e.target.value;
+  const conf = GSI[baseKey];
+  sheets.forEach(s => {
+    s.map.removeLayer(s.base);
+    s.base = L.tileLayer(conf.url, { maxZoom: conf.max, maxNativeZoom: conf.max, attribution: GSI_ATTR }).addTo(s.map);
+    s.base.bringToBack();
+  });
+});
+
+/* 印刷する用紙の選択 */
+const printMode = document.getElementById('printmode');
+const townCount = AREA_GROUPS.length;
+printMode.innerHTML = [
+  ['all', '全体図＋町別（' + (townCount + 1) + '枚）'],
+  ['overview', '全体図のみ（1枚）'],
+  ['towns', '町別のみ（' + townCount + '枚）']
+].map(([v, t]) => '<option value="' + v + '">' + t + '</option>').join('');
+printMode.addEventListener('change', applyPrintMode);
+function applyPrintMode() {
+  const value = printMode.value;
+  let first = null;
+  sheets.forEach(s => {
+    const hidden = (value === 'overview' && s.spec.kind !== 'overview') ||
+                   (value === 'towns' && s.spec.kind !== 'town');
+    s.el.classList.toggle('hidden-sheet', hidden);
+    s.el.previousElementSibling.classList.toggle('hidden-caption', hidden);
+    s.el.previousElementSibling.style.display = hidden ? 'none' : '';
+    s.el.classList.toggle('first-print', false);
+    if (!hidden && !first) first = s;
+  });
+  if (first) first.el.classList.add('first-print');
+  sheets.forEach(s => { s.map.invalidateSize(); s.locatorBase.invalidateSize(); });
+}
+applyPrintMode();
+
+/* 営業所プロファイル */
+const profileSelect = document.getElementById('profile');
+profileSelect.innerHTML = Object.entries(STORE_PROFILES)
+  .map(([k, v]) => '<option value="' + k + '"' + (k === PROFILE_KEY ? ' selected' : '') + '>' + v.name + '</option>').join('');
+profileSelect.addEventListener('change', () => { location.search = '?store=' + profileSelect.value; });
+
+/* 営業所名は全シートで同期 */
+document.querySelectorAll('.meta-store').forEach(cell => {
+  cell.addEventListener('input', () => {
+    store.name = cell.textContent.trim() || STORE_DEFAULT.name;
+    saveJSON(STORE_KEY, store);
+    document.querySelectorAll('.meta-store').forEach(other => {
+      if (other !== cell) other.textContent = store.name;
+    });
+    refreshStore();
+  });
+});
+if (store.name) document.querySelectorAll('.meta-store').forEach(c => { c.textContent = store.name; });
+
+/* 所在地の住所から★の位置を合わせる（サイト上に置いたときのみ利用可） */
 const GEOCODE_ENDPOINT = '../api/geocode_address.php';
 document.getElementById('btn-geocode').addEventListener('click', async () => {
-  const address = document.getElementById('meta-addr').textContent.trim();
+  const address = overviewSheet.el.querySelector('.meta-addr').textContent.trim();
   if (!address) { alert('所在地欄に住所を入力してください。'); return; }
   const btn = document.getElementById('btn-geocode');
   btn.disabled = true;
@@ -464,9 +710,9 @@ document.getElementById('btn-geocode').addEventListener('click', async () => {
     }
     setMode(null);
     store.lat = data.lat; store.lng = data.lng;
-    storeMarker.setLatLng([data.lat, data.lng]);
     saveJSON(STORE_KEY, store);
-    map.panTo([data.lat, data.lng]);
+    refreshStore();
+    overviewSheet.map.panTo([data.lat, data.lng]);
     alert('住所の位置に合わせました。\n' + (data.formatted || address) +
       (data.approx ? '\n\n※おおよその位置です。番地までの精度が必要な場合は「📍 店舗位置を設定」で微調整してください。' : ''));
   } catch (e) {
@@ -478,67 +724,19 @@ document.getElementById('btn-geocode').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('btn-clear').addEventListener('click', () => {
-  if (!spots.length || !confirm('駐車予定地点をすべて消去します。よろしいですか？')) return;
-  spots = [];
-  saveJSON(SPOT_KEY, spots);
-  renderSpots();
-});
-document.getElementById('btn-fit').addEventListener('click', () => { setMode(null); fitArea(); });
-document.getElementById('btn-print').addEventListener('click', () => { setMode(null); window.print(); });
-document.getElementById('basemap').addEventListener('change', (e) => {
-  const conf = GSI[e.target.value];
-  map.removeLayer(baseLayer);
-  baseLayer = L.tileLayer(conf.url, { maxZoom: conf.max, maxNativeZoom: conf.max, attribution: GSI_ATTR }).addTo(map);
-  baseLayer.bringToBack();
-});
-
-/* ===== 営業所名の同期・日付・凡例・縮尺 ===== */
-const profileSelect = document.getElementById('profile');
-profileSelect.innerHTML = Object.entries(STORE_PROFILES)
-  .map(([k, v]) => '<option value="' + k + '"' + (k === PROFILE_KEY ? ' selected' : '') + '>' + v.name + '</option>').join('');
-profileSelect.addEventListener('change', () => {
-  location.search = '?store=' + profileSelect.value;
-});
-
-const metaStore = document.getElementById('meta-store');
-metaStore.textContent = PROFILE.name;
-document.getElementById('meta-addr').textContent = PROFILE.address;
-document.getElementById('meta-area').textContent =
-  '東京都中央区　' + AREA_GROUPS.map(g => g.label).join('・') + '（着色部分）';
-
-metaStore.addEventListener('input', () => {
-  store.name = metaStore.textContent.trim() || STORE_DEFAULT.name;
-  storeMarker.setIcon(storeIcon());
-  saveJSON(STORE_KEY, store);
-});
-if (store.name && store.name !== metaStore.textContent.trim()) metaStore.textContent = store.name;
-
-const today = new Date();
 document.title = '駐車許可申請 区域図 - ' + PROFILE.name;
-document.getElementById('meta-date').textContent =
-  today.getFullYear() + '年' + (today.getMonth() + 1) + '月' + today.getDate() + '日';
-
-document.getElementById('legend-list').innerHTML =
-  AREA_GROUPS.map(g =>
-    '<li><span class="swatch" style="background:' + g.color + '55;border-color:' + g.color + '"></span>' + g.label + '</li>'
-  ).join('') +
-  '<li><span class="star">★</span>営業所（申請者）</li>' +
-  '<li><span class="spot-pin" style="width:16px;height:16px;line-height:13px;font-size:10px">1</span>駐車予定地点</li>';
-
-function updateScaleNote() {
-  const c = map.getCenter();
-  const metersPerPixel = 40075016.686 * Math.cos(c.lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8);
-  const denom = Math.round(metersPerPixel / 0.00026458333 / 100) * 100;  // 1px ≒ 0.264583mm
-  document.getElementById('scale-note').textContent = '約 1 : ' + denom.toLocaleString();
-}
-map.on('zoomend moveend', updateScaleNote);
-updateScaleNote();
-
-window.addEventListener('beforeprint', () => { map.invalidateSize(); locator.invalidateSize(); });
-setTimeout(() => { map.invalidateSize(); locator.invalidateSize(); fitArea(); }, 200);
+window.addEventListener('beforeprint', () => {
+  sheets.forEach(s => { s.map.invalidateSize(); s.locatorBase.invalidateSize(); });
+});
+setTimeout(() => {
+  sheets.forEach(s => { s.map.invalidateSize(); s.locatorBase.invalidateSize(); s.fit(); });
+}, 200);
 
 /* ===== ユーティリティ ===== */
+function formatToday() {
+  const d = new Date();
+  return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+}
 function loadJSON(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; } }
 function saveJSON(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
 function escapeHTML(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
