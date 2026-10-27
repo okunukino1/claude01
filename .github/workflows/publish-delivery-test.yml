@@ -1,0 +1,180 @@
+name: Publish delivery test single file
+run-name: Publish delivery test.126 ${{ inputs.candidate_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Approved immutable test.126 commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: delivery-map-test-single-file
+  cancel-in-progress: false
+
+env:
+  APPROVED_CANDIDATE: 50db60284aa6b7003c11302337ec223c61fed215
+  APPROVED_BASE: 258ad7e356706d5193f49a5c19d62bf9c6eab093
+  APPROVED_HTML_SHA256: 6ab9f2bbda1f93d5c582be8ca5d06ff31d3ccecd0b296a1c98293915815d150d
+  CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate approved candidate
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" == "$APPROVED_CANDIDATE" ]]
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify source scope and regression tests
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$APPROVED_BASE" HEAD
+          git diff --name-only "$APPROVED_BASE" HEAD > /tmp/delivery-test-changed-paths
+          if grep -Ev '^(delivery_map_mapbox/test/index.html|delivery_map_mapbox/CODEX_CHANGES.md|scripts/test-delivery-block-numbers.mjs|scripts/test-delivery-geocoding.mjs|scripts/test-delivery-gps-map-return.mjs)$' /tmp/delivery-test-changed-paths; then
+            echo 'Candidate contains unexpected paths.' >&2
+            exit 1
+          fi
+          if grep -q 'development-requests' delivery_map_mapbox/test/index.html; then exit 1; fi
+          test "$(grep -c 'v2026.06.24-test.126' delivery_map_mapbox/test/index.html)" = 3
+          node -e 'const fs=require("fs"),c=require("crypto"),a=require("assert/strict");const s=fs.readFileSync("delivery_map_mapbox/test/index.html","utf8").replaceAll("\r\n","\n");a.equal(c.createHash("sha256").update(s).digest("hex"),process.env.APPROVED_HTML_SHA256);'
+          node --test scripts/test-delivery-block-numbers.mjs scripts/test-delivery-geocoding.mjs
+          node scripts/test-delivery-gps-map-return.mjs
+          mkdir -p /tmp/delivery-test-publication
+          git show "$APPROVED_BASE:delivery_map_mapbox/test/index.html" > /tmp/delivery-test-publication/expected-test.html
+          git show "$APPROVED_BASE:delivery_map_mapbox/index.html" > /tmp/delivery-test-publication/expected-stable.html
+
+      - name: Preserve and verify current public files
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 -H 'Cache-Control: no-cache' "https://rys-services.com/delivery_map_mapbox/test/?before=$GITHUB_RUN_ID" -o /tmp/delivery-test-publication/before.html
+          curl --fail --silent --show-error --max-time 30 -H 'Cache-Control: no-cache' "https://rys-services.com/delivery_map_mapbox/?before=$GITHUB_RUN_ID" -o /tmp/delivery-test-publication/stable-before.html
+          node <<'NODE'
+          const fs=require('fs'),a=require('assert/strict');
+          const read=f=>fs.readFileSync('/tmp/delivery-test-publication/'+f,'utf8').replaceAll('\r\n','\n');
+          a.equal(read('before.html'),read('expected-test.html'),'Public test changed; refusing to overwrite');
+          a.equal(read('stable-before.html'),read('expected-stable.html'),'Public stable differs from baseline');
+          NODE
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: delivery-test-126-before
+          path: /tmp/delivery-test-publication/
+          retention-days: 30
+
+      - name: Publish only test index with verified FTPS staging
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR }}
+        run: |
+          node <<'NODE'
+          const fs=require('fs'),path=require('path'),crypto=require('crypto'),{spawnSync}=require('child_process');
+          const dir='/tmp/delivery-test-publication',source='delivery_map_mapbox/test/index.html';
+          const normalize=b=>Buffer.isBuffer(b)?b.toString('utf8').replaceAll('\r\n','\n'):b.replaceAll('\r\n','\n');
+          const digest=b=>crypto.createHash('sha256').update(normalize(b)).digest('hex');
+          const before=fs.readFileSync(path.join(dir,'before.html'));
+          const stable=fs.readFileSync(path.join(dir,'stable-before.html'));
+          const candidate=fs.readFileSync(source),expected=process.env.APPROVED_HTML_SHA256;
+          const id=process.env.GITHUB_RUN_ID,temporary=`index.html.test-126-${id}.tmp`,rollback=`index.html.rollback-126-${id}.tmp`;
+          const result={version:'v2026.06.24-test.126',candidate:process.env.CANDIDATE_SHA,published:false,filesPublished:0,realApiCalls:0,cleanupComplete:true};
+          let credentialsValid=false,stagingAttempted=false,promotionAttempted=false;
+          const quote=v=>'"'+String(v).replaceAll('\\','\\\\').replaceAll('"','\\"')+'"';
+          let root;
+          function ftp(filename,options=[]) {
+            const lines=['silent','show-error','fail','ssl-reqd','connect-timeout = 20','max-time = 60','retry = 0',
+              'url = '+quote(`ftp://${process.env.FTP_SERVER}/${root}/test/${filename}`),
+              'user = '+quote(process.env.FTP_USERNAME+':'+process.env.FTP_PASSWORD)];
+            for(const [key,value] of options) lines.push(value===true?key:key+' = '+quote(value));
+            const call=spawnSync('curl',['-q','--config','-'],{input:lines.join('\n')+'\n',encoding:'utf8',timeout:70000,maxBuffer:2*1024*1024});
+            if(call.error||call.status!==0) {
+              let details=String(call.stderr||call.error?.message||'').slice(0,600);
+              for(const key of ['FTP_PASSWORD','FTP_USERNAME','FTP_SERVER','FTP_REMOTE_DIR']) if(process.env[key]) details=details.replaceAll(process.env[key],'[redacted]');
+              throw new Error(`FTPS operation failed (curl ${call.status}): ${details}`);
+            }
+            return call.stdout;
+          }
+          async function http(relative,label) {
+            const response=await fetch('https://rys-services.com/delivery_map_mapbox/'+relative+'?publication='+id+'-'+label,{headers:{'Cache-Control':'no-cache'},signal:AbortSignal.timeout(30000)});
+            if(!response.ok) throw new Error(`Public verification failed: ${label} HTTP ${response.status}`);
+            return Buffer.from(await response.arrayBuffer());
+          }
+          function requireHash(actual,wanted,label) {if(digest(actual)!==digest(wanted)) throw new Error(label+' hash mismatch');}
+          function promote(filename) {ftp('',[['quote','+RNFR '+filename],['quote','+RNTO index.html'],['list-only',true],['output','/dev/null']]);}
+          (async()=>{
+            try {
+              if(!/^\d+$/.test(id)) throw new Error('Invalid run identifier');
+              root=String(process.env.FTP_REMOTE_DIR||'').replace(/^\.\//,'').replace(/^\/+/,'').replace(/\/+$/,'');
+              if(process.env.FTP_SERVER!=='www1106.onamae.ne.jp'||root!=='rys-services.com/delivery_map_mapbox') throw new Error('FTP destination is outside the approved site');
+              if(!process.env.FTP_USERNAME||!process.env.FTP_PASSWORD||/[\r\n\0]/.test(process.env.FTP_USERNAME+process.env.FTP_PASSWORD)) throw new Error('FTP credentials missing or invalid');
+              if(digest(candidate)!==expected) throw new Error('Candidate changed before publication');
+              credentialsValid=true;
+              ftp('index.html',[['output',path.join(dir,'ftp-before.html')]]);
+              requireHash(fs.readFileSync(path.join(dir,'ftp-before.html')),before,'FTP baseline');
+              stagingAttempted=true;
+              ftp(temporary,[['upload-file',source]]);
+              ftp(temporary,[['output',path.join(dir,'staged.html')]]);
+              if(!fs.readFileSync(path.join(dir,'staged.html')).equals(candidate)) throw new Error('Staged bytes differ from candidate');
+              requireHash(await http('test/','pre-promote'),before,'Current test before promotion');
+              requireHash(await http('','stable-pre-promote'),stable,'Current stable before promotion');
+              promotionAttempted=true;
+              promote(temporary);
+              const after=await http('test/','after'),direct=await http('test/index.html','direct'),stableAfter=await http('','stable-after');
+              fs.writeFileSync(path.join(dir,'after.html'),after);
+              fs.writeFileSync(path.join(dir,'direct-after.html'),direct);
+              fs.writeFileSync(path.join(dir,'stable-after.html'),stableAfter);
+              requireHash(after,candidate,'Published test');requireHash(direct,candidate,'Direct test');requireHash(stableAfter,stable,'Stable after publication');
+              Object.assign(result,{published:true,filesPublished:1,sha256:digest(after),stableUnchanged:true,transport:'FTPS',publishedAt:new Date().toISOString()});
+            } catch(error) {
+              result.error=error.message;process.exitCode=1;
+              if(promotionAttempted) {
+                try {
+                  const current=await http('test/','rollback-check');
+                  if(digest(current)===digest(candidate)) {
+                    ftp(rollback,[['upload-file',path.join(dir,'ftp-before.html')]]);
+                    ftp(rollback,[['output',path.join(dir,'rollback-staged.html')]]);
+                    if(!fs.readFileSync(path.join(dir,'rollback-staged.html')).equals(fs.readFileSync(path.join(dir,'ftp-before.html')))) throw new Error('Rollback staging mismatch');
+                    promote(rollback);
+                  } else if(digest(current)!==digest(before)) throw new Error('Third-party change detected; refusing rollback overwrite');
+                  const restored=await http('test/','rollback-after');requireHash(restored,before,'Rollback');
+                  fs.writeFileSync(path.join(dir,'restored.html'),restored);result.rollbackRestored=true;
+                } catch(rollbackError) {result.rollbackRestored=false;result.rollbackError=rollbackError.message;}
+              }
+            } finally {
+              if(credentialsValid&&stagingAttempted) {
+                try {
+                  for(const filename of [temporary,rollback]) ftp('',[['quote','-DELE '+filename],['list-only',true],['output','/dev/null']]);
+                  const names=ftp('',[['list-only',true]]).split(/\r?\n/).map(name=>name.split('/').pop());
+                  if(names.includes(temporary)||names.includes(rollback)) throw new Error('A publication temporary file remains');
+                } catch(cleanupError) {result.cleanupComplete=false;result.cleanupError=cleanupError.message;process.exitCode=1;}
+              }
+              fs.writeFileSync(path.join(dir,'result.json'),JSON.stringify(result,null,2)+'\n');
+              console.log(JSON.stringify(result));
+            }
+          })().catch(error=>{console.error(error.message);process.exitCode=1;});
+          NODE
+
+      - name: Preserve publication evidence and rollback files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: delivery-test-126-publication
+          path: /tmp/delivery-test-publication/
+          retention-days: 30
