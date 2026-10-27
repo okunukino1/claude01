@@ -123,7 +123,20 @@ jobs:
             return Buffer.from(await response.arrayBuffer());
           }
           function requireHash(actual,wanted,label) {if(digest(actual)!==digest(wanted)) throw new Error(label+' hash mismatch');}
-          function promote(filename) {ftp('',[['quote','+RNFR '+filename],['quote','+RNTO index.html'],['list-only',true],['output','/dev/null']]);}
+          function promote(filename,expectedBytes) {
+            const output=path.join(dir,filename===temporary?'ftp-after.html':'ftp-restored.html');
+            ftp('index.html',[['quote','RNFR '+root+'/test/'+filename],['quote','RNTO '+root+'/test/index.html'],['output',output]]);
+            if(!fs.readFileSync(output).equals(expectedBytes)) throw new Error('Renamed FTP file does not match expected bytes');
+          }
+          async function settledPublic(relative,label,wanted,previous) {
+            for(const delay of [0,2000,5000,10000]) {
+              if(delay) await new Promise(resolve=>setTimeout(resolve,delay));
+              const actual=await http(relative,label+'-'+delay);
+              if(digest(actual)===digest(wanted)) return actual;
+              if(digest(actual)!==digest(previous)) throw new Error(label+' returned an unexpected third-party file');
+            }
+            throw new Error(label+' did not refresh to expected bytes');
+          }
           (async()=>{
             try {
               if(!/^\d+$/.test(id)) throw new Error('Invalid run identifier');
@@ -145,11 +158,12 @@ jobs:
               ftp(temporary,[['upload-file',source]]);
               ftp(temporary,[['output',path.join(dir,'staged.html')]]);
               if(!fs.readFileSync(path.join(dir,'staged.html')).equals(candidate)) throw new Error('Staged bytes differ from candidate');
+              requireHash(await http('test/'+temporary,'public-stage'),candidate,'Staged public URL');
               requireHash(await http('test/','pre-promote'),before,'Current test before promotion');
               requireHash(await http('','stable-pre-promote'),stable,'Current stable before promotion');
               promotionAttempted=true;
-              promote(temporary);
-              const after=await http('test/','after'),direct=await http('test/index.html','direct'),stableAfter=await http('','stable-after');
+              promote(temporary,candidate);
+              const after=await settledPublic('test/','after',candidate,before),direct=await settledPublic('test/index.html','direct',candidate,before),stableAfter=await http('','stable-after');
               fs.writeFileSync(path.join(dir,'after.html'),after);
               fs.writeFileSync(path.join(dir,'direct-after.html'),direct);
               fs.writeFileSync(path.join(dir,'stable-after.html'),stableAfter);
@@ -159,14 +173,15 @@ jobs:
               result.error=error.message;process.exitCode=1;
               if(promotionAttempted) {
                 try {
-                  const current=await http('test/','rollback-check');
+                  ftp('index.html',[['output',path.join(dir,'ftp-rollback-check.html')]]);
+                  const current=fs.readFileSync(path.join(dir,'ftp-rollback-check.html'));
                   if(digest(current)===digest(candidate)) {
                     ftp(rollback,[['upload-file',path.join(dir,'ftp-before.html')]]);
                     ftp(rollback,[['output',path.join(dir,'rollback-staged.html')]]);
                     if(!fs.readFileSync(path.join(dir,'rollback-staged.html')).equals(fs.readFileSync(path.join(dir,'ftp-before.html')))) throw new Error('Rollback staging mismatch');
-                    promote(rollback);
+                    promote(rollback,fs.readFileSync(path.join(dir,'ftp-before.html')));
                   } else if(digest(current)!==digest(before)) throw new Error('Third-party change detected; refusing rollback overwrite');
-                  const restored=await http('test/','rollback-after');requireHash(restored,before,'Rollback');
+                  const restored=await settledPublic('test/','rollback-after',before,candidate);requireHash(restored,before,'Rollback');
                   fs.writeFileSync(path.join(dir,'restored.html'),restored);result.rollbackRestored=true;
                 } catch(rollbackError) {result.rollbackRestored=false;result.rollbackError=rollbackError.message;}
               }
@@ -174,7 +189,7 @@ jobs:
               if(credentialsValid&&stagingAttempted) {
                 try {
                   const present=ftp('',[['list-only',true]]).split(/\r?\n/).map(name=>name.split('/').pop());
-                  for(const filename of [temporary,rollback]) if(present.includes(filename)) ftp('',[['quote','+DELE '+filename],['list-only',true],['output','/dev/null']]);
+                  for(const filename of [temporary,rollback]) if(present.includes(filename)) ftp('index.html',[['quote','DELE '+root+'/test/'+filename],['output',path.join(dir,'cleanup-current.html')]]);
                   const names=ftp('',[['list-only',true]]).split(/\r?\n/).map(name=>name.split('/').pop());
                   if(names.includes(temporary)||names.includes(rollback)) throw new Error('A publication temporary file remains');
                 } catch(cleanupError) {result.cleanupComplete=false;result.cleanupError=cleanupError.message;process.exitCode=1;}
