@@ -8,6 +8,11 @@ on:
         description: Approved immutable test.126 commit
         required: true
         type: string
+      inspect_only:
+        description: Read-only inspection without upload or rename
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -84,6 +89,7 @@ jobs:
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR }}
+          INSPECT_ONLY: ${{ inputs.inspect_only }}
         run: |
           node <<'NODE'
           const fs=require('fs'),path=require('path'),crypto=require('crypto'),{spawnSync}=require('child_process');
@@ -127,6 +133,13 @@ jobs:
               if(digest(candidate)!==expected) throw new Error('Candidate changed before publication');
               credentialsValid=true;
               ftp('index.html',[['output',path.join(dir,'ftp-before.html')]]);
+              if(process.env.INSPECT_ONLY==='true') {
+                const current=fs.readFileSync(path.join(dir,'ftp-before.html'));
+                const names=ftp('',[['list-only',true]]).split(/\r?\n/).map(name=>name.split('/').pop());
+                Object.assign(result,{inspected:true,ftpCurrentSha256:digest(current),ftpCurrentBytes:current.length,
+                  testTemporaryFiles:names.filter(name=>/^index\.html\.(?:test|rollback)-126-\d+\.tmp$/.test(name))});
+                return;
+              }
               requireHash(fs.readFileSync(path.join(dir,'ftp-before.html')),before,'FTP baseline');
               stagingAttempted=true;
               ftp(temporary,[['upload-file',source]]);
@@ -160,7 +173,8 @@ jobs:
             } finally {
               if(credentialsValid&&stagingAttempted) {
                 try {
-                  for(const filename of [temporary,rollback]) ftp('',[['quote','-DELE '+filename],['list-only',true],['output','/dev/null']]);
+                  const present=ftp('',[['list-only',true]]).split(/\r?\n/).map(name=>name.split('/').pop());
+                  for(const filename of [temporary,rollback]) if(present.includes(filename)) ftp('',[['quote','+DELE '+filename],['list-only',true],['output','/dev/null']]);
                   const names=ftp('',[['list-only',true]]).split(/\r?\n/).map(name=>name.split('/').pop());
                   if(names.includes(temporary)||names.includes(rollback)) throw new Error('A publication temporary file remains');
                 } catch(cleanupError) {result.cleanupComplete=false;result.cleanupError=cleanupError.message;process.exitCode=1;}
