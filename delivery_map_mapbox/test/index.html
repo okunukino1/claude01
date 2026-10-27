@@ -2447,7 +2447,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.123</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.126</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2533,7 +2533,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.123</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.126</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2564,6 +2564,7 @@
       <button id="menu-toggle-neighborhoods" type="button">🗾 町丁目境界 ON/OFF</button>
       <button id="menu-toggle-addr" type="button">🏷 番地表示 ON/OFF</button>
       <button id="menu-toggle-streets-housenum" type="button">🔢 ハイフン番地 ON/OFF</button>
+      <button id="menu-toggle-block-numbers" type="button" aria-pressed="true">街区番号の強調: ON</button>
       <button id="menu-toggle-gsi" type="button">📐 番地境界線(法務省) ON/OFF</button>
       <button id="menu-refresh-banchi" type="button">🔄 番地データを再取得</button>
       <button id="menu-banchi-debug" type="button">🩺 番地表示の状態</button>
@@ -3195,7 +3196,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.123';
+const APP_VERSION = 'v2026.06.24-test.126';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -3265,6 +3266,7 @@ const LIST_COLLAPSED_KEY = 'rys-mapbox-test-list-collapsed';
 const LABEL_MODE_KEY = 'rys-mapbox-test-label-mode';
 const ADDR_VISIBLE_KEY = 'rys-mapbox-test-addr-visible';
 const STREETS_HOUSENUM_VISIBLE_KEY = 'rys-mapbox-test-streets-housenum-visible';
+const BLOCK_NUMBER_VISIBLE_KEY = 'rys-mapbox-test-block-numbers-visible-v1';
 const LAST_VIEW_KEY = 'rys-mapbox-test-last-view-v1';
 const BANCHI_CATALOG_KEY = 'rys-mapbox-test-banchi-catalog-v1';
 const BANCHI_CITY_INDEX_PREFIX = 'rys-mapbox-test-banchi-city-v1:';
@@ -3383,6 +3385,7 @@ const BANCHI_LAYER_ID = 'rys-banchi-label';
 // 基盤地図と同じ番地を大きな文字で表示する。
 const STREETS_HOUSENUM_SOURCE_ID = 'rys-streets-v8';
 const STREETS_HOUSENUM_LAYER_ID = 'rys-housenum-streets';
+const BLOCK_NUMBER_LAYER_ID = 'rys-block-number-label';
 const BANCHI_DISPLAY_MIN_ZOOM = 16.5; // ラベルを表示する最小ズーム
 const BANCHI_PREFETCH_MIN_ZOOM = 15.8; // データ先読みを始めるズーム
 const BANCHI_MIN_RADIUS_DEG = 0.012;  // 町字検索の最低半径(度) ≒ 1.2km。高ズームでも維持
@@ -3619,6 +3622,7 @@ let selectedDeliveryMetricsDateKey = '';
 let addrVisible = localStorage.getItem(ADDR_VISIBLE_KEY) !== '0'; // 既定ON
 // 保存キー名は旧仕様との互換用。現在は青いハイフン番地の表示状態を保存する。
 let hyphenBanchiVisible = localStorage.getItem(STREETS_HOUSENUM_VISIBLE_KEY) !== '0'; // 既定ON
+let blockNumberVisible = localStorage.getItem(BLOCK_NUMBER_VISIBLE_KEY) !== '0';
 
 // --- 全国対応 番地表示の状態 ---
 let banchiCatalog = null;            // [{code,pref,name,lng,lat}] 全市区町村
@@ -7656,6 +7660,59 @@ function hyphenBanchiLayerVisible() {
   return addrVisible && hyphenBanchiVisible;
 }
 
+function blockNumberLayerVisible() {
+  return addrVisible && blockNumberVisible;
+}
+
+function blockNumberLayerDefinition() {
+  const name = ['to-string', ['coalesce', ['get', 'name_ja'], ['get', 'name'], '']];
+  const number = ['to-number', name, 0];
+  return {
+    id: BLOCK_NUMBER_LAYER_ID,
+    type: 'symbol',
+    source: STREETS_HOUSENUM_SOURCE_ID,
+    'source-layer': 'place_label',
+    slot: 'top',
+    minzoom: BANCHI_DISPLAY_MIN_ZOOM,
+    // Only numbered blocks; leave town and building labels unchanged.
+    filter: ['all', ['==', ['get', 'type'], 'block'], ['>', number, 0],
+      ['==', ['%', number, 1], 0]],
+    layout: {
+      visibility: blockNumberLayerVisible() ? 'visible' : 'none',
+      'text-field': name,
+      'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'],
+        16.5, 18, 17, 20, 18, 22, 19, 24, 20, 26, 22, 28],
+      'text-letter-spacing': 0,
+      'text-anchor': 'center',
+      'text-allow-overlap': false,
+      'text-ignore-placement': false,
+      'text-padding': 4
+    },
+    paint: {
+      'text-color': '#6b1689',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 2.6,
+      'text-halo-blur': 0.25
+    }
+  };
+}
+
+function addBlockNumberLayer() {
+  if (!map || !map.getSource(STREETS_HOUSENUM_SOURCE_ID) || map.getLayer(BLOCK_NUMBER_LAYER_ID)) return;
+  const layer = blockNumberLayerDefinition();
+  try {
+    map.addLayer(layer);
+  } catch (error) {
+    try {
+      const { slot, ...fallback } = layer;
+      map.addLayer(fallback);
+    } catch (fallbackError) {
+      banchiSetError('街区番号レイヤー追加', fallbackError);
+    }
+  }
+}
+
 function addStreetsHousenumLayer() {
   if (!map) return;
   if (!map.getSource(STREETS_HOUSENUM_SOURCE_ID)) {
@@ -7724,6 +7781,7 @@ function addBanchiLayer() {
   if (!map) return;
   // streets番地レイヤーを先に追加して、Geoloniaレイヤーを上に重ねる
   addStreetsHousenumLayer();
+  addBlockNumberLayer();
   if (!map.getSource(BANCHI_SOURCE_ID)) {
     map.addSource(BANCHI_SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   }
@@ -9627,6 +9685,7 @@ function updateAddrButton() {
   if (!btn) return;
   btn.textContent = addrVisible ? '🏷 番地表示: ON' : '🏷 番地表示: OFF';
   btn.classList.toggle('on', addrVisible);
+  updateBlockNumberButton();
 }
 
 function updateStreetsHousenumButton() {
@@ -9641,12 +9700,31 @@ function setAddressLayerVisibility(id, visible) {
   try { map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none'); } catch (e) {}
 }
 
+function updateBlockNumberButton() {
+  const button = $('menu-toggle-block-numbers');
+  if (!button) return;
+  button.textContent = blockNumberVisible ? '街区番号の強調: ON' : '街区番号の強調: OFF';
+  button.classList.toggle('on', blockNumberVisible);
+  button.setAttribute('aria-pressed', blockNumberVisible ? 'true' : 'false');
+}
+
+function toggleBlockNumbers() {
+  closeModal('modal-menu');
+  blockNumberVisible = !blockNumberVisible;
+  localStorage.setItem(BLOCK_NUMBER_VISIBLE_KEY, blockNumberVisible ? '1' : '0');
+  addBlockNumberLayer();
+  setAddressLayerVisibility(BLOCK_NUMBER_LAYER_ID, blockNumberLayerVisible());
+  updateBlockNumberButton();
+  showToast(blockNumberVisible ? '街区番号の強調ON' : '街区番号の強調OFF');
+}
+
 function toggleAddressBlocks() {
   closeModal('modal-menu');
   addrVisible = !addrVisible;
   localStorage.setItem(ADDR_VISIBLE_KEY, addrVisible ? '1' : '0');
   setAddressLayerVisibility(BANCHI_LAYER_ID, hyphenBanchiLayerVisible());
   setAddressLayerVisibility(STREETS_HOUSENUM_LAYER_ID, streetsHousenumLayerVisible());
+  setAddressLayerVisibility(BLOCK_NUMBER_LAYER_ID, blockNumberLayerVisible());
   updateAddrButton();
   updateStreetsHousenumButton();
   if (hyphenBanchiLayerVisible()) {
@@ -9707,6 +9785,7 @@ function openBanchiDebug() {
   }
   lines.push(`表示設定: ${addrVisible ? 'ON' : 'OFF'} (表示はズーム${BANCHI_DISPLAY_MIN_ZOOM}以上)`);
   lines.push(`ハイフン番地: ${hyphenBanchiVisible ? 'ON' : 'OFF'}`);
+  lines.push(`街区番号の強調: ${blockNumberVisible ? 'ON' : 'OFF'}`);
   lines.push(`市区町村リスト: ${banchiStatus.catalog}`);
   lines.push(`対象市区町村: ${banchiStatus.cities.length ? banchiStatus.cities.join(', ') : '(未判定)'}`);
   banchiStatus.cities.forEach(key => {
@@ -9723,6 +9802,13 @@ function openBanchiDebug() {
       lines.push(`Mapbox番地(streets): 画面内 ${streetsCount}件`);
     } catch (e) {
       lines.push('Mapbox番地(streets): レイヤーなし');
+    }
+    try {
+      const blockCount = map.getLayer(BLOCK_NUMBER_LAYER_ID)
+        ? map.queryRenderedFeatures({ layers: [BLOCK_NUMBER_LAYER_ID] }).length : 0;
+      lines.push(`街区番号: 画面内 ${blockCount}件`);
+    } catch (e) {
+      lines.push('街区番号: 状態取得エラー');
     }
     try {
       const fudeCount = map.queryRenderedFeatures({ layers: [GSI_OVERLAY_LAYER_ID] }).length;
@@ -10265,15 +10351,38 @@ function normalizeAddress(addr) {
 }
 
 function cleanAddressForGeocoding(addr) {
-  let a = normalizeAddress(addr);
-  a = a.replace(/〒?\s*\d{3}[-]?\d{4}\s*/g, '');
-  a = a.replace(/[一-鿿々ー]{1,15}\s*様\s*/g, '');
-  const m = a.match(/^(.*?\d{1,4}[-－ー]?\d{1,4}([-－ー]\d{1,4})?)/);
-  if (m) {
-    const base = m[1].trim();
-    if (base.length >= 6) return base;
-  }
-  return a;
+  let address = normalizeKanjiDigitsForAddress(normalizeAddress(addr || ''));
+  address = address.replace(/^(?:郵便番号\s*[:：]?\s*)?〒?\s*\d{3}\s*-?\s*\d{4}(?=\s|[^\d-])\s*/, '');
+  address = address.replace(/[一-鿿々ー]{1,15}\s*様\s*$/, '');
+  address = address.replace(/[-\s]*(?:[A-Z]\s*-?\s*)?\d+\s*(?:号室|室|階|F)\s*$/i, '').trim();
+
+  // Require a real number separator/unit; never split one multi-digit lot number.
+  // Stop at the first address number, not a later number in a building name.
+  const numbered = address.match(/\d+(?:\s*(?:丁目|番(?:地)?(?!町|街|館|丁)(?:の)?|[-のノ])\s*\d+)+(?:\s*(?:番(?:地)?(?!町|街|館|丁)|号(?!室|棟|館)))?|\d+\s*(?:丁目|番(?:地)?(?!町|街|館|丁)|号(?!室|棟|館))/);
+  if (numbered) return address.slice(0, numbered.index + numbered[0].length).trim();
+  const lot = address.match(/\d+(?=\s|$)/);
+  return lot ? address.slice(0, lot.index + lot[0].length).trim() : address;
+}
+
+function geocodingAddressCandidates(rawAddress) {
+  const cleaned = cleanAddressForGeocoding(rawAddress);
+  const hyphenated = cleaned
+    .replace(/(\d)\s*丁目\s*/g, '$1-')
+    .replace(/(\d)\s*番(?:地)?(?!町|街|館|丁)(?:の)?\s*/g, '$1-')
+    .replace(/(\d)\s*号(?!室|棟|館)/g, '$1')
+    .replace(/(\d)\s*[のノ]\s*(?=\d)/g, '$1-')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/-+$/g, '')
+    .trim();
+  return [cleaned, hyphenated].filter((value, index, all) => value && all.indexOf(value) === index);
+}
+
+function googleGeocodeResponseKind(response, data) {
+  if (response.ok && data && !Array.isArray(data) && (!data.status || data.status === 'OK') &&
+      typeof data.lat === 'number' && Number.isFinite(data.lat) && Math.abs(data.lat) <= 90 &&
+      typeof data.lng === 'number' && Number.isFinite(data.lng) && Math.abs(data.lng) <= 180) return 'found';
+  if ((response.ok || response.status === 404) && data && data.status === 'ZERO_RESULTS') return 'not_found';
+  return 'unavailable';
 }
 
 function kanjiNumberTokenToArabic(value) {
@@ -10807,10 +10916,7 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
     return result;
   }
   const mapboxMatchVersion = mapboxLookup.state === 'checked' ? MAPBOX_ADDRESS_MATCH_VERSION : 0;
-  const candidates = [
-    cleanAddressForGeocoding(rawAddress),
-    normalizeAddress(rawAddress)
-  ].filter((v, i, arr) => v && arr.indexOf(v) === i);
+  const candidates = geocodingAddressCandidates(rawAddress);
 
   for (const q of candidates) {
     try {
@@ -10821,7 +10927,8 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
         body: JSON.stringify({ address: q })
       });
       const data = await res.json();
-      if (data && data.lat && data.lng) {
+      const responseKind = googleGeocodeResponseKind(res, data);
+      if (responseKind === 'found') {
         const result = {
           lat: data.lat,
           lng: data.lng,
@@ -10836,8 +10943,13 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
         if (cacheKey) saveSharedGeocodeCache(cacheKey, rawAddress, result);
         return result;
       }
-    } catch (e) {
-      console.warn('geocode failed for', q, e);
+      if (responseKind !== 'not_found') {
+        console.warn('Google geocode unavailable', res.status);
+        break;
+      }
+    } catch (_) {
+      console.warn('Google geocode response unavailable');
+      break;
     }
   }
 
@@ -10848,15 +10960,15 @@ async function geocodeAddressUncached(rawAddress, cacheKey) {
       if (result) {
         // 概算位置(approx)は共有キャッシュに保存しない。
         // 保存するとapprox結果が固定され、次回syncでGoogleを再試行できなくなる。
-        console.info('geocode fallback via GSI for', q);
+        console.info('geocode fallback via GSI');
         return {
           ...result,
           mapboxMatched: false,
           mapboxMatchVersion
         };
       }
-    } catch (e) {
-      console.warn('gsi geocode failed for', q, e);
+    } catch (_) {
+      console.warn('GSI geocode unavailable');
     }
   }
   return null;
@@ -19835,6 +19947,7 @@ $('menu-toggle-neighborhoods').addEventListener('click', () => {
 });
 $('menu-toggle-addr').addEventListener('click', toggleAddressBlocks);
 $('menu-toggle-streets-housenum').addEventListener('click', toggleHyphenBanchiLabels);
+$('menu-toggle-block-numbers').addEventListener('click', toggleBlockNumbers);
 $('menu-toggle-gsi').addEventListener('click', () => {
   closeModal('modal-menu');
   toggleGsiOverlay();

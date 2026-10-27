@@ -310,7 +310,8 @@ function runWatchError(code) {
   assert.deepEqual(calls.delays, [], '許可拒否は自動再接続を繰り返さない');
 }
 
-assert.equal((html.match(/v2026\.06\.24-test\.123/g) || []).length, 3, 'テスト版表示を3箇所そろえる');
+const currentVersion = html.match(/const APP_VERSION = '(v[\d.]+-test\.\d+)'/)[1];
+assert.equal(html.split(currentVersion).length - 1, 3, 'テスト版表示を3箇所そろえる');
 assert.match(html, /clearTemporaryGuidance\(\{ resume: false \}\);/);
 assert.match(html, /refreshGpsAfterMapReturn\(\{ refreshGuidance: optimizedRouteOrderedIds\.length > 0 \}\);/);
 assert.match(html, /watchPosition\(\s*\(pos\) => \{ handleGpsPosition\(pos, gpsAutoFollow\); \}/);
