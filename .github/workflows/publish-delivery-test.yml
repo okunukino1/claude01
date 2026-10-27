@@ -99,7 +99,7 @@ jobs:
           const before=fs.readFileSync(path.join(dir,'before.html'));
           const stable=fs.readFileSync(path.join(dir,'stable-before.html'));
           const candidate=fs.readFileSync(source),expected=process.env.APPROVED_HTML_SHA256;
-          const id=process.env.GITHUB_RUN_ID,temporary=`index.html.test-126-${id}.tmp`,rollback=`index.html.rollback-126-${id}.tmp`;
+          const id=process.env.GITHUB_RUN_ID,temporary=`index.test-126-${id}.html`,rollback=`index.rollback-126-${id}.html`;
           const result={version:'v2026.06.24-test.126',candidate:process.env.CANDIDATE_SHA,published:false,filesPublished:0,realApiCalls:0,cleanupComplete:true};
           let credentialsValid=false,stagingAttempted=false,promotionAttempted=false;
           const quote=v=>'"'+String(v).replaceAll('\\','\\\\').replaceAll('"','\\"')+'"';
@@ -150,7 +150,7 @@ jobs:
                 const current=fs.readFileSync(path.join(dir,'ftp-before.html'));
                 const names=ftp('',[['list-only',true]]).split(/\r?\n/).map(name=>name.split('/').pop());
                 Object.assign(result,{inspected:true,ftpCurrentSha256:digest(current),ftpCurrentBytes:current.length,
-                  testTemporaryFiles:names.filter(name=>/^index\.html\.(?:test|rollback)-126-\d+\.tmp$/.test(name))});
+                  testTemporaryFiles:names.filter(name=>/^index\.(?:test|rollback)-126-\d+\.html$/.test(name)||/^index\.html\.(?:test|rollback)-126-\d+\.tmp$/.test(name))});
                 return;
               }
               requireHash(fs.readFileSync(path.join(dir,'ftp-before.html')),before,'FTP baseline');
