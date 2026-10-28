@@ -799,6 +799,11 @@
     font-weight: 800;
   }
   .temporary-guidance-banner button:disabled { opacity: 0.5; }
+  #btn-toggle-route-lines { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; }
+  #btn-toggle-route-lines svg { width: 22px; height: 22px; }
+  #btn-toggle-route-lines[aria-pressed="true"] .route-lines-show-icon,
+  #btn-toggle-route-lines[aria-pressed="false"] .route-lines-hide-icon { display: none; }
+  #btn-toggle-route-lines[aria-pressed="false"] { background: #e8eef2; }
 
   /* ===== List section ===== */
   .list-section {
@@ -2447,7 +2452,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.126</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.127</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2492,6 +2497,29 @@
     <small id="guidance-banner-distance" hidden></small>
   </div>
   <button id="btn-temporary-guidance-refresh" type="button" title="現在地から案内線を引き直す" aria-label="現在地から案内線を引き直す">↻</button>
+  <!-- Lucide eye/eye-off, ISC License. Copyright (c) 2026 Lucide Icons and Contributors.
+  Permission to use, copy, modify, and/or distribute this software for any
+  purpose with or without fee is hereby granted, provided that the above
+  copyright notice and this permission notice appear in all copies.
+  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. -->
+  <button id="btn-toggle-route-lines" type="button" aria-label="ルート線の表示" aria-pressed="true" title="ルート線を非表示にする">
+    <svg class="route-lines-hide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/>
+      <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/>
+      <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/>
+      <path d="m2 2 20 20"/>
+    </svg>
+    <svg class="route-lines-show-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  </button>
 </div>
 
 <div class="add-bar input-only-control">
@@ -2533,7 +2561,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.126</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.127</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -2548,6 +2576,7 @@
       <button id="menu-optimize-recommended" type="button">📐 エリア相談 → 直線距離で比較（道路未考慮）</button>
       <button id="menu-optimize-car" type="button">🚗 車向け 道路優先ルート</button>
       <button id="menu-optimize-google" type="button">🚗 Google車向け 道路優先ルート</button>
+      <button id="menu-toggle-route-lines" type="button" aria-pressed="true">ルート線: 表示中</button>
       <button id="menu-road-memory" type="button">🚧 Mapbox案内線: 通行規制・進入方向</button>
       <button id="menu-operator" type="button">👤 担当者名を設定</button>
       <button id="menu-delivery-sync" type="button">🔗 デバイス間データ共有</button>
@@ -3196,7 +3225,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.126';
+const APP_VERSION = 'v2026.06.24-test.127';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -3294,6 +3323,7 @@ const ROAD_FLOW_API = '../api/route_flow_test.php';
 const GOOGLE_GUIDANCE_CONFIG_API = '../api/google_maps_config_test.php';
 const GOOGLE_GUIDANCE_ROUTE_API = '../api/google_guidance_test.php';
 const GUIDANCE_PROVIDER_KEY = 'rys-mapbox-test-guidance-provider-v1';
+const ROUTE_LINES_VISIBLE_KEY = 'rys-mapbox-test-route-lines-visible-v1';
 const GUIDANCE_ROUTE_CACHE_KEY = 'rys-mapbox-test-guidance-route-cache-v1';
 const GUIDANCE_ROUTE_CACHE_VERSION = 1;
 const GUIDANCE_ROUTE_CACHE_MAX_AGE_MS = 18 * 60 * 60 * 1000;
@@ -3602,6 +3632,7 @@ let lastFlowNoticeKey = '';
 let temporaryGuidanceTargetId = null;
 let temporaryGuidanceBusy = false;
 let guidanceRefreshBusy = false;
+let routeLinesVisible = localStorage.getItem(ROUTE_LINES_VISIBLE_KEY) !== '0';
 let guidanceProvider = GOOGLE_GUIDANCE_FEATURE_ENABLED &&
   localStorage.getItem(GUIDANCE_PROVIDER_KEY) !== 'mapbox' ? 'google' : 'mapbox';
 let roadMemoryState = null;
@@ -7941,6 +7972,43 @@ function banchiScheduleUpdate(delay = 200) {
   }, delay);
 }
 
+function updateRouteLinesUi() {
+  const title = routeLinesVisible ? 'ルート線を非表示にする' : 'ルート線を再表示する';
+  for (const id of ['btn-toggle-route-lines', 'menu-toggle-route-lines']) {
+    const button = $(id);
+    if (!button) continue;
+    button.setAttribute('aria-pressed', String(routeLinesVisible));
+    button.title = title;
+    button.classList.toggle('on', routeLinesVisible);
+    if (id === 'menu-toggle-route-lines') {
+      button.textContent = routeLinesVisible ? 'ルート線: 表示中' : 'ルート線: 非表示';
+    }
+  }
+}
+
+function applyRouteLineVisibility() {
+  const visibility = routeLinesVisible ? 'visible' : 'none';
+  for (const id of [OPTIMIZED_ROUTE_LAYER_ID, NEXT_SEGMENT_LAYER_ID, NEXT_SEGMENT_ARROW_LAYER_ID,
+    FOLLOWING_SEGMENT_LAYER_ID, FOLLOWING_SEGMENT_ARROW_LAYER_ID, FLOW_WALK_LAYER_ID]) {
+    try {
+      if (map && map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility);
+    } catch (e) {}
+  }
+  googleGuidanceRouteOverlays.forEach(overlay => {
+    try { overlay.setVisible(routeLinesVisible); } catch (e) {}
+  });
+  updateRouteLinesUi();
+}
+
+function toggleRouteLines() {
+  closeModal('modal-menu');
+  routeLinesVisible = !routeLinesVisible;
+  try { localStorage.setItem(ROUTE_LINES_VISIBLE_KEY, routeLinesVisible ? '1' : '0'); } catch (e) {}
+  applyRouteLineVisibility();
+  updateGuidanceBannerUi();
+  showToast(routeLinesVisible ? 'ルート線を再表示しました' : 'ルート線を非表示にしました');
+}
+
 function addOptimizedRouteLayer() {
   if (map.getLayer(OPTIMIZED_ROUTE_LAYER_ID)) return;
   const layerDef = {
@@ -7948,7 +8016,7 @@ function addOptimizedRouteLayer() {
     type: 'line',
     source: OPTIMIZED_ROUTE_SOURCE_ID,
     slot: 'top',
-    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    layout: { 'line-join': 'round', 'line-cap': 'round', visibility: routeLinesVisible ? 'visible' : 'none' },
     paint: {
       'line-color': '#2563eb',
       'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3, 16, 5, 19, 7],
@@ -8061,6 +8129,7 @@ function addRouteDirectionArrowLayer(layerId, sourceId, color) {
     source: sourceId,
     slot: 'top',
     layout: {
+      visibility: routeLinesVisible ? 'visible' : 'none',
       'symbol-placement': 'line',
       'symbol-spacing': 90,
       'text-field': '▶',
@@ -8092,7 +8161,7 @@ function addNextSegmentLayer() {
       type: 'line',
       source: NEXT_SEGMENT_SOURCE_ID,
       slot: 'top',
-      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      layout: { 'line-join': 'round', 'line-cap': 'round', visibility: routeLinesVisible ? 'visible' : 'none' },
       paint: {
         'line-color': '#f97316',
         'line-width': ['interpolate', ['linear'], ['zoom'], 12, 5, 16, 8, 19, 11],
@@ -8127,7 +8196,7 @@ function addFollowingSegmentLayer() {
       type: 'line',
       source: FOLLOWING_SEGMENT_SOURCE_ID,
       slot: 'top',
-      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      layout: { 'line-join': 'round', 'line-cap': 'round', visibility: routeLinesVisible ? 'visible' : 'none' },
       paint: {
         'line-color': '#2563eb',
         'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 16, 7, 19, 10],
@@ -8799,6 +8868,7 @@ function addGoogleGuidanceLine(geometry, color, width) {
   if (path.length < 2 || !googleGuidanceMap) return path;
   const outline = new google.maps.Polyline({
     map: googleGuidanceMap,
+    visible: routeLinesVisible,
     path,
     geodesic: false,
     clickable: false,
@@ -8810,6 +8880,7 @@ function addGoogleGuidanceLine(geometry, color, width) {
   const arrowPath = google.maps.SymbolPath && google.maps.SymbolPath.FORWARD_CLOSED_ARROW;
   const line = new google.maps.Polyline({
     map: googleGuidanceMap,
+    visible: routeLinesVisible,
     path,
     geodesic: false,
     clickable: false,
@@ -8840,6 +8911,7 @@ function addGoogleGuidanceWalkLine(geometry) {
   if (path.length < 2 || !googleGuidanceMap) return path;
   const line = new google.maps.Polyline({
     map: googleGuidanceMap,
+    visible: routeLinesVisible,
     path,
     geodesic: false,
     clickable: false,
@@ -9153,7 +9225,7 @@ function addFlowWalkLayer() {
     type: 'line',
     source: FLOW_WALK_SOURCE_ID,
     slot: 'top',
-    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    layout: { 'line-join': 'round', 'line-cap': 'round', visibility: routeLinesVisible ? 'visible' : 'none' },
     paint: {
       'line-color': '#111827',
       'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3, 16, 5, 19, 7],
@@ -9356,7 +9428,11 @@ function updateGuidanceBannerUi() {
   const banner = $('temporary-guidance-banner');
   if (banner) banner.hidden = !active;
   const modeLabel = $('guidance-banner-mode');
-  if (modeLabel) modeLabel.textContent = isTemporary ? '一時案内中' : '次の目的地';
+  if (modeLabel) {
+    const mode = isTemporary ? '一時案内中' : '次の目的地';
+    modeLabel.textContent = routeLinesVisible ? mode : `${mode}（線は非表示）`;
+  }
+  updateRouteLinesUi();
   const targetLabel = $('temporary-guidance-target');
   if (targetLabel) targetLabel.textContent = active ? guidanceBannerTargetLabel(target) : '';
   const busy = temporaryGuidanceBusy || guidanceRefreshBusy || googleGuidanceBusy;
@@ -20084,6 +20160,8 @@ $('placement-banner').addEventListener('click', cancelPlacement);
 $('btn-temporary-guidance-refresh').addEventListener('click', () => {
   refreshCurrentGuidanceLine();
 });
+$('btn-toggle-route-lines').addEventListener('click', toggleRouteLines);
+$('menu-toggle-route-lines').addEventListener('click', toggleRouteLines);
 window.addEventListener('online', () => {
   updateRecoveryStatusUi();
   retryPendingPickupProgress({ silent: false });
