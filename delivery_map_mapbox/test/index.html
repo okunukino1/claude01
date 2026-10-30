@@ -467,23 +467,37 @@
 
   .overlap-count-label {
     position: absolute;
-    right: -22px;
-    top: -2px;
-    min-width: 28px;
-    height: 22px;
-    padding: 0 5px;
-    border-radius: 999px;
+    left: 54px;
+    top: -8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 64px;
+    height: 44px;
+    padding: 0 6px;
+    border-radius: 6px;
     background: white;
     color: var(--accent);
     border: 2px solid var(--ink);
     box-shadow: 0 1px 4px rgba(0,0,0,0.3);
     font-size: 11px;
     font-weight: 900;
-    line-height: 18px;
+    line-height: 1;
     text-align: center;
     z-index: 3;
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: pointer;
+    touch-action: manipulation;
   }
+  .overlap-count-label svg { width: 18px; height: 18px; flex-shrink: 0; }
+  .overlap-count-label:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+  .delivery-marker.overlap-back .delivery-label,
+  .delivery-marker.overlap-back .delivery-time-marker-label,
+  .delivery-marker.overlap-back .overlap-count-label { visibility: hidden; }
+  .delivery-marker.overlap-back .delivery-pin > :not(.pin-shape):not(.pin-num) { visibility: hidden; }
+  .google-overlap-control { position: absolute; }
+  .google-overlap-control .overlap-count-label { left: 15px; top: -22px; }
 
   /* ===== GPS / North controls ===== */
   .map-control {
@@ -2114,6 +2128,7 @@
   .map-control .gps-status { font-size: calc(10px * var(--text-scale)); }
   .topbar button,
   .delivery-pin .pin-num,
+  .overlap-count-label,
   .map-control button,
   .placement-banner,
   .empty,
@@ -2125,7 +2140,6 @@
   .toast { font-size: calc(13px * var(--text-scale)); }
   .item-info .pickup-company { font-size: calc(13px * var(--text-scale)); }
   .delivery-label,
-  .overlap-count-label,
   .list-header .stat,
   .item-info .note,
   .item-info .pickup-detail { font-size: calc(11px * var(--text-scale)); }
@@ -2452,7 +2466,7 @@
 <body>
 
 <div class="topbar">
-  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.127</span></h1>
+  <h1>RYS配送マップ<span class="badge-test">テスト版</span><span class="app-version" id="app-version-label">v2026.06.24-test.128</span></h1>
   <button id="btn-road-quick" type="button" aria-controls="road-quick-panel" aria-expanded="false">規制</button>
   <button id="btn-menu" type="button" title="メニュー" aria-label="メニュー"><span aria-hidden="true">⋮</span><span class="menu-label"> メニュー</span></button>
 </div>
@@ -2497,7 +2511,7 @@
     <small id="guidance-banner-distance" hidden></small>
   </div>
   <button id="btn-temporary-guidance-refresh" type="button" title="現在地から案内線を引き直す" aria-label="現在地から案内線を引き直す">↻</button>
-  <!-- Lucide eye/eye-off, ISC License. Copyright (c) 2026 Lucide Icons and Contributors.
+  <!-- Lucide eye/eye-off/repeat-2, ISC License. Copyright (c) 2026 Lucide Icons and Contributors.
   Permission to use, copy, modify, and/or distribute this software for any
   purpose with or without fee is hereby granted, provided that the above
   copyright notice and this permission notice appear in all copies.
@@ -2561,7 +2575,7 @@
 <div class="modal-bg" id="modal-menu">
   <div class="modal">
     <h3>メニュー</h3>
-    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.127</span></div>
+    <div class="app-version-info">現在のバージョン: <span id="menu-app-version">v2026.06.24-test.128</span></div>
     <div class="menu-list">
       <button id="menu-center-user" type="button">📍 現在地に移動</button>
       <button id="menu-toggle-mode" type="button">🔁 集荷モードに切替</button>
@@ -3225,7 +3239,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2026.06.24-test.127';
+const APP_VERSION = 'v2026.06.24-test.128';
 const STORAGE_KEY = 'rys-mapbox-test-deliveries-v1';
 const PACKAGE_TYPE_CATALOG_CACHE_KEY = 'rys-mapbox-test-package-type-catalog-v1';
 const PACKAGE_TYPE_CATALOG_API = '../api/package_types_test.php';
@@ -3516,6 +3530,7 @@ let packageTypeCatalog = PACKAGE_TYPE_FALLBACK_ITEMS.map(item => ({ ...item }));
 let packageTypeCatalogSource = 'built-in';
 let lastVisibleDeliveries = [];
 let markers = new Map();
+let markerOverlapFrontIds = new Map();
 let activeDeliveryId = null;
 let pendingMarkerTapSelect = null;
 let suppressMarkerTapSelectUntil = 0;
@@ -3644,6 +3659,7 @@ let googleGuidanceMap = null;
 let googleGuidanceBusy = false;
 let googleGuidanceRouteOverlays = [];
 let googleGuidanceRouteMarkers = [];
+let googleGuidanceOverlapBadges = [];
 let googleGuidanceUserMarker = null;
 let recognition = null;
 let mapStyleLoaded = false;
@@ -8837,6 +8853,10 @@ async function ensureGoogleGuidanceMap() {
 }
 
 function clearGoogleGuidanceRouteOverlays() {
+  googleGuidanceOverlapBadges.forEach(({ overlay }) => {
+    try { overlay.setMap(null); } catch (e) {}
+  });
+  googleGuidanceOverlapBadges = [];
   googleGuidanceRouteOverlays.forEach(overlay => {
     try { overlay.setMap(null); } catch (e) {}
   });
@@ -8980,13 +9000,14 @@ function addGoogleGuidanceMarker(point, label, color, title, scale = 13, deliver
       !point || !Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lng))) {
     return null;
   }
+  const deliveryIndex = deliveries.findIndex(d => d.id === deliveryId);
   const marker = new google.maps.Marker({
     map: googleGuidanceMap,
     position: { lat: Number(point.lat), lng: Number(point.lng) },
     title: title || '',
     clickable: !!deliveryId,
     cursor: deliveryId ? 'pointer' : undefined,
-    zIndex: 10,
+    zIndex: deliveryIndex >= 0 ? markerZIndex(deliveries[deliveryIndex], deliveryIndex) : 10,
     label: label ? {
       text: String(label),
       color: '#ffffff',
@@ -9003,6 +9024,7 @@ function addGoogleGuidanceMarker(point, label, color, title, scale = 13, deliver
       strokeWeight: 2
     }
   });
+  marker.__rysDeliveryId = deliveryId;
   bindGoogleGuidanceMarkerInteractions(marker, deliveryId);
   googleGuidanceRouteMarkers.push(marker);
   return marker;
@@ -9129,6 +9151,7 @@ function renderGoogleGuidanceFlow(flow, nextDelivery, followingDelivery) {
     bounds.extend({ lat: Number(lastKnownGps.lat), lng: Number(lastKnownGps.lng) });
   }
 
+  renderGoogleGuidanceOverlapBadges();
   updateGoogleGuidanceUserMarker();
   if (!bounds.isEmpty()) {
     if (google.maps.event) google.maps.event.trigger(googleGuidanceMap, 'resize');
@@ -10053,6 +10076,7 @@ function displayNumber(d, idx) {
 }
 
 function markerZIndex(d, idx) {
+  if (markerOverlapFrontIds.get(markerOverlapKey(d)) === d.id) return 120000;
   if (d.id === temporaryGuidanceTargetId) return 110000;
   if (d.id === activeDeliveryId) return 100000;
   const priority = deliveries.length - idx;
@@ -10060,10 +10084,24 @@ function markerZIndex(d, idx) {
 }
 
 function updateMarkerZIndexes() {
+  const overlaps = buildMarkerOverlapInfo(markerOverlapItems());
   lastVisibleDeliveries.forEach((d, idx) => {
     const marker = markers.get(d.id);
     if (!marker) return;
     marker.getElement().style.zIndex = String(markerZIndex(d, idx));
+    const overlap = overlaps.get(d.id);
+    marker.getElement().classList.toggle('overlap-back', !!overlap && overlap.frontId !== d.id);
+    const button = marker.getElement().querySelector('.overlap-count-label');
+    if (button && overlap) updateMarkerOverlapButton(button, overlap);
+  });
+  googleGuidanceRouteMarkers.forEach(marker => {
+    const idx = deliveries.findIndex(d => d.id === marker.__rysDeliveryId);
+    if (idx >= 0) marker.setZIndex(markerZIndex(deliveries[idx], idx));
+  });
+  const googleOverlaps = buildMarkerOverlapInfo(googleGuidanceOverlapItems());
+  googleGuidanceOverlapBadges.forEach(({ button, id }) => {
+    const overlap = googleOverlaps.get(id);
+    if (overlap) updateMarkerOverlapButton(button, overlap);
   });
 }
 
@@ -10071,6 +10109,7 @@ function focusDelivery(id, shouldFly = true) {
   const d = deliveries.find(x => x.id === id);
   if (!d) return;
   activeDeliveryId = id;
+  if (buildMarkerOverlapInfo(markerOverlapItems()).has(id)) markerOverlapFrontIds.set(markerOverlapKey(d), id);
   updateMarkerZIndexes();
   renderList();
   if (shouldFly && d.lat != null && d.lng != null) {
@@ -10133,9 +10172,9 @@ function applyPickupLocationFromItem(d, item) {
 }
 
 function markerOverlapKey(d) {
-  const lat = Number(d && d.lat);
-  const lng = Number(d && d.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';
+  const lat = finiteCoordinate(d && d.lat);
+  const lng = finiteCoordinate(d && d.lng);
+  if (lat === null || lng === null) return '';
   return `${lat.toFixed(5)},${lng.toFixed(5)}`;
 }
 
@@ -10143,7 +10182,7 @@ function buildMarkerOverlapInfo(items = deliveries) {
   const groups = new Map();
   items.forEach(d => {
     const key = markerOverlapKey(d);
-    if (!key) return;
+    if (!key || !d.id) return;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(d);
   });
@@ -10152,11 +10191,101 @@ function buildMarkerOverlapInfo(items = deliveries) {
   groups.forEach(group => {
     const count = group.length;
     if (count <= 1) return;
+    const front = group.reduce((best, d) =>
+      markerZIndex(d, deliveries.indexOf(d)) > markerZIndex(best, deliveries.indexOf(best)) ? d : best);
+    const ids = group.map(d => d.id);
     group.forEach((d, idx) => {
-      overlaps.set(d.id, { count, index: idx });
+      overlaps.set(d.id, { count, index: idx, ids, frontId: front.id });
     });
   });
   return overlaps;
+}
+
+function markerOverlapItems() {
+  const searchQuery = currentListSearchQuery();
+  const timeWindowFilter = currentListTimeWindowFilter();
+  return deliveries.filter(isVisibleInCurrentMode).filter((d, idx) =>
+    deliveryMatchesListFilters(d, idx, searchQuery, timeWindowFilter));
+}
+
+function googleGuidanceOverlapItems() {
+  const ids = new Set(googleGuidanceRouteMarkers.map(marker => marker.__rysDeliveryId).filter(Boolean));
+  return deliveries.filter(d => ids.has(d.id));
+}
+
+function cycleMarkerOverlap(id, googleSurface = false) {
+  const items = googleSurface ? googleGuidanceOverlapItems() : markerOverlapItems();
+  const overlap = buildMarkerOverlapInfo(items).get(id);
+  if (!overlap) return;
+  const nextId = overlap.ids[(overlap.ids.indexOf(overlap.frontId) + 1) % overlap.count];
+  const next = deliveries.find(d => d.id === nextId);
+  if (!next) return;
+  clearPendingMarkerTapSelect();
+  markerOverlapFrontIds.set(markerOverlapKey(next), nextId);
+  activeDeliveryId = nextId;
+  updateMarkerZIndexes();
+  renderList();
+  showToast(`手前: ${displayNumber(next, deliveries.indexOf(next))}番（同じ場所に${overlap.count}件）`);
+}
+
+function updateMarkerOverlapButton(button, overlap) {
+  const labels = overlap.ids.map(id => {
+    const idx = deliveries.findIndex(d => d.id === id);
+    return idx >= 0 ? displayNumber(deliveries[idx], idx) : '';
+  });
+  const frontIndex = overlap.ids.indexOf(overlap.frontId);
+  const title = `同じ場所に${overlap.count}件 / 手前: ${labels[frontIndex]}番 / 次: ${labels[(frontIndex + 1) % overlap.count]}番`;
+  button.title = title;
+  button.setAttribute('aria-label', `${title} / ピンを切り替える`);
+}
+
+function createMarkerOverlapButton(id, overlap, googleSurface = false) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'overlap-count-label';
+  button.innerHTML = `<span>${overlap.count}件</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 9 3-3 3 3"/><path d="M13 18H7a2 2 0 0 1-2-2V6"/><path d="m22 15-3 3-3-3"/><path d="M11 6h6a2 2 0 0 1 2 2v10"/></svg>`;
+  updateMarkerOverlapButton(button, overlap);
+  for (const type of ['pointerdown', 'pointerup', 'pointermove', 'mousedown', 'touchstart', 'dblclick']) {
+    button.addEventListener(type, event => {
+      event.stopPropagation();
+      if (type === 'pointerdown') clearPendingMarkerTapSelect();
+    });
+  }
+  button.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    cycleMarkerOverlap(id, googleSurface);
+    if (!googleSurface && document.activeElement === button) {
+      markers.get(activeDeliveryId)?.getElement().querySelector('.overlap-count-label')?.focus({ preventScroll: true });
+    }
+  });
+  return button;
+}
+
+function renderGoogleGuidanceOverlapBadges() {
+  if (!googleGuidanceMap || !window.google || typeof google.maps.OverlayView !== 'function') return;
+  const overlaps = buildMarkerOverlapInfo(googleGuidanceOverlapItems());
+  overlaps.forEach((overlap, id) => {
+    if (overlap.index !== 0) return;
+    const button = createMarkerOverlapButton(id, overlap, true);
+    const container = document.createElement('div');
+    container.className = 'google-overlap-control';
+    container.appendChild(button);
+    const overlay = new google.maps.OverlayView();
+    overlay.onAdd = () => overlay.getPanes().overlayMouseTarget.appendChild(container);
+    overlay.draw = () => {
+      const delivery = deliveries.find(d => d.id === id);
+      if (!delivery) { container.hidden = true; return; }
+      const point = overlay.getProjection().fromLatLngToDivPixel({ lat: Number(delivery.lat), lng: Number(delivery.lng) });
+      container.hidden = !point;
+      if (point) { container.style.left = `${point.x}px`; container.style.top = `${point.y}px`; }
+    };
+    overlay.onRemove = () => container.remove();
+    google.maps.OverlayView.preventMapHitsAndGesturesFrom(container);
+    overlay.setMap(googleGuidanceMap);
+    googleGuidanceOverlapBadges.push({ overlay, button, id });
+  });
+  updateMarkerZIndexes();
 }
 
 function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
@@ -10176,16 +10305,21 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
   if (timeInfo.hasTime) wrapper.style.setProperty('--time-window-color', timeInfo.color);
   else wrapper.style.removeProperty('--time-window-color');
   wrapper.style.zIndex = String(markerZIndex(d, idx));
+  wrapper.classList.toggle('overlap-back', !!overlap && overlap.frontId !== d.id);
 
   // 中身に影響する値が前回 render と同じなら DOM 再構築をスキップ（差分更新）
   const labelText = buildLabelText(d, num, modeKey);
-  const overlapCount = overlap && overlap.index === 0 ? overlap.count : 0;
+  const overlapCount = overlap ? overlap.count : 0;
   const timeWindowSig = timeInfo.hasTime
     ? `${timeInfo.timeWindow ? timeInfo.timeWindow.id : 'exact'}:${timeInfo.color}:${timeInfo.exactTime}:${timeInfo.label}`
     : '';
   const pkgCount = Number(d.packageCount) || 1;
   const contentSig = `${num}|${d.approx ? 1 : 0}|${d.needsReview && !d.completed ? 1 : 0}|${pkgCount}|${labelText}|${overlapCount}|${timeWindowSig}|${isOtherCoursePickup(d) ? 1 : 0}|${isTemporaryGuidanceTarget ? 1 : 0}`;
-  if (wrapper.dataset.contentSig === contentSig) return;
+  if (wrapper.dataset.contentSig === contentSig) {
+    const button = wrapper.querySelector('.overlap-count-label');
+    if (button && overlap) updateMarkerOverlapButton(button, overlap);
+    return;
+  }
   wrapper.dataset.contentSig = contentSig;
 
   wrapper.innerHTML = '';
@@ -10231,16 +10365,15 @@ function updateDeliveryMarkerElement(wrapper, d, idx, modeKey, overlap) {
     pin.appendChild(pkgBadge);
   }
   if (overlapCount > 0) {
-    const overlapLabel = document.createElement('div');
-    overlapLabel.className = 'overlap-count-label';
-    overlapLabel.textContent = `${overlapCount}件`;
-    pin.appendChild(overlapLabel);
+    pin.appendChild(createMarkerOverlapButton(d.id, overlap));
   }
   wrapper.appendChild(pin);
 }
 
 function openDeliveryMarkerDetails(id) {
   activeDeliveryId = id;
+  const d = deliveries.find(item => item.id === id);
+  if (d && buildMarkerOverlapInfo(markerOverlapItems()).has(id)) markerOverlapFrontIds.set(markerOverlapKey(d), id);
   updateMarkerZIndexes();
   renderList();
   openEdit(id);
@@ -10362,7 +10495,7 @@ function renderMarkers() {
   const timeWindowFilter = currentListTimeWindowFilter();
   const visibleDeliveries = deliveries.filter(isVisibleInCurrentMode);
   lastVisibleDeliveries = visibleDeliveries;
-  const overlapInfo = buildMarkerOverlapInfo(visibleDeliveries);
+  const overlapInfo = buildMarkerOverlapInfo(markerOverlapItems());
   const visibleMarkerIds = new Set(
     visibleDeliveries
       .filter(d => d.id && d.lat != null && d.lng != null)

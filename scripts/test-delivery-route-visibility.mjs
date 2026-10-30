@@ -165,5 +165,6 @@ test('both controls are wired and the full application script and version string
   for(const id of ['btn-toggle-route-lines','menu-toggle-route-lines']) {
     assert.ok(html.includes(`$('${id}').addEventListener('click', toggleRouteLines);`));
   }
-  assert.equal((html.match(/v2026\.06\.24-test\.127/g)||[]).length,3);
+  const version = /const APP_VERSION = '([^']+)'/.exec(html)[1];
+  assert.equal(html.split(version).length - 1, 3);
 });
