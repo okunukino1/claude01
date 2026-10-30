@@ -1,11 +1,11 @@
 name: Publish delivery test single file
-run-name: Publish delivery test.127 ${{ inputs.candidate_sha }}
+run-name: Publish delivery test.128 ${{ inputs.candidate_sha }}
 
 on:
   workflow_dispatch:
     inputs:
       candidate_sha:
-        description: Approved immutable test.127 commit
+        description: Approved immutable test.128 commit
         required: true
         type: string
       inspect_only:
@@ -22,9 +22,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  APPROVED_CANDIDATE: dd4a04b5a130b90ffea12512459ee0f7db70d5e9
-  APPROVED_BASE: 994999630a8785646d36614e75aadfa7099428a3
-  APPROVED_HTML_SHA256: 19b3fc7af07065f5446af7141a25bf5a4902f8e1ad802e6a47b4bffd69e5b71c
+  APPROVED_CANDIDATE: 4b9e77b6b7c6e93420c941ea137ae72e1ad75219
+  APPROVED_BASE: b42d4bc594d63e37a7a333c53b023fd5e9ad2b18
+  APPROVED_HTML_SHA256: b042c0322675844b56435984e9ba3de8700f6f14cc87002c81157c922d53e7f5
   CANDIDATE_SHA: ${{ inputs.candidate_sha }}
 
 jobs:
@@ -52,14 +52,14 @@ jobs:
           set -euo pipefail
           git merge-base --is-ancestor "$APPROVED_BASE" HEAD
           git diff --name-only "$APPROVED_BASE" HEAD > /tmp/delivery-test-changed-paths
-          if grep -Ev '^(delivery_map_mapbox/test/index.html|delivery_map_mapbox/CODEX_CHANGES.md|scripts/test-delivery-route-visibility.mjs)$' /tmp/delivery-test-changed-paths; then
+          if grep -Ev '^(delivery_map_mapbox/test/index.html|delivery_map_mapbox/CODEX_CHANGES.md|scripts/test-delivery-route-visibility.mjs|scripts/test-delivery-marker-overlap.mjs)$' /tmp/delivery-test-changed-paths; then
             echo 'Candidate contains unexpected paths.' >&2
             exit 1
           fi
           if grep -q 'development-requests' delivery_map_mapbox/test/index.html; then exit 1; fi
-          test "$(grep -c 'v2026.06.24-test.127' delivery_map_mapbox/test/index.html)" = 3
+          test "$(grep -c 'v2026.06.24-test.128' delivery_map_mapbox/test/index.html)" = 3
           node -e 'const fs=require("fs"),c=require("crypto"),a=require("assert/strict");const s=fs.readFileSync("delivery_map_mapbox/test/index.html","utf8").replaceAll("\r\n","\n");a.equal(c.createHash("sha256").update(s).digest("hex"),process.env.APPROVED_HTML_SHA256);'
-          node --test scripts/test-delivery-route-visibility.mjs scripts/test-delivery-block-numbers.mjs scripts/test-delivery-geocoding.mjs
+          node --test scripts/test-delivery-marker-overlap.mjs scripts/test-delivery-route-visibility.mjs scripts/test-delivery-block-numbers.mjs scripts/test-delivery-geocoding.mjs
           node scripts/test-delivery-gps-map-return.mjs
           mkdir -p /tmp/delivery-test-publication
           git show "$APPROVED_BASE:delivery_map_mapbox/test/index.html" > /tmp/delivery-test-publication/expected-test.html
@@ -79,7 +79,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: delivery-test-127-before
+          name: delivery-test-128-before
           path: /tmp/delivery-test-publication/
           retention-days: 30
 
@@ -99,8 +99,8 @@ jobs:
           const before=fs.readFileSync(path.join(dir,'before.html'));
           const stable=fs.readFileSync(path.join(dir,'stable-before.html'));
           const candidate=fs.readFileSync(source),expected=process.env.APPROVED_HTML_SHA256;
-          const id=process.env.GITHUB_RUN_ID,temporary=`index.test-127-${id}.html`,rollback=`index.rollback-127-${id}.html`;
-          const result={version:'v2026.06.24-test.127',candidate:process.env.CANDIDATE_SHA,published:false,filesPublished:0,realApiCalls:0,cleanupComplete:true};
+          const id=process.env.GITHUB_RUN_ID,temporary=`index.test-128-${id}.html`,rollback=`index.rollback-128-${id}.html`;
+          const result={version:'v2026.06.24-test.128',candidate:process.env.CANDIDATE_SHA,published:false,filesPublished:0,realApiCalls:0,cleanupComplete:true};
           let credentialsValid=false,stagingAttempted=false,promotionAttempted=false;
           const quote=v=>'"'+String(v).replaceAll('\\','\\\\').replaceAll('"','\\"')+'"';
           let root;
@@ -204,6 +204,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: delivery-test-127-publication
+          name: delivery-test-128-publication
           path: /tmp/delivery-test-publication/
           retention-days: 30
