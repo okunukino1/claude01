@@ -13,7 +13,7 @@ concurrency:
   group: delivery-map-stable-suspension
   cancel-in-progress: false
 env:
-  APPROVED_CANDIDATE: 6ab4cae468a1003bb7c6a11b7056bbff9bd4ee01
+  APPROVED_CANDIDATE: 1954da9c2f869e119b703c43c777a030e944131d
   APPROVED_BASE: 0a730ee5d8f6b93f3facdb64ec8c475d7ac86b60
   APPROVED_HTML_SHA256: 2725b052f010c069fcf42b8c0327a216ea4efdaeecb3232ad746e50d40474c5e
   APPROVED_WORKER_SHA256: af9768b4f5e78541aeba610d16b5ac7a392d4fbd392660632eee75215781612e
@@ -40,7 +40,7 @@ jobs:
           set -euo pipefail
           git merge-base --is-ancestor "$APPROVED_BASE" HEAD
           git diff --name-only "$APPROVED_BASE" HEAD > /tmp/stable-suspension-paths
-          node -e 'const fs=require("fs"),a=require("assert/strict");const allowed=new Set(["delivery_map_mapbox/index.html","delivery_map_mapbox/service-worker.js","delivery_map_mapbox/STABLE_SUSPENSION.md","scripts/test-delivery-stable-suspension.mjs","scripts/publish-delivery-stable-suspension.cjs"]);const changed=fs.readFileSync("/tmp/stable-suspension-paths","utf8").trim().split("\n");a.equal(changed.length,5);a.ok(changed.every(p=>allowed.has(p)));'
+          node -e 'const fs=require("fs"),a=require("assert/strict");const allowed=new Set(["delivery_map_mapbox/index.html","delivery_map_mapbox/service-worker.js","delivery_map_mapbox/STABLE_SUSPENSION.md","scripts/test-delivery-stable-suspension.mjs","scripts/publish-delivery-stable-suspension.cjs",".github/workflows/suspend-delivery-stable.yml"]);const changed=fs.readFileSync("/tmp/stable-suspension-paths","utf8").trim().split("\n");a.equal(changed.length,6);a.ok(changed.every(p=>allowed.has(p)));'
           node --test scripts/test-delivery-stable-suspension.mjs scripts/test-delivery-marker-overlap.mjs scripts/test-delivery-route-visibility.mjs scripts/test-delivery-block-numbers.mjs scripts/test-delivery-geocoding.mjs
           node scripts/test-delivery-gps-map-return.mjs
           mkdir -p /tmp/delivery-stable-suspension
