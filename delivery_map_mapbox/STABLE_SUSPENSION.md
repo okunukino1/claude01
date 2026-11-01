@@ -1,5 +1,22 @@
 # Stable Version Suspension
 
+## Current Status: Suspended
+
+Stable suspension was published at 2026-11-01 10:25:55 JST. Verified action:
+https://github.com/okunukino1/claude01/actions/runs/41261008808
+
+The source candidate is `1954da9c2f869e119b703c43c777a030e944131d`.
+Only root HTML and worker were published. The test version remains test.128;
+its HTML SHA-256 is `b042c0322675844b56435984e9ba3de8700f6f14cc87002c81157c922d53e7f5`.
+Its worker SHA-256 is `96a80d280370e0dded59a516ce28775f9a70ab11e961fb955b350a3f61afd13a`.
+Both stayed unchanged. Shared APIs and user data were not changed.
+
+Actual original FTP bytes, candidate/staged/final byte checks, original
+authorization, rollback files and cleanup results are retained in the task
+workspace at `qa/stable-suspension-publication-20261101-102454/` and the private
+Actions artifacts (30-day retention). UI/cache/data-retention fixtures are in
+`qa/stable-suspension-20261101/`. Physical handset behavior is unverified.
+
 The user explicitly requested that test remain usable and only stable be
 temporarily suspended. This is not test-to-stable promotion.
 
