@@ -29,10 +29,23 @@ function ftp(relative, options = []) {
   return call.stdout;
 }
 async function http(relative, label) {
-  const response = await fetch('https://rys-services.com/delivery_map_mapbox/' + relative + '?suspension=' + id + '-' + label,
-    { headers: { 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30000) });
-  if (!response.ok) throw Error(label + ' HTTP ' + response.status);
-  return Buffer.from(await response.arrayBuffer());
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch('https://rys-services.com/delivery_map_mapbox/' + relative + '?suspension=' + id + '-' + label,
+        { headers: { 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30000) });
+      if (!response.ok) throw Error(label + ' HTTP ' + response.status);
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      const code = error.cause?.code || error.code || error.name;
+      const transient = ['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_SOCKET', 'ETIMEDOUT', 'ECONNRESET', 'TimeoutError'].includes(code);
+      if (attempt === 0 && transient) {
+        result.readRetries = (result.readRetries || 0) + 1;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        continue;
+      }
+      throw Error(`HTTP read ${label} (${relative || '/'}) failed: ${error.message} [${code}]`);
+    }
+  }
 }
 function equal(actual, wanted, label) { if (digest(actual) !== digest(wanted)) throw Error(label + ' hash mismatch'); }
 function promote(from, to, wanted, outputName) {
